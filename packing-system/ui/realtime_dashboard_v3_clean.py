@@ -5,7 +5,7 @@ Industrial Packing Workbench V3 Clean
 核心目标：
 1. 直接选择 Excel，不需要手动修改 packing_config.yaml；
 2. 自动复制输入 Excel 到 data/ui_inputs，避免中文路径/空格路径带来的问题；
-3. 自动生成 runtime/packing-realtime/temp 下的临时 YAML；
+3. 自动生成 runtime/packing-realtime/temp 下的临时 YAML
 4. 后端运行时强制追加 --out，把 JSON 输出到 runtime/packing-realtime/exports；
 5. 后端完成后直接加载这个 JSON 到界面，不再让用户手动找 packing_plan_*.json。
 
