@@ -75,6 +75,7 @@ try:
         ordered_packed_items,
         sequence_mode_key,
     )
+    from dashboard_state import successful_pallet_count
 except Exception as exc:
     raise RuntimeError(
         "Cannot import stability_business_dashboard_json.py. "
@@ -1059,11 +1060,13 @@ class IndustrialPackingWorkbench(BaseDashboard):
         self.card_failed = MetricCard("失败托盘")
         self.card_gap = MetricCard("平均指数缺口")
         self.card_avg_fill = MetricCard("平均填充率")
+        self.card_success_total = MetricCard("成功托盘总数")
         grid.addWidget(self.card_total, 0, 0)
         grid.addWidget(self.card_success, 0, 1)
         grid.addWidget(self.card_failed, 1, 0)
         grid.addWidget(self.card_gap, 1, 1)
         grid.addWidget(self.card_avg_fill, 2, 0, 1, 2)
+        grid.addWidget(self.card_success_total, 3, 0, 1, 2)
         layout.addWidget(overview_box)
 
         self.step_params = StepCard("3", "高级参数", "默认收起，不建议频繁修改")
@@ -2396,6 +2399,13 @@ class IndustrialPackingWorkbench(BaseDashboard):
             vals = [v for v in vals if not math.isnan(v)]
             avg = sum(vals) / len(vals) if vals else float("nan")
             self.card_avg_fill.set_data("--" if math.isnan(avg) else f"{avg * 100:.1f}%", "全局平均托盘空间利用率", "good" if (not math.isnan(avg) and avg >= 0.85) else "normal")
+        if hasattr(self, "card_success_total"):
+            success_total = successful_pallet_count(getattr(self, "pallets", []))
+            self.card_success_total.set_data(
+                str(success_total),
+                "全部结果中的成功托盘",
+                "good" if success_total else "normal",
+            )
         self._populate_overview_cards()
         self._on_sequence_mode_changed()
         self._set_status("done")
@@ -2410,7 +2420,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
         for kpi in ["kpi_score_big", "kpi_level_big", "kpi_support_big", "kpi_risk_big"]:
             if hasattr(self, kpi):
                 getattr(self, kpi).set_data("--", "等待结果")
-        for card_name in ["card_score", "card_level", "card_boxes", "card_mass", "card_fill", "card_mpm", "card_height", "card_support", "card_cg", "card_avg_fill"]:
+        for card_name in ["card_score", "card_level", "card_boxes", "card_mass", "card_fill", "card_mpm", "card_height", "card_support", "card_cg", "card_avg_fill", "card_success_total"]:
             if hasattr(self, card_name):
                 getattr(self, card_name).set_data("--", "--")
         if hasattr(self, "overview_cards"):

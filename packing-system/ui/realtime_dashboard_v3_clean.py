@@ -57,6 +57,10 @@ except Exception as exc:  # pragma: no cover
     raise RuntimeError("PyQt5 is required. Please: pip install PyQt5") from exc
 
 try:
+    from dashboard_state import (
+        apply_download_interval,
+        normalize_download_interval,
+    )
     from realtime_dashboard_v2 import (
         IndustrialPackingWorkbench,
         StatusPill,
@@ -178,7 +182,11 @@ def _write_ui_config(project_dir: Path, base_config_path: Path, excel_copy_path:
     return cfg_path
 
 
-def _write_ui_config_api_only(project_dir: Path, base_config_path: Path) -> Path:
+def _write_ui_config_api_only(
+    project_dir: Path,
+    base_config_path: Path,
+    download_interval: Optional[int] = None,
+) -> Path:
     config = _load_yaml(base_config_path)
     base_excel = (config.get("excel_data") or {}).get("source_file")
     bms_ref = (config.get("data_source") or {}).get("bms_reference_file") or base_excel or "668箱子数据集.xlsx"
@@ -192,10 +200,16 @@ def _write_ui_config_api_only(project_dir: Path, base_config_path: Path) -> Path
             "api_base_url",
             "https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io",
         ),
-        "download_interval": int(prev_ds.get("download_interval", 200) or 200),
+        "download_interval": prev_ds.get("download_interval", 200),
         "input_dir": prev_ds.get("input_dir", "input"),
         "bms_reference_file": bms_ref,
     }
+    apply_download_interval(
+        config,
+        prev_ds.get("download_interval", 200)
+        if download_interval is None
+        else download_interval,
+    )
     if not config.get("database"):
         config["database"] = {
             "host": "localhost",
@@ -351,6 +365,7 @@ class UiPackingWorker(QtCore.QThread):
         config_path: Path,
         out_path: Optional[Path] = None,
         api_mode: bool = False,
+        download_interval: int = 200,
         parent=None,
     ):
         super().__init__(parent)
@@ -358,6 +373,7 @@ class UiPackingWorker(QtCore.QThread):
         self.config_path = Path(config_path).resolve()
         self.out_path = Path(out_path).resolve() if out_path else None
         self.api_mode = api_mode
+        self.download_interval = normalize_download_interval(download_interval)
         self.process: Optional[subprocess.Popen] = None
         self._stop_requested = False
         self._emitted_results: set[str] = set()
@@ -503,7 +519,9 @@ class UiPackingWorker(QtCore.QThread):
         cmd_text = " ".join(f'"{x}"' if " " in x else x for x in cmd)
         self.started_cmd.emit(cmd_text)
         self._emit_log(f"[LOG] 后端日志文件：{self.log_file}")
-        self._emit_log("[LOG] 接口模式：后端将每 200 秒拉取接口并自动装箱，直到点击停止。")
+        self._emit_log(
+            f"[LOG] 接口模式：后端将每 {self.download_interval} 秒拉取接口并自动装箱，直到点击停止。"
+        )
         self._write_backend_log(f"[CMD] {cmd_text}")
 
         self.process = self._spawn_process(cmd)
@@ -577,6 +595,14 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self._history_refreshing = False
         self._current_result_path: Optional[Path] = None
         self._live_result_path: Optional[Path] = None
+        try:
+            base_config = _load_yaml(Path(project_dir) / DEFAULT_CONFIG_REL)
+            configured_interval = (base_config.get("data_source") or {}).get(
+                "download_interval", 200
+            )
+        except (OSError, ValueError, TypeError):
+            configured_interval = 200
+        self.download_interval = normalize_download_interval(configured_interval)
         super().__init__(project_dir)
         self.setWindowTitle("工业装箱工作台 V3 - 一键装箱 + 结果分析")
         self._write_log("[UI] V3模式：主流程为 选择Excel → 一键装箱；高级算法操作已合并到“算法设置”。")
@@ -611,6 +637,20 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.chk_api_mode.toggled.connect(self._on_api_mode_toggled)
         layout.addWidget(self.chk_api_mode)
 
+        self.lbl_download_interval = QtWidgets.QLabel("拉取间隔")
+        self.lbl_download_interval.setToolTip("WCS 接口库存数据的拉取周期")
+        layout.addWidget(self.lbl_download_interval)
+
+        self.sp_download_interval = QtWidgets.QSpinBox()
+        self.sp_download_interval.setRange(1, 86400)
+        self.sp_download_interval.setValue(self.download_interval)
+        self.sp_download_interval.setSuffix(" 秒")
+        self.sp_download_interval.setToolTip("允许范围：1–86400 秒")
+        self.sp_download_interval.valueChanged.connect(
+            lambda value: setattr(self, "download_interval", int(value))
+        )
+        layout.addWidget(self.sp_download_interval)
+
         self.btn_excel = QtWidgets.QPushButton("选择Excel")
         self.btn_excel.setObjectName("GhostButton")
         self.btn_excel.setToolTip("选择装箱输入 Excel，并自动生成本次运行配置。")
@@ -620,7 +660,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.btn_excel_run = QtWidgets.QPushButton("一键装箱")
         self.btn_excel_run.setObjectName("PrimaryButton")
         self.btn_excel_run.setToolTip(
-            "接口模式：启动常驻服务，每 200 秒拉取库存并装箱。\n"
+            "接口模式：按设置的拉取间隔启动常驻服务。\n"
             "Excel 模式：使用已选择的 Excel 运行一次装箱。"
         )
         self.btn_excel_run.clicked.connect(self.start_excel_packing)
@@ -680,6 +720,11 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
 
     def _on_api_mode_toggled(self, checked: bool) -> None:
         self.use_api_mode = checked
+        if hasattr(self, "sp_download_interval"):
+            worker_running = bool(self.worker and self.worker.isRunning())
+            self.sp_download_interval.setEnabled(checked and not worker_running)
+        if hasattr(self, "lbl_download_interval"):
+            self.lbl_download_interval.setEnabled(checked)
 
     def _write_log(self, text: str) -> None:
         """界面日志与 VSCode 终端同步输出，便于开发调试。"""
@@ -866,11 +911,19 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
 
     def start_excel_packing(self) -> None:
         if self.use_api_mode:
-            cfg = _write_ui_config_api_only(self.project_dir, self.project_dir / DEFAULT_CONFIG_REL)
+            interval = normalize_download_interval(self.sp_download_interval.value())
+            self.download_interval = interval
+            cfg = _write_ui_config_api_only(
+                self.project_dir,
+                self.project_dir / DEFAULT_CONFIG_REL,
+                interval,
+            )
             self.generated_config_path = cfg
             self.config_path = cfg
             self._write_log(f"[UI] 接口模式：已生成临时配置 {cfg}")
-            self._write_log("[UI] 将启动常驻接口服务（每 200 秒拉取一次），点击停止结束。")
+            self._write_log(
+                f"[UI] 将启动常驻接口服务（每 {interval} 秒拉取一次），点击停止结束。"
+            )
         else:
             # 已经通过“选择Excel”选过文件时，直接运行；没有选过时再弹出选择框。
             if self.generated_config_path is None or self.selected_excel_copy is None:
@@ -896,6 +949,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             self.config_path,
             out_path=out_path,
             api_mode=api_mode,
+            download_interval=self.download_interval,
             parent=self,
         )
         self.worker.log.connect(self._write_log)
@@ -913,11 +967,16 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             self.btn_excel_run.setEnabled(False)
         if hasattr(self, "btn_excel"):
             self.btn_excel.setEnabled(False)
+        if hasattr(self, "sp_download_interval"):
+            self.sp_download_interval.setEnabled(False)
         self.btn_stop_backend.setEnabled(True)
         self.btn_stop_backend.setVisible(True)
         self.btn_load.setEnabled(False)
         if api_mode:
-            self.step_run.set_state("active", "接口服务运行中：每 200 秒拉取并装箱，完成后自动刷新结果")
+            self.step_run.set_state(
+                "active",
+                f"接口服务运行中：每 {self.download_interval} 秒拉取并装箱，完成后自动刷新结果",
+            )
         else:
             self.step_run.set_state("active", "后端装箱算法正在运行，完成后会自动显示结果")
         self._set_status("running")
@@ -952,6 +1011,8 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             self.btn_excel_run.setEnabled(True)
         if hasattr(self, "btn_excel"):
             self.btn_excel.setEnabled(True)
+        if hasattr(self, "sp_download_interval"):
+            self.sp_download_interval.setEnabled(self.use_api_mode)
         if hasattr(self, "btn_stop_backend"):
             self.btn_stop_backend.setEnabled(False)
             self.btn_stop_backend.setVisible(True)
