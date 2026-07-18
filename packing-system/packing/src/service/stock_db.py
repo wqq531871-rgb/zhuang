@@ -9,6 +9,8 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import pymysql
 from pymysql.cursors import DictCursor
 
+from src.adapter.wcs_adapter import coerce_product_code
+
 
 @dataclass(frozen=True)
 class DatabaseConfig:
@@ -93,16 +95,19 @@ class WcsStockRepository:
         """按 product_code 去重插入；已存在则跳过。返回新插入行数。
 
         新行 ``up_to_standard='0'``（未达标）。
+        Mock 的 ``"PROD001"`` 等非纯数字码会经 ``coerce_product_code`` 转成 int。
         """
         prepared: List[Tuple] = []
         seen_in_batch: set = set()
+        skipped_invalid = 0
+        invalid_samples: List[str] = []
         for entry in entries:
             pc_raw = entry.get("product_code")
-            if pc_raw is None or pc_raw == "":
-                continue
-            try:
-                pc = int(pc_raw)
-            except (TypeError, ValueError):
+            pc = coerce_product_code(pc_raw)
+            if pc is None:
+                skipped_invalid += 1
+                if len(invalid_samples) < 5:
+                    invalid_samples.append(repr(pc_raw))
                 continue
             if pc in seen_in_batch:
                 continue
@@ -128,12 +133,23 @@ class WcsStockRepository:
                 "0",
             ))
 
+        if skipped_invalid:
+            print(
+                f"[WCS-DB] 跳过无法解析的 product_code {skipped_invalid} 条"
+                f"（样例：{', '.join(invalid_samples)}）"
+            )
+
         if not prepared:
             return 0
 
         codes = [row[5] for row in prepared]
         existing = self._existing_product_codes(codes)
         to_insert = [row for row in prepared if row[5] not in existing]
+        skipped_existing = len(prepared) - len(to_insert)
+        if skipped_existing:
+            print(
+                f"[WCS-DB] product_code 已存在、跳过 {skipped_existing} 条"
+            )
         if not to_insert:
             return 0
 
@@ -183,12 +199,9 @@ class WcsStockRepository:
         """将达标箱子的 up_to_standard 更新为 '1'。返回影响行数。"""
         codes = []
         for pc in product_codes:
-            if pc is None or pc == "":
-                continue
-            try:
-                codes.append(int(pc))
-            except (TypeError, ValueError):
-                continue
+            coerced = coerce_product_code(pc)
+            if coerced is not None:
+                codes.append(coerced)
         codes = list({c for c in codes})
         if not codes:
             return 0

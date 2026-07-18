@@ -188,40 +188,31 @@ def _write_ui_config_api_only(
     project_dir: Path,
     base_config_path: Path,
     download_interval: Optional[int] = None,
+    use_real_api: Optional[bool] = None,
 ) -> Path:
-    config = _load_yaml(base_config_path)
-    base_excel = (config.get("excel_data") or {}).get("source_file")
-    bms_ref = (config.get("data_source") or {}).get("bms_reference_file") or base_excel or "668箱子数据集.xlsx"
+    """从全局 packing_config.yaml 生成接口模式临时配置。
 
+    database / api 地址等一律沿用 base，不在 UI 里写死副本；
+    仅覆盖本次运行的 download_interval / use_real_api（若传入）。
+    """
+    config = _load_yaml(base_config_path)
     config["run_mode"] = "normal"
-    # 保留 base 里的 database 段（读/写 zhuangdb）；只覆盖 data_source
-    prev_ds = config.get("data_source") or {}
-    config["data_source"] = {
-        "mode": "api",
-        "api_base_url": prev_ds.get(
-            "api_base_url",
-            "https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io",
-        ),
-        "download_interval": prev_ds.get("download_interval", 200),
-        "input_dir": prev_ds.get("input_dir", "input"),
-        "bms_reference_file": bms_ref,
-    }
+    prev_ds = dict(config.get("data_source") or {})
+    prev_ds["mode"] = "api"
+    config["data_source"] = prev_ds
     apply_download_interval(
         config,
         prev_ds.get("download_interval", 200)
         if download_interval is None
         else download_interval,
     )
+    if use_real_api is not None:
+        config["data_source"]["use_real_api"] = bool(use_real_api)
+    # database 段必须来自 base；缺失则报错，禁止在 UI 再写一套密码
     if not config.get("database"):
-        config["database"] = {
-            "host": "localhost",
-            "port": 3306,
-            "user": "root",
-            # TODO(数据库密码): 与 packing_config.yaml → database.password 保持一致
-            "password": "123456",
-            "database": "zhuangdb",
-            "charset": "utf8mb4",
-        }
+        raise ValueError(
+            f"配置缺少 database 段，请在 {base_config_path} 中填写（全局唯一）。"
+        )
 
     temp_dir = _runtime_temp_dir(project_dir)
     temp_dir.mkdir(parents=True, exist_ok=True)
@@ -232,6 +223,7 @@ def _write_ui_config_api_only(
     return cfg_path
 
 
+_WCS_STOP_MARKER = "[WCS-STOP]"
 _UI_RESULT_RE = re.compile(r"\[UI-RESULT\]\s*(.+)$")
 _RESULT_TS_RE = re.compile(r"(\d{8})_(\d{6})")
 _HISTORY_LIMIT = 50
@@ -378,6 +370,7 @@ class UiPackingWorker(QtCore.QThread):
         self.download_interval = normalize_download_interval(download_interval)
         self.process: Optional[subprocess.Popen] = None
         self._stop_requested = False
+        self._api_forced_stop = False
         self.completed_ok = False
         self._emitted_results: set[str] = set()
         ensure_runtime_dirs(self.project_dir)
@@ -397,6 +390,10 @@ class UiPackingWorker(QtCore.QThread):
                     self.process.kill()
                 except Exception:
                     pass
+
+    @property
+    def stopped_like_user(self) -> bool:
+        return self._stop_requested or self._api_forced_stop
 
     def _write_backend_log(self, text: str) -> None:
         try:
@@ -560,12 +557,14 @@ class UiPackingWorker(QtCore.QThread):
             if msg:
                 self._emit_log(msg)
                 self._maybe_emit_ui_result(msg)
+                if _WCS_STOP_MARKER in msg:
+                    self._api_forced_stop = True
 
             if self.process.poll() is not None and line_queue.empty():
                 break
 
         code = self.process.wait()
-        if self._stop_requested:
+        if self.stopped_like_user:
             self._emit_log("[UI] 接口装箱服务已停止。")
             return
         if code != 0:
@@ -608,12 +607,14 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self._live_result_path: Optional[Path] = None
         try:
             base_config = _load_yaml(Path(project_dir) / DEFAULT_CONFIG_REL)
-            configured_interval = (base_config.get("data_source") or {}).get(
-                "download_interval", 200
-            )
+            ds = base_config.get("data_source") or {}
+            configured_interval = ds.get("download_interval", 200)
+            configured_use_real = bool(ds.get("use_real_api", True))
         except (OSError, ValueError, TypeError):
             configured_interval = 200
+            configured_use_real = True
         self.download_interval = normalize_download_interval(configured_interval)
+        self.use_real_api = configured_use_real
         super().__init__(project_dir)
         self.setWindowTitle("工业装箱工作台 V3 - 一键装箱 + 结果分析")
         self._write_log("[UI] V3模式：主流程为 选择Excel → 一键装箱；高级算法操作已合并到“算法设置”。")
@@ -665,6 +666,17 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             lambda value: setattr(self, "download_interval", int(value))
         )
         layout.addWidget(self.sp_download_interval)
+
+        self.chk_use_real_api = QtWidgets.QCheckBox("真实接口")
+        self.chk_use_real_api.setChecked(bool(getattr(self, "use_real_api", True)))
+        self.chk_use_real_api.setToolTip(
+            "开：用 packing_config.yaml 的 api_base_url；失败则整系统停止。\n"
+            "关：改用 Postman 备用地址（api_fallback_url）。"
+        )
+        self.chk_use_real_api.toggled.connect(
+            lambda checked: setattr(self, "use_real_api", bool(checked))
+        )
+        layout.addWidget(self.chk_use_real_api)
 
         self.btn_excel = QtWidgets.QPushButton("选择Excel")
         self.btn_excel.setObjectName("GhostButton")
@@ -755,6 +767,8 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             )
         if hasattr(self, "lbl_download_interval"):
             self.lbl_download_interval.setEnabled(policy.uses_interval)
+        if hasattr(self, "chk_use_real_api"):
+            self.chk_use_real_api.setEnabled(policy.uses_api and not worker_running)
         if hasattr(self, "btn_excel"):
             self.btn_excel.setEnabled(policy.uses_excel and not worker_running)
 
@@ -947,14 +961,25 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         if policy.uses_api:
             interval = normalize_download_interval(self.sp_download_interval.value())
             self.download_interval = interval
+            use_real = bool(
+                self.chk_use_real_api.isChecked()
+                if hasattr(self, "chk_use_real_api")
+                else getattr(self, "use_real_api", True)
+            )
+            self.use_real_api = use_real
             cfg = _write_ui_config_api_only(
                 self.project_dir,
                 self.project_dir / DEFAULT_CONFIG_REL,
                 interval,
+                use_real_api=use_real,
             )
             self.generated_config_path = cfg
             self.config_path = cfg
             self._write_log(f"[UI] 接口模式：已生成临时配置 {cfg}")
+            self._write_log(
+                f"[UI] use_real_api={use_real} "
+                f"（{'真实 WCS，失败即停' if use_real else 'Postman 备用'}）"
+            )
             descriptions = {
                 "continuous": f"每 {interval} 秒拉取并计算，直到手动停止",
                 "once": "拉取并计算一次后停止",
@@ -1012,6 +1037,8 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             self.btn_excel.setEnabled(False)
         if hasattr(self, "sp_download_interval"):
             self.sp_download_interval.setEnabled(False)
+        if hasattr(self, "chk_use_real_api"):
+            self.chk_use_real_api.setEnabled(False)
         if hasattr(self, "cmb_run_mode"):
             self.cmb_run_mode.setEnabled(False)
         self.btn_stop_backend.setEnabled(True)
@@ -1050,7 +1077,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         super().on_worker_finished()
         finished_mode = self._active_run_mode
         completed_ok = bool(self.worker and self.worker.completed_ok)
-        stopped_by_user = bool(self.worker and self.worker._stop_requested)
+        stopped_by_user = bool(self.worker and self.worker.stopped_like_user)
         self._api_service_active = False
         self._active_run_mode = None
         if hasattr(self, "action_rerun_config"):
@@ -1066,9 +1093,16 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             self.btn_stop_backend.setEnabled(False)
             self.btn_stop_backend.setVisible(True)
         if finished_mode == "continuous" and (completed_ok or stopped_by_user):
-            self.step_run.set_state("done", "接口持续服务已停止")
-            self._set_status("idle")
-            self._write_log("[UI] 接口持续服务已停止。")
+            detail = (
+                "真实接口失败，已停止"
+                if self.worker and getattr(self.worker, "_api_forced_stop", False)
+                else "接口持续服务已停止"
+            )
+            self.step_run.set_state("done", detail)
+            self._set_status("stopped" if (
+                self.worker and getattr(self.worker, "_api_forced_stop", False)
+            ) else "idle")
+            self._write_log(f"[UI] {detail}。")
         elif completed_ok and finished_mode in {"once", "until-success"}:
             finished_messages = {
                 "once": "接口单次运行已完成",
@@ -1078,6 +1112,10 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             self.step_run.set_state("done", message)
             self._set_status("idle")
             self._write_log(f"[UI] {message}。")
+        elif stopped_by_user:
+            self.step_run.set_state("done", "已停止")
+            self._set_status("stopped")
+            self._write_log("[UI] 接口服务已停止。")
 
     def on_backend_finished_json(self, json_path: str) -> None:
         path = Path(json_path)

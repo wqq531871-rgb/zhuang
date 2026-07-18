@@ -30,6 +30,9 @@ class _NeverStoppingEvent:
     def is_set(self):
         return False
 
+    def set(self):
+        return None
+
     def wait(self, timeout=None):
         self.wait_calls.append(timeout)
         return False
@@ -83,6 +86,57 @@ def test_until_success_stops_when_success_and_failed_pallets_coexist():
     assert service._stop.wait_calls == []
 
 
+def test_effective_url_switches_with_use_real_api():
+    from src.service.wcs_service import DataSourceConfig
+
+    real = DataSourceConfig(
+        mode="api",
+        use_real_api=True,
+        api_base_url="http://10.205.46.191:8092",
+        api_fallback_url="https://mock.example",
+        stock_path="/adaptor/api/wcs/reqstockinfo",
+        plan_path="/adaptor/api/wcs/sendpalletplanresult",
+        download_interval=10,
+        input_dir=Path("."),
+        bms_reference_file=Path("bms.xlsx"),
+        output_dir=Path("."),
+    )
+    assert real.effective_api_base_url == "http://10.205.46.191:8092"
+
+    mock = DataSourceConfig(
+        mode="api",
+        use_real_api=False,
+        api_base_url="http://10.205.46.191:8092",
+        api_fallback_url="https://mock.example",
+        stock_path="/adaptor/api/wcs/reqstockinfo",
+        plan_path="/adaptor/api/wcs/sendpalletplanresult",
+        download_interval=10,
+        input_dir=Path("."),
+        bms_reference_file=Path("bms.xlsx"),
+        output_dir=Path("."),
+    )
+    assert mock.effective_api_base_url == "https://mock.example"
+
+
+def test_handle_fetch_error_stops_only_when_use_real_api():
+    service = object.__new__(WcsPackingService)
+    service._stop = _NeverStoppingEvent()
+    service._db_insert_wake = Mock()
+    service.stopped_by_api_failure = False
+    service._ds = SimpleNamespace(use_real_api=True)
+
+    assert service._handle_fetch_error(RuntimeError("boom"), "test") is True
+    assert service.stopped_by_api_failure is True
+
+    service2 = object.__new__(WcsPackingService)
+    service2._stop = _NeverStoppingEvent()
+    service2._db_insert_wake = Mock()
+    service2.stopped_by_api_failure = False
+    service2._ds = SimpleNamespace(use_real_api=False)
+    assert service2._handle_fetch_error(RuntimeError("boom"), "test") is False
+    assert service2.stopped_by_api_failure is False
+
+
 @pytest.mark.parametrize(
     ("mode", "method_name"),
     [
@@ -93,6 +147,7 @@ def test_until_success_stops_when_success_and_failed_pallets_coexist():
 )
 def test_wcs_cli_routes_each_run_mode(monkeypatch, mode, method_name):
     service = Mock()
+    service.stopped_by_api_failure = False
     service.run_once.return_value = True
     service.run_until_success.return_value = True
     service_factory = Mock(return_value=service)

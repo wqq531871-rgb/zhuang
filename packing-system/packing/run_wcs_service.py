@@ -53,9 +53,16 @@ def main(argv=None):
         safe_compare=safe_compare,
     )
     if run_mode == "once":
-        return 0 if service.run_once() else 1
+        ok = service.run_once()
+        # 真实接口失败已按「停止」处理，退出码 0 避免 UI 报「异常退出」
+        if service.stopped_by_api_failure:
+            return 0
+        return 0 if ok else 1
     if run_mode == "until-success":
-        return 0 if service.run_until_success() else 1
+        ok = service.run_until_success()
+        if service.stopped_by_api_failure:
+            return 0
+        return 0 if ok else 1
     service.run_loop()
     return 0
 

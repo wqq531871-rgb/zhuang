@@ -32,8 +32,15 @@ from src.adapter import (
     report_to_plan_result,
     stock_to_boxes,
 )
-from src.adapter.wcs_adapter import build_stock_request
-from src.config import DATA_DIR, INPUT_DIR, OUTPUT_DIR, WORKSPACE_ROOT, ConfigLoader
+from src.adapter.wcs_adapter import build_stock_request, coerce_product_code
+from src.config import (
+    DATA_DIR,
+    DEFAULT_PACKING_CONFIG,
+    INPUT_DIR,
+    OUTPUT_DIR,
+    WORKSPACE_ROOT,
+    ConfigLoader,
+)
 from src.main.report_persister import NullReportPersister
 from src.service.stock_db import (
     WcsStockRepository,
@@ -49,41 +56,62 @@ _PUSH_PLAN_TO_WCS = False
 # 装箱器空闲等待超时（秒）：防止漏掉 wake 信号。
 _PACK_IDLE_POLL_SEC = 2.0
 
-# TODO 输入输出地址
-# 接口1
-WCS_STOCK_PATH = "/api/wcs/reqstockinfo"
-# 接口2
-WCS_PLAN_PATH = "ssss/api/wcs/sendpalletplanresult"
+# UI 识别此标记后按「停止」处理（与点击停止按钮同效）。
+WCS_STOP_MARKER = "[WCS-STOP]"
 
-_DEFAULT_DATA_SOURCE = {
-    "mode": "api",
-    # TODO(接口地址): 兜底的Mock地址
-    "api_base_url": "https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io",
-    # TODO(拉取间隔): 接口1轮询间隔（秒）。仅拉取线程使用。
-    "download_interval": 200,
-    "input_dir": "input",
-    "bms_reference_file": "668箱子数据集.xlsx",
-}
 
-_DEFAULT_DATABASE = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "root",
-    # TODO(数据库密码): 与 packing_config.yaml → database.password 保持一致；现场改正式密码
-    "password": "123456",
-    "database": "zhuangdb",
-    "charset": "utf8mb4",
-}
+def _resolve_yaml_path(config_path: Optional[Path] = None) -> Optional[Path]:
+    """显式 --config > 仓库根 packing_config.yaml。"""
+    if config_path is not None:
+        path = Path(config_path)
+        if path.exists():
+            return path
+    if DEFAULT_PACKING_CONFIG.exists():
+        return DEFAULT_PACKING_CONFIG
+    return None
+
+
+def _require_data_source_raw(config_path: Optional[Path] = None) -> dict:
+    """只从 packing_config.yaml 读 data_source；无代码内第二套配置。"""
+    yaml_path = _resolve_yaml_path(config_path)
+    if yaml_path is None:
+        raise FileNotFoundError(
+            f"找不到配置文件：请提供 --config，或确保存在 {DEFAULT_PACKING_CONFIG}"
+        )
+    try:
+        raw = (ConfigLoader(yaml_path).config_data or {}).get("data_source") or {}
+    except (OSError, ValueError, KeyError) as exc:
+        raise ValueError(f"读取 data_source 失败（{yaml_path}）：{exc}") from exc
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError(f"配置缺少 data_source 段：{yaml_path}")
+    return raw
 
 
 @dataclass(frozen=True)
 class DataSourceConfig:
     mode: str
+    use_real_api: bool
     api_base_url: str
+    api_fallback_url: str
+    stock_path: str
+    plan_path: str
     download_interval: int
     input_dir: Path
     bms_reference_file: Path
     output_dir: Path
+
+    @property
+    def effective_api_base_url(self) -> str:
+        """真实接口开 → api_base_url；关 → Postman 备用。"""
+        if self.use_real_api:
+            return self.api_base_url
+        return self.api_fallback_url or self.api_base_url
+
+    def stock_url(self) -> str:
+        return f"{self.effective_api_base_url.rstrip('/')}{self.stock_path}"
+
+    def plan_url(self) -> str:
+        return f"{self.effective_api_base_url.rstrip('/')}{self.plan_path}"
 
 
 @dataclass(frozen=True)
@@ -96,27 +124,34 @@ class PackRunResult:
 
 
 def load_data_source_config(config_path: Optional[Path] = None) -> DataSourceConfig:
-    """从 yaml 的 data_source 段读取接口模式配置。"""
-    merged = dict(_DEFAULT_DATA_SOURCE)
-    if config_path and Path(config_path).exists():
-        try:
-            raw = (ConfigLoader(Path(config_path)).config_data or {}).get("data_source") or {}
-            merged.update({k: v for k, v in raw.items() if v is not None})
-        except (OSError, ValueError, KeyError):
-            pass
-    rel_input = str(merged.get("input_dir", "input") or "input")
-    bms_rel = str(
-        merged.get("bms_reference_file", _DEFAULT_DATA_SOURCE["bms_reference_file"])
-        or _DEFAULT_DATA_SOURCE["bms_reference_file"]
-    )
+    """从 yaml 的 data_source 段读取接口模式配置（单一来源 packing_config.yaml）。"""
+    raw = _require_data_source_raw(config_path)
+    rel_input = str(raw.get("input_dir") or "input")
+    bms_rel = str(raw.get("bms_reference_file") or "")
+    if not bms_rel:
+        raise ValueError("data_source.bms_reference_file 未配置")
     input_path = Path(rel_input)
     if not input_path.is_absolute():
-        # 相对路径一律落在 packing-workspace 下（默认 input/）
         input_path = (INPUT_DIR if rel_input in {"input", "."} else WORKSPACE_ROOT / rel_input)
+    api_base = str(raw.get("api_base_url") or "").strip()
+    if not api_base:
+        raise ValueError("data_source.api_base_url 未配置")
+    stock_path = str(raw.get("stock_path") or "").strip()
+    plan_path = str(raw.get("plan_path") or "").strip()
+    if not stock_path or not plan_path:
+        raise ValueError("data_source.stock_path / plan_path 未配置")
+    if not stock_path.startswith("/"):
+        stock_path = "/" + stock_path
+    if not plan_path.startswith("/"):
+        plan_path = "/" + plan_path
     return DataSourceConfig(
-        mode=str(merged.get("mode", "api")).strip().lower(),
-        api_base_url=str(merged.get("api_base_url") or _DEFAULT_DATA_SOURCE["api_base_url"]),
-        download_interval=max(1, int(merged.get("download_interval", 200) or 200)),
+        mode=str(raw.get("mode") or "api").strip().lower(),
+        use_real_api=bool(raw.get("use_real_api", True)),
+        api_base_url=api_base,
+        api_fallback_url=str(raw.get("api_fallback_url") or "").strip(),
+        stock_path=stock_path,
+        plan_path=plan_path,
+        download_interval=max(1, int(raw.get("download_interval") or 200)),
         input_dir=input_path.resolve(),
         bms_reference_file=(DATA_DIR / bms_rel).resolve(),
         output_dir=OUTPUT_DIR.resolve(),
@@ -124,19 +159,21 @@ def load_data_source_config(config_path: Optional[Path] = None) -> DataSourceCon
 
 
 def _load_db_config_from_yaml(config_path: Optional[Path] = None):
-    merged = dict(_DEFAULT_DATABASE)
-    if config_path and Path(config_path).exists():
+    """只从 packing_config.yaml（或 --config）读 database 段，无代码内密码副本。"""
+    yaml_path = _resolve_yaml_path(config_path)
+    raw = {}
+    if yaml_path is not None:
         try:
-            raw = (ConfigLoader(Path(config_path)).config_data or {}).get("database") or {}
-            merged.update({k: v for k, v in raw.items() if v is not None})
+            raw = (ConfigLoader(yaml_path).config_data or {}).get("database") or {}
         except (OSError, ValueError, KeyError):
-            pass
-    return load_database_config(merged)
+            raw = {}
+    return load_database_config(raw)
 
 
-def fetch_stock_response(base_url: str, timeout: int = 30) -> Dict:
+def fetch_stock_response(base_url: str, stock_path: str, timeout: int = 30) -> Dict:
     """POST 接口 1，返回完整响应体 {code, msg, data}。"""
-    url = f"{base_url.rstrip('/')}{WCS_STOCK_PATH}"
+    path = stock_path if stock_path.startswith("/") else f"/{stock_path}"
+    url = f"{base_url.rstrip('/')}{path}"
     resp = requests.post(
         url,
         json=build_stock_request(),
@@ -152,9 +189,12 @@ def fetch_stock_response(base_url: str, timeout: int = 30) -> Dict:
     return body
 
 
-def push_plan_result(base_url: str, cases: List[Dict], timeout: int = 60) -> Dict:
+def push_plan_result(
+    base_url: str, cases: List[Dict], plan_path: str, timeout: int = 60
+) -> Dict:
     """POST 接口 2，发送 case 数组，返回 WCS 响应体。"""
-    url = f"{base_url.rstrip('/')}{WCS_PLAN_PATH}"
+    path = plan_path if plan_path.startswith("/") else f"/{plan_path}"
+    url = f"{base_url.rstrip('/')}{path}"
     resp = requests.post(url, json=cases, timeout=timeout, verify=False)
     resp.raise_for_status()
     body = resp.json()
@@ -193,13 +233,9 @@ def _success_product_codes(report: Optional[Dict]) -> Set[int]:
         if pallet.get("mpm_status") != "SUCCESS":
             continue
         for item in pallet.get("packed_items") or []:
-            pc = item.get("product_code")
-            if pc is None or pc == "":
-                continue
-            try:
-                codes.add(int(pc))
-            except (TypeError, ValueError):
-                continue
+            pc = coerce_product_code(item.get("product_code"))
+            if pc is not None:
+                codes.add(pc)
     return codes
 
 
@@ -224,8 +260,27 @@ class WcsPackingService:
         self._stop = threading.Event()
         # 仅有新插入时置位，装箱线程据此开算
         self._db_insert_wake = threading.Event()
+        # use_real_api 开且接口失败时置位；UI 据此按「停止」处理
+        self.stopped_by_api_failure = False
         self._ensure_dirs()
         self._reload_reference_data()
+
+    def _request_stop_like_user(self, reason: str) -> None:
+        """真实接口失败：打印标记并停机（等同 UI 点「停止」）。"""
+        self.stopped_by_api_failure = True
+        print(f"{WCS_STOP_MARKER} {reason}")
+        self._stop.set()
+        self._db_insert_wake.set()
+
+    def _handle_fetch_error(self, exc: Exception, context: str) -> bool:
+        """处理拉取异常。返回 True 表示应结束当前循环/模式。"""
+        if self._ds.use_real_api:
+            self._request_stop_like_user(
+                f"真实接口调用失败（{context}），服务停止：{exc}"
+            )
+            return True
+        print(f"[WCS-拉] {context}异常（备用 Postman）：{exc}")
+        return False
 
     @property
     def raw_dir(self) -> Path:
@@ -263,7 +318,9 @@ class WcsPackingService:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         print(f"\n{'=' * 60}")
         print(f"[WCS-拉] {ts}：拉取接口 1 …")
-        stock_body = fetch_stock_response(self._ds.api_base_url)
+        stock_body = fetch_stock_response(
+            self._ds.effective_api_base_url, self._ds.stock_path
+        )
 
         raw_path = self.raw_dir / f"{ts}.json"
         _save_json(raw_path, stock_body)
@@ -282,7 +339,7 @@ class WcsPackingService:
         inserted = self._repo.insert_new_stock_entries(kept)
         print(
             f"[WCS-拉] 落库完成：候选 {len(kept)} 条，新插入 {inserted} 条"
-            f"（已存在 product_code 已跳过，up_to_standard=0）。"
+            f"（新行 up_to_standard=0）。"
         )
         if inserted > 0:
             self._db_insert_wake.set()
@@ -358,7 +415,11 @@ class WcsPackingService:
 
         if _PUSH_PLAN_TO_WCS:
             try:
-                push_body = push_plan_result(self._ds.api_base_url, plan.cases)
+                push_body = push_plan_result(
+                    self._ds.effective_api_base_url,
+                    plan.cases,
+                    self._ds.plan_path,
+                )
                 print(
                     f"[WCS-装] 接口 2 推送成功：code={push_body.get('code')}, "
                     f"msg={push_body.get('msg')}"
@@ -386,8 +447,8 @@ class WcsPackingService:
             try:
                 self.fetch_once()
             except Exception as exc:
-                print(f"[WCS-拉] 本轮拉取异常：{exc}")
-            # TODO(拉取间隔): 仅拉取线程按秒等待
+                if self._handle_fetch_error(exc, "本轮拉取"):
+                    break
             if self._stop.wait(self._ds.download_interval):
                 break
 
@@ -420,7 +481,13 @@ class WcsPackingService:
     def run_loop(self) -> None:
         print("=" * 60)
         print("WCS 接口装箱服务（DB 模式）")
-        print(f"  接口地址：{self._ds.api_base_url}")
+        print(
+            f"  接口模式：{'真实 WCS' if self._ds.use_real_api else 'Postman 备用'}"
+            f"（use_real_api={self._ds.use_real_api}）"
+        )
+        print(f"  接口地址：{self._ds.effective_api_base_url}")
+        print(f"  接口1：{self._ds.stock_url()}")
+        print(f"  接口2：{self._ds.plan_url()}")
         print(f"  拉取间隔：{self._ds.download_interval} 秒（仅拉取）")
         print(f"  原始 JSON：{self.raw_dir}")
         print(
@@ -460,7 +527,8 @@ class WcsPackingService:
         try:
             inserted = self.fetch_once()
         except Exception as exc:
-            print(f"[WCS] run_once 拉取失败：{exc}")
+            if self._handle_fetch_error(exc, "run_once 拉取"):
+                return False
             return False
         if inserted <= 0:
             print("[WCS] run_once：无新插入，不装箱。")
@@ -489,7 +557,8 @@ class WcsPackingService:
                 else:
                     print("[WCS] 本轮无新数据，不重复计算现有库存。")
             except Exception as exc:
-                print(f"[WCS] 成功等待模式本轮异常：{exc}")
+                if self._handle_fetch_error(exc, "成功等待模式本轮"):
+                    return False
 
             if self._stop.wait(self._ds.download_interval):
                 break

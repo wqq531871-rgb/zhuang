@@ -67,26 +67,33 @@ excel_data:
   result_sheet: 最终挑选结果
   bms_sheet: 包装物料主数据(BMS)
 
-# TODO 实际地址，到现场修改。目前使用Postman Mock地址。
-# 公司给的完整地址示例：
-#   http://192.168.1.100:8080/adaptor/api/wcs/reqstockinfo
-#   http://192.168.1.100:8080/adaptor/api/wcs/sendpalletplanresult
-# 这里只填「协议 + IP/域名 + 端口」，即去掉路径后的根地址，例如：
-#   api_base_url: http://192.168.1.100:8080
+# data_source / database：全局唯一配置（算法、WCS 服务、UI 共用本文件，勿在代码里再写一份）。
+# 完整 URL = api_base_url（或备用）+ stock_path / plan_path。
 data_source:
   mode: api
+  # TODO(真实接口开关): true=用 api_base_url，失败则整服务停止（等同 UI「停止」）；
+  #   false=用 api_fallback_url（Postman），失败只打日志。UI「真实接口」勾选可改。
+  use_real_api: false
+  # TODO(现场接口根地址): 真实 WCS「协议+IP/域名+端口」，到现场改成正式地址。
   api_base_url: http://10.205.46.191:8092
-  # TODO(拉取间隔): 接口1轮询间隔（秒）。仅拉取线程使用；装箱仅在有新插入时触发。
+  # TODO(备用 Mock 地址): use_real_api=false 时使用；换成你的 Postman Mock 根地址。
+  api_fallback_url: https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io
+  # TODO(接口1 path): 库存拉取路径，拼在根地址后。
+  stock_path: /adaptor/api/wcs/reqstockinfo
+  # TODO(接口2 path): 规划结果推送路径，拼在根地址后。
+  plan_path: /adaptor/api/wcs/sendpalletplanresult
+  # TODO(拉取间隔): 接口1 轮询间隔（秒）。UI「拉取间隔」可改，写入本次临时配置后生效。
   download_interval: 200
   input_dir: input
   bms_reference_file: selected_5000_boxes_9_1_concentrated_3orders.xlsx
 
-# TODO(数据库): localhost zhuangdb；按本机 MySQL 账号改 user/password
+# TODO(数据库): 全局唯一；现场改 host/port/user/password/database。
+#   可用 packing_config.local.yaml 覆盖密码（已被 gitignore），勿把生产密码提交仓库。
 database:
   host: localhost
   port: 3306
   user: root
-  # TODO(数据库密码): 现场部署时改成正式密码，勿把生产密码提交到公开仓库
-  password: "CHANGE_ME"
+  # TODO(数据库密码): 现场部署改成正式密码。
+  password: "123456"
   database: zhuangdb
   charset: utf8mb4
