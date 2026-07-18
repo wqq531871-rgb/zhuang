@@ -2266,16 +2266,22 @@ class IndustrialPackingWorkbench(BaseDashboard):
         if hasattr(self, "status_pill"):
             self.status_pill.set_state(state, msg or text_map.get(state, state))
         if hasattr(self, "run_progress"):
-            if state == "idle":
-                self.run_progress.setValue(0)
-                self.run_progress.setFormat("等待开始")
-            elif state == "running":
+            if state == "running":
+                # 不确定进度：蓝色滚动条
                 self.run_progress.setRange(0, 0)
-                self.run_progress.setFormat("后端计算中")
+                self.run_progress.setFormat(msg or "后端计算中")
             else:
+                # 离开 running 必须退出忙碌模式，否则滚动条会一直转
                 self.run_progress.setRange(0, 100)
-                self.run_progress.setValue(100 if state == "done" else 0)
-                self.run_progress.setFormat(text_map.get(state, state))
+                if state == "done":
+                    self.run_progress.setValue(100)
+                    self.run_progress.setFormat(msg or "已完成")
+                elif state == "idle":
+                    self.run_progress.setValue(0)
+                    self.run_progress.setFormat(msg or "等待开始")
+                else:
+                    self.run_progress.setValue(0)
+                    self.run_progress.setFormat(msg or text_map.get(state, state))
 
     def choose_project_dir(self) -> None:
         path = QtWidgets.QFileDialog.getExistingDirectory(self, "选择装箱算法项目目录", str(self.project_dir))
