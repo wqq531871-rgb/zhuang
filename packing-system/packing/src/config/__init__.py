@@ -28,6 +28,7 @@ __all__ = [
     "DATA_DIR",
     "OUTPUT_DIR",
     "INPUT_DIR",
+    "DEFAULT_PACKING_CONFIG",
     # 配置类
     "PalletConfig",
     "ConstraintConfig",

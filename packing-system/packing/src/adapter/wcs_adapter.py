@@ -25,7 +25,7 @@ from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from src.config import ConfigLoader
+from src.config import ConfigLoader, DEFAULT_PACKING_CONFIG
 from src.config.constants import SMALL_BOX_BMS_SHEET
 # 复用既有口径：BMS 列校验/解析、is_small_box 体积分位标记（与增量三表同策略）
 from src.incremental.loader import _apply_small_box_flags, _build_mpm_index
@@ -78,7 +78,7 @@ def default_pallet_dims_map(config_path: Optional[Path] = None) -> Dict[str, Dic
     TODO(§8-2): MH110 尺寸待企业提供后补进 yaml pallets 段即可（自动带出）。
     """
     if config_path is None:
-        config_path = Path(__file__).resolve().parents[2] / 'config' / 'packing_config.yaml'
+        config_path = DEFAULT_PACKING_CONFIG
     dims: Dict[str, Dict[str, float]] = dict(_FALLBACK_PALLET_DIMS)
     try:
         pallets = ConfigLoader(Path(config_path)).config_data.get('pallets') or {}

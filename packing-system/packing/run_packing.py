@@ -23,6 +23,7 @@ import pandas as pd
 
 from src.config import (
     DATA_DIR,
+    DEFAULT_PACKING_CONFIG,
     ENABLE_EXPENSIVE_FAILED_REPACK,
     OUTPUT_DIR,
     PALLET_INDEX_TARGETS,
@@ -103,12 +104,11 @@ class _DynamicRescueOptimizer:
 def load_constraint_config(config_path=None) -> ConstraintConfig:
     """加载约束统一配置。
 
-    优先级：显式 --config 路径 > 默认 config/packing_config.yaml > 内置默认值。
+    优先级：显式 --config 路径 > 默认 packing-system/config/packing_config.yaml > 内置默认值。
     任何加载失败都安全回退到内置默认（与历史行为一致），不阻断装箱。
     """
     if config_path is None:
-        default_yaml = project_root / 'config' / 'packing_config.yaml'
-        config_path = default_yaml if default_yaml.exists() else None
+        config_path = DEFAULT_PACKING_CONFIG if DEFAULT_PACKING_CONFIG.exists() else None
     if config_path is None:
         return ConstraintConfig()
     if not Path(config_path).exists():
@@ -129,8 +129,7 @@ def load_data_filepath(config_path=None):
     文件不存在或加载失败都返回 None，安全回退默认数据集，不阻断装箱。
     """
     if config_path is None:
-        default_yaml = project_root / 'config' / 'packing_config.yaml'
-        config_path = default_yaml if default_yaml.exists() else None
+        config_path = DEFAULT_PACKING_CONFIG if DEFAULT_PACKING_CONFIG.exists() else None
     if config_path is None:
         return None
     if not Path(config_path).exists():
@@ -158,8 +157,7 @@ def load_run_config(config_path=None):
     incremental_filepath: 增量三表 Excel 完整路径(相对 data/)，文件不存在返回 None。
     """
     if config_path is None:
-        default_yaml = project_root / 'config' / 'packing_config.yaml'
-        config_path = default_yaml if default_yaml.exists() else None
+        config_path = DEFAULT_PACKING_CONFIG if DEFAULT_PACKING_CONFIG.exists() else None
     if config_path is None or not Path(config_path).exists():
         return 'normal', None
     try:

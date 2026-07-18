@@ -17,6 +17,9 @@ CODE_ROOT = Path(__file__).resolve().parent.parent.parent  # packing/
 # 兼容旧名：以前 PROJECT_ROOT 指向含 data/output 的目录；现改指仓库根
 PROJECT_ROOT = REPO_ROOT
 
+# 唯一默认配置：packing-system/config/packing_config.yaml（算法/UI/部署共用）
+DEFAULT_PACKING_CONFIG = REPO_ROOT / "config" / "packing_config.yaml"
+
 
 def _resolve_workspace() -> Path:
     env = os.environ.get("PACKING_WORKSPACE", "").strip()

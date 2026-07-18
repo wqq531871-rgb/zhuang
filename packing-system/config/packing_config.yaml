@@ -1,4 +1,5 @@
-#运行命令：python code/run_packing.py --config code/config/packing_config.yaml
+# 运行命令：python packing/run_packing.py --config config/packing_config.yaml
+# （也可省略 --config，默认即读本文件）
 # 运行模式：normal = 普通单次装箱(读 excel_data)；
 #           incremental = 增量装箱(读 incremental.source_file，三表 Excel：
 #           最终挑选结果/新增箱/BMS，先装初始单、再把未达标盘的箱+新增箱重排合并)。

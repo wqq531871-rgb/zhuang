@@ -116,7 +116,7 @@ python code/run_packing.py --safe
 ### 约束配置与运行
 
 ```bash
-python run_packing.py                          # 默认读 config/packing_config.yaml
+python run_packing.py                          # 默认读 ../config/packing_config.yaml（仓库根）
 python run_packing.py --config my_config.yaml  # 指定自定义配置
 ```
 
