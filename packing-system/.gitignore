@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+.venvs/
+
+# Local secrets / machine-specific config
+config/packing_config.local.yaml
+*.local.yaml
+.env
+.env.*
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Runtime artifacts (must live in sibling packing-workspace, never here)
+input/
+output/
+data/
+runtime/
+*.log
+
+# Accidental large dumps
+*.xlsx
+!docs/**/*.xlsx
