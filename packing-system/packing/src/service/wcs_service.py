@@ -86,6 +86,15 @@ class DataSourceConfig:
     output_dir: Path
 
 
+@dataclass(frozen=True)
+class PackRunResult:
+    """One WCS packing round outcome for service-level stop decisions."""
+
+    executed: bool
+    success_pallets: int = 0
+    report_path: Optional[Path] = None
+
+
 def load_data_source_config(config_path: Optional[Path] = None) -> DataSourceConfig:
     """从 yaml 的 data_source 段读取接口模式配置。"""
     merged = dict(_DEFAULT_DATA_SOURCE)
@@ -283,16 +292,16 @@ class WcsPackingService:
         return inserted
 
     # ------------------------------------------------------------------ pack
-    def pack_once(self) -> bool:
+    def pack_once(self) -> PackRunResult:
         """从 DB 读全部未达标箱子装箱；达标行回写 up_to_standard=1。
 
         Returns:
-            True=执行了装箱（或明确跳过空输入）；False=无未达标数据。
+            本轮是否计算、成功托盘数与报告路径。
         """
         rows = self._repo.fetch_unmet_rows()
         if not rows:
             print("[WCS-装] 库中无未达标箱子，跳过。")
-            return False
+            return PackRunResult(executed=False)
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         print(f"\n{'=' * 60}")
@@ -305,7 +314,7 @@ class WcsPackingService:
 
         if not boxes:
             print("[WCS-装] 展开后无箱，跳过。")
-            return True
+            return PackRunResult(executed=True)
 
         try:
             workflow = self._make_workflow()
@@ -314,12 +323,17 @@ class WcsPackingService:
             print(f"[WCS-装] 装箱异常：{exc}")
             bad_path = self.bad_dir / f"pack_{ts}.json"
             _save_json(bad_path, {"timestamp": ts, "error": str(exc)})
-            return True
+            return PackRunResult(executed=True)
 
         if report is None:
             print("[WCS-装] 装箱失败（无有效报告）。")
-            return True
+            return PackRunResult(executed=True)
 
+        success_pallets = sum(
+            1
+            for pallet in (report.get("pallets") or [])
+            if str(pallet.get("mpm_status") or "").upper() == "SUCCESS"
+        )
         success_codes = _success_product_codes(report)
         updated = self._repo.mark_standard_by_product_codes(success_codes)
         failed_pallets = sum(
@@ -360,7 +374,11 @@ class WcsPackingService:
             {uid: pallet for uid, pallet in plan.plan_by_unique_id.items()},
         )
         print(f"[UI-RESULT] {report_path.resolve()}")
-        return True
+        return PackRunResult(
+            executed=True,
+            success_pallets=success_pallets,
+            report_path=report_path.resolve(),
+        )
 
     # ------------------------------------------------------------------ loops
     def _fetch_loop(self) -> None:
@@ -447,4 +465,34 @@ class WcsPackingService:
         if inserted <= 0:
             print("[WCS] run_once：无新插入，不装箱。")
             return True
-        return self.pack_once()
+        return self.pack_once().executed
+
+    def run_until_success(self) -> bool:
+        """循环拉取并装箱，首轮出现成功托盘后停止。"""
+        round_no = 0
+        print("[WCS] 运行模式：循环拉取，直到出现成功托盘后停止。")
+        while not self._stop.is_set():
+            round_no += 1
+            print(f"[WCS] 成功等待模式：第 {round_no} 轮拉取。")
+            try:
+                inserted = self.fetch_once()
+                if inserted > 0:
+                    self._reload_reference_data()
+                    outcome = self.pack_once()
+                    if outcome.success_pallets > 0:
+                        print(
+                            "[WCS-UNTIL-SUCCESS] "
+                            f"本轮发现 {outcome.success_pallets} 个成功托盘，服务停止。"
+                        )
+                        return True
+                    print("[WCS] 本轮尚无成功托盘，将继续等待新数据。")
+                else:
+                    print("[WCS] 本轮无新数据，不重复计算现有库存。")
+            except Exception as exc:
+                print(f"[WCS] 成功等待模式本轮异常：{exc}")
+
+            if self._stop.wait(self._ds.download_interval):
+                break
+
+        print("[WCS] 成功等待模式已停止，尚未产生成功托盘。")
+        return False

@@ -58,8 +58,10 @@ except Exception as exc:  # pragma: no cover
 
 try:
     from dashboard_state import (
+        RUN_MODE_OPTIONS,
         apply_download_interval,
         normalize_download_interval,
+        run_mode_policy,
     )
     from realtime_dashboard_v2 import (
         IndustrialPackingWorkbench,
@@ -352,7 +354,7 @@ def _make_out_path(project_dir: Path, prefix: str = "ui_packing_plan") -> Path:
 
 
 class UiPackingWorker(QtCore.QThread):
-    """Run backend; manual mode uses --out once, api mode keeps process alive."""
+    """Run either one Excel calculation or a selected WCS service mode."""
 
     log = QtCore.pyqtSignal(str)
     started_cmd = QtCore.pyqtSignal(str)
@@ -364,7 +366,7 @@ class UiPackingWorker(QtCore.QThread):
         project_dir: Path,
         config_path: Path,
         out_path: Optional[Path] = None,
-        api_mode: bool = False,
+        run_mode: str = "excel",
         download_interval: int = 200,
         parent=None,
     ):
@@ -372,10 +374,11 @@ class UiPackingWorker(QtCore.QThread):
         self.project_dir = Path(project_dir).resolve()
         self.config_path = Path(config_path).resolve()
         self.out_path = Path(out_path).resolve() if out_path else None
-        self.api_mode = api_mode
+        self.run_mode = run_mode
         self.download_interval = normalize_download_interval(download_interval)
         self.process: Optional[subprocess.Popen] = None
         self._stop_requested = False
+        self.completed_ok = False
         self._emitted_results: set[str] = set()
         ensure_runtime_dirs(self.project_dir)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -515,13 +518,20 @@ class UiPackingWorker(QtCore.QThread):
             str(wcs_script),
             "--config",
             str(self.config_path),
+            "--run-mode",
+            self.run_mode,
         ]
         cmd_text = " ".join(f'"{x}"' if " " in x else x for x in cmd)
         self.started_cmd.emit(cmd_text)
         self._emit_log(f"[LOG] 后端日志文件：{self.log_file}")
-        self._emit_log(
-            f"[LOG] 接口模式：后端将每 {self.download_interval} 秒拉取接口并自动装箱，直到点击停止。"
-        )
+        mode_messages = {
+            "continuous": f"每 {self.download_interval} 秒拉取并计算，直到手动停止",
+            "once": "拉取并计算一次后停止",
+            "until-success": (
+                f"每 {self.download_interval} 秒拉取并计算，出现成功托盘后自动停止"
+            ),
+        }
+        self._emit_log(f"[LOG] 接口模式：{mode_messages[self.run_mode]}。")
         self._write_backend_log(f"[CMD] {cmd_text}")
 
         self.process = self._spawn_process(cmd)
@@ -560,6 +570,8 @@ class UiPackingWorker(QtCore.QThread):
             return
         if code != 0:
             self.failed.emit(f"接口装箱服务异常退出，退出码：{code}")
+            return
+        self.completed_ok = True
 
     def run(self) -> None:
         try:
@@ -571,7 +583,7 @@ class UiPackingWorker(QtCore.QThread):
                 self.failed.emit(f"找不到配置文件：{self.config_path}")
                 return
 
-            if self.api_mode:
+            if self.run_mode != "excel":
                 self._run_api_mode(run_script)
             else:
                 self._run_manual_mode(run_script)
@@ -588,9 +600,8 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.generated_config_path: Optional[Path] = None
         self.generated_out_path: Optional[Path] = None
         self.last_excel_mode: Optional[str] = None
-        # TODO(接口模式默认勾选): 改下面 use_api_mode 与 _build_header 里 chk_api_mode.setChecked 保持一致
-        # True=启动默认接口模式；False=启动默认本地 Excel
-        self.use_api_mode = True
+        self.run_mode = "continuous"
+        self._active_run_mode: Optional[str] = None
         self._api_service_active = False
         self._history_refreshing = False
         self._current_result_path: Optional[Path] = None
@@ -630,12 +641,16 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.status_pill.setToolTip("当前运行状态：空闲 / 运行中 / 已完成 / 失败")
         layout.addWidget(self.status_pill)
 
-        self.chk_api_mode = QtWidgets.QCheckBox("接口模式")
-        # TODO(接口模式默认勾选): 与 __init__ 里 use_api_mode 保持一致
-        self.chk_api_mode.setChecked(True)
-        self.chk_api_mode.setToolTip("勾选：从 WCS 接口拉库存并装箱（常驻服务）\n不勾选：使用本地 Excel 文件")
-        self.chk_api_mode.toggled.connect(self._on_api_mode_toggled)
-        layout.addWidget(self.chk_api_mode)
+        self.lbl_run_mode = QtWidgets.QLabel("运行方式")
+        layout.addWidget(self.lbl_run_mode)
+
+        self.cmb_run_mode = QtWidgets.QComboBox()
+        self.cmb_run_mode.setMinimumWidth(140)
+        self.cmb_run_mode.setToolTip("选择接口持续/单次/成功即停，或 Excel 单次运行")
+        for label, mode in RUN_MODE_OPTIONS:
+            self.cmb_run_mode.addItem(label, mode)
+        self.cmb_run_mode.currentIndexChanged.connect(self._on_run_mode_changed)
+        layout.addWidget(self.cmb_run_mode)
 
         self.lbl_download_interval = QtWidgets.QLabel("拉取间隔")
         self.lbl_download_interval.setToolTip("WCS 接口库存数据的拉取周期")
@@ -716,15 +731,32 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.btn_show_latest.clicked.connect(self.open_latest_result)
         self.btn_show_latest.setVisible(False)
 
+        self._apply_run_mode_controls()
+
         return header
 
-    def _on_api_mode_toggled(self, checked: bool) -> None:
-        self.use_api_mode = checked
+    def _current_run_mode(self) -> str:
+        if hasattr(self, "cmb_run_mode"):
+            mode = self.cmb_run_mode.currentData()
+            if mode:
+                return str(mode)
+        return self.run_mode
+
+    def _on_run_mode_changed(self) -> None:
+        self.run_mode = self._current_run_mode()
+        self._apply_run_mode_controls()
+
+    def _apply_run_mode_controls(self) -> None:
+        policy = run_mode_policy(self._current_run_mode())
+        worker_running = bool(self.worker and self.worker.isRunning())
         if hasattr(self, "sp_download_interval"):
-            worker_running = bool(self.worker and self.worker.isRunning())
-            self.sp_download_interval.setEnabled(checked and not worker_running)
+            self.sp_download_interval.setEnabled(
+                policy.uses_interval and not worker_running
+            )
         if hasattr(self, "lbl_download_interval"):
-            self.lbl_download_interval.setEnabled(checked)
+            self.lbl_download_interval.setEnabled(policy.uses_interval)
+        if hasattr(self, "btn_excel"):
+            self.btn_excel.setEnabled(policy.uses_excel and not worker_running)
 
     def _write_log(self, text: str) -> None:
         """界面日志与 VSCode 终端同步输出，便于开发调试。"""
@@ -910,7 +942,9 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             return None
 
     def start_excel_packing(self) -> None:
-        if self.use_api_mode:
+        run_mode = self._current_run_mode()
+        policy = run_mode_policy(run_mode)
+        if policy.uses_api:
             interval = normalize_download_interval(self.sp_download_interval.value())
             self.download_interval = interval
             cfg = _write_ui_config_api_only(
@@ -921,9 +955,14 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             self.generated_config_path = cfg
             self.config_path = cfg
             self._write_log(f"[UI] 接口模式：已生成临时配置 {cfg}")
-            self._write_log(
-                f"[UI] 将启动常驻接口服务（每 {interval} 秒拉取一次），点击停止结束。"
-            )
+            descriptions = {
+                "continuous": f"每 {interval} 秒拉取并计算，直到手动停止",
+                "once": "拉取并计算一次后停止",
+                "until-success": (
+                    f"每 {interval} 秒拉取并计算，出现成功托盘后自动停止"
+                ),
+            }
+            self._write_log(f"[UI] 将启动：{descriptions[run_mode]}。")
         else:
             # 已经通过“选择Excel”选过文件时，直接运行；没有选过时再弹出选择框。
             if self.generated_config_path is None or self.selected_excel_copy is None:
@@ -933,22 +972,26 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             else:
                 self.config_path = self.generated_config_path
                 self._write_log(f"[UI] 使用已选择 Excel：{self.selected_excel_original}")
-        self.start_backend_packing(api_mode=self.use_api_mode)
+        self.start_backend_packing(run_mode=run_mode)
 
     # ------------------------------------------------------------------ backend
-    def start_backend_packing(self, api_mode: bool = False) -> None:
+    def start_backend_packing(self, run_mode: Optional[str] = None) -> None:
         if self.worker and self.worker.isRunning():
             QtWidgets.QMessageBox.information(self, "提示", "后端装箱正在运行。")
             return
         ensure_runtime_dirs(self.project_dir)
-        self._api_service_active = api_mode
-        out_path = None if api_mode else _make_out_path(self.project_dir)
+        if not isinstance(run_mode, str):
+            run_mode = self._current_run_mode()
+        policy = run_mode_policy(run_mode)
+        self._active_run_mode = run_mode
+        self._api_service_active = policy.uses_api
+        out_path = None if policy.uses_api else _make_out_path(self.project_dir)
         self.generated_out_path = out_path
         self.worker = UiPackingWorker(
             self.project_dir,
             self.config_path,
             out_path=out_path,
-            api_mode=api_mode,
+            run_mode=run_mode,
             download_interval=self.download_interval,
             parent=self,
         )
@@ -969,21 +1012,25 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             self.btn_excel.setEnabled(False)
         if hasattr(self, "sp_download_interval"):
             self.sp_download_interval.setEnabled(False)
+        if hasattr(self, "cmb_run_mode"):
+            self.cmb_run_mode.setEnabled(False)
         self.btn_stop_backend.setEnabled(True)
         self.btn_stop_backend.setVisible(True)
         self.btn_load.setEnabled(False)
-        if api_mode:
-            self.step_run.set_state(
-                "active",
-                f"接口服务运行中：每 {self.download_interval} 秒拉取并装箱，完成后自动刷新结果",
-            )
+        if policy.uses_api:
+            active_messages = {
+                "continuous": f"接口持续运行：每 {self.download_interval} 秒拉取并装箱",
+                "once": "接口单次运行：拉取并计算一次",
+                "until-success": "接口运行至成功：等待出现成功托盘",
+            }
+            self.step_run.set_state("active", active_messages[run_mode])
         else:
             self.step_run.set_state("active", "后端装箱算法正在运行，完成后会自动显示结果")
         self._set_status("running")
         self._write_log("[UI] 开始后端装箱计算。")
         self._write_log(f"[UI] 使用配置：{self.config_path}")
-        if api_mode:
-            self._write_log("[UI] 接口模式：进程将持续运行，直到点击红色停止按钮。")
+        if policy.uses_api:
+            self._write_log(f"[UI] 接口运行方式：{run_mode}")
         else:
             self._write_log(f"[UI] 指定输出：{self.generated_out_path}")
         self.worker.start()
@@ -1001,25 +1048,36 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
 
     def on_worker_finished(self) -> None:
         super().on_worker_finished()
-        was_api = self._api_service_active
+        finished_mode = self._active_run_mode
+        completed_ok = bool(self.worker and self.worker.completed_ok)
+        stopped_by_user = bool(self.worker and self.worker._stop_requested)
         self._api_service_active = False
+        self._active_run_mode = None
         if hasattr(self, "action_rerun_config"):
             self.action_rerun_config.setEnabled(True)
         if hasattr(self, "btn_algo_settings"):
             self.btn_algo_settings.setEnabled(True)
         if hasattr(self, "btn_excel_run"):
             self.btn_excel_run.setEnabled(True)
-        if hasattr(self, "btn_excel"):
-            self.btn_excel.setEnabled(True)
-        if hasattr(self, "sp_download_interval"):
-            self.sp_download_interval.setEnabled(self.use_api_mode)
+        if hasattr(self, "cmb_run_mode"):
+            self.cmb_run_mode.setEnabled(True)
+        self._apply_run_mode_controls()
         if hasattr(self, "btn_stop_backend"):
             self.btn_stop_backend.setEnabled(False)
             self.btn_stop_backend.setVisible(True)
-        if was_api:
-            self.step_run.set_state("done", "接口服务已停止")
+        if finished_mode == "continuous" and (completed_ok or stopped_by_user):
+            self.step_run.set_state("done", "接口持续服务已停止")
             self._set_status("idle")
-            self._write_log("[UI] 接口装箱服务已结束。")
+            self._write_log("[UI] 接口持续服务已停止。")
+        elif completed_ok and finished_mode in {"once", "until-success"}:
+            finished_messages = {
+                "once": "接口单次运行已完成",
+                "until-success": "已发现成功托盘，接口服务自动停止",
+            }
+            message = finished_messages[finished_mode]
+            self.step_run.set_state("done", message)
+            self._set_status("idle")
+            self._write_log(f"[UI] {message}。")
 
     def on_backend_finished_json(self, json_path: str) -> None:
         path = Path(json_path)
@@ -1033,10 +1091,13 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             if hasattr(self, "file_info"):
                 self.file_info.setText(f"当前结果：{path.name}")
             if self._api_service_active:
-                self.step_run.set_state(
-                    "active",
-                    f"接口服务运行中：已显示本轮结果（{path.name}），等待下一次计算",
-                )
+                if self._active_run_mode == "continuous":
+                    detail = f"已显示本轮结果（{path.name}），等待下一次计算"
+                elif self._active_run_mode == "until-success":
+                    detail = f"已显示本轮结果（{path.name}），检查成功托盘"
+                else:
+                    detail = f"已显示本次结果（{path.name}），即将停止"
+                self.step_run.set_state("active", detail)
                 self.step_result.set_state("done", f"最新结果：{path.name}")
                 self._set_status("running")
             else:

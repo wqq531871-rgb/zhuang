@@ -2,12 +2,43 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Iterable, MutableMapping
 
 
 DEFAULT_DOWNLOAD_INTERVAL = 200
 MIN_DOWNLOAD_INTERVAL = 1
 MAX_DOWNLOAD_INTERVAL = 86400
+
+RUN_MODE_OPTIONS = (
+    ("接口持续运行", "continuous"),
+    ("接口单次运行", "once"),
+    ("Excel 单次运行", "excel"),
+    ("接口运行至成功", "until-success"),
+)
+
+
+@dataclass(frozen=True)
+class RunModePolicy:
+    uses_api: bool
+    uses_interval: bool
+    uses_excel: bool
+
+
+_RUN_MODE_POLICIES = {
+    "continuous": RunModePolicy(True, True, False),
+    "once": RunModePolicy(True, False, False),
+    "excel": RunModePolicy(False, False, True),
+    "until-success": RunModePolicy(True, True, False),
+}
+
+
+def run_mode_policy(mode: str) -> RunModePolicy:
+    """Return which controls and data source are used by a run mode."""
+    try:
+        return _RUN_MODE_POLICIES[mode]
+    except KeyError as exc:
+        raise ValueError(f"未知运行方式：{mode}") from exc
 
 
 def successful_pallet_count(pallets: Iterable[dict]) -> int:

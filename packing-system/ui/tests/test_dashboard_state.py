@@ -1,6 +1,10 @@
+import pytest
+
 from dashboard_state import (
+    RUN_MODE_OPTIONS,
     apply_download_interval,
     normalize_download_interval,
+    run_mode_policy,
     successful_pallet_count,
 )
 
@@ -42,3 +46,35 @@ def test_apply_download_interval_preserves_existing_data_source_settings():
         "api_base_url": "http://example.test",
         "download_interval": 15,
     }
+
+
+def test_run_mode_options_are_presented_in_the_approved_order():
+    assert RUN_MODE_OPTIONS == (
+        ("接口持续运行", "continuous"),
+        ("接口单次运行", "once"),
+        ("Excel 单次运行", "excel"),
+        ("接口运行至成功", "until-success"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("mode", "uses_api", "uses_interval", "uses_excel"),
+    [
+        ("continuous", True, True, False),
+        ("once", True, False, False),
+        ("excel", False, False, True),
+        ("until-success", True, True, False),
+    ],
+)
+def test_run_mode_policy_controls_related_inputs(
+    mode, uses_api, uses_interval, uses_excel
+):
+    policy = run_mode_policy(mode)
+    assert policy.uses_api is uses_api
+    assert policy.uses_interval is uses_interval
+    assert policy.uses_excel is uses_excel
+
+
+def test_run_mode_policy_rejects_unknown_mode():
+    with pytest.raises(ValueError, match="未知运行方式"):
+        run_mode_policy("unknown")
