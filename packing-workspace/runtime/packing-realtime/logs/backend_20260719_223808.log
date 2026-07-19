@@ -113,3 +113,10 @@ KPI汇总：near/mid/deep=0/1/18，pair尝试=0，pair改进=0，pair效率=0.00
 [WCS-DB] product_code 已存在、跳过 22 条
 [WCS-拉] 落库完成：候选 32 条，新插入 0 条（新行 up_to_standard=0）。
 [WCS-拉] 无新插入 → 不触发装箱。
+============================================================
+[WCS-拉] 20260719_224218：拉取接口 1 …
+[WCS-拉] 原始响应已保存：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\input\raw\20260719_224218.json
+[WCS-拉] 库存品类数：32（均为 MH423C）
+[WCS-DB] product_code 已存在、跳过 22 条
+[WCS-拉] 落库完成：候选 32 条，新插入 0 条（新行 up_to_standard=0）。
+[WCS-拉] 无新插入 → 不触发装箱。
