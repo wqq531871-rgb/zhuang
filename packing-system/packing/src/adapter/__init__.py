@@ -7,6 +7,7 @@ from .wcs_adapter import (
     load_bms_map,
     report_to_plan_result,
     stock_to_boxes,
+    success_pallet_to_plan_case,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "load_bms_map",
     "report_to_plan_result",
     "stock_to_boxes",
+    "success_pallet_to_plan_case",
 ]

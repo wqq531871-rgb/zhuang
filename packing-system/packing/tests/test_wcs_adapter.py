@@ -164,6 +164,43 @@ def test_empty_inputs():
     print('[PASS] 空输入/空报告')
 
 
+def test_success_pallet_to_plan_case_single_push():
+    """单盘下传：仅 SUCCESS 可构造，且请求体是单元素 case。"""
+    from src.adapter import success_pallet_to_plan_case
+
+    ok_pallet = {
+        "pallet_id": "MH423C-ORD-1",
+        "pallet_type": "MH423C",
+        "sales_order_no": "ORD1",
+        "mpm_status": "SUCCESS",
+        "case_group": 0,
+        "packed_items": [
+            {
+                "product_code": 111,
+                "priority": 1,
+                "position": {"x": 0, "y": 0, "z": 0},
+                "original_length": 350.0,
+                "original_width": 265.0,
+                "original_height": 240.0,
+            }
+        ],
+    }
+    case = success_pallet_to_plan_case(ok_pallet, box_index=1)
+    assert case["box_index"] == 1
+    assert case["order_id"] == "ORD1"
+    assert case["case_type"] == "MH423C"
+    assert len(case["box_unique_id"]) == 32
+    assert case["layers"][0]["cartons"][0]["product_code"] == 111
+
+    bad = dict(ok_pallet, mpm_status="FAILED")
+    try:
+        success_pallet_to_plan_case(bad)
+        assert False, "FAILED 托盘应拒绝下传"
+    except ValueError:
+        pass
+    print("[PASS] 单盘达标下传 case 构造")
+
+
 if __name__ == '__main__':
     test_stock_request()
     test_stock_expansion_and_mapping()
@@ -173,4 +210,5 @@ if __name__ == '__main__':
     test_case_group_passthrough_to_case()
     test_failed_pallet_toggle()
     test_empty_inputs()
+    test_success_pallet_to_plan_case_single_push()
     print('\n[PASS] WCS 适配层全部测试通过！')

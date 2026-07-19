@@ -51,6 +51,19 @@ def successful_pallet_count(pallets: Iterable[dict]) -> int:
     )
 
 
+def list_success_pallets(pallets: Iterable[dict]) -> list:
+    """Return SUCCESS pallets that have a non-empty pallet_id, stable order."""
+    result = []
+    for pallet in pallets or []:
+        if str((pallet or {}).get("mpm_status") or "").strip().upper() != "SUCCESS":
+            continue
+        pid = str((pallet or {}).get("pallet_id") or "").strip()
+        if not pid:
+            continue
+        result.append(pallet)
+    return result
+
+
 def normalize_download_interval(
     value,
     default: int = DEFAULT_DOWNLOAD_INTERVAL,

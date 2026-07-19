@@ -60,12 +60,14 @@ try:
     from dashboard_state import (
         RUN_MODE_OPTIONS,
         apply_download_interval,
+        list_success_pallets,
         normalize_download_interval,
         run_mode_policy,
     )
     from realtime_dashboard_v2 import (
         IndustrialPackingWorkbench,
         StatusPill,
+        StepCard,
         DEFAULT_CONFIG_REL,
         DEFAULT_RUN_SCRIPT_REL,
         RUNTIME_NAME,
@@ -729,6 +731,163 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self._apply_run_mode_controls()
 
         return header
+
+    def _build_left_workflow(self) -> QtWidgets.QWidget:
+        panel = super()._build_left_workflow()
+        layout = panel.layout()
+        insert_at = (
+            layout.indexOf(self.step_params)
+            if hasattr(self, "step_params")
+            else layout.count()
+        )
+
+        self.step_push = StepCard("↓", "下传 WCS", "选择达标托盘，单盘推送接口2")
+        layout.insertWidget(insert_at, self.step_push)
+
+        push_box = QtWidgets.QFrame()
+        push_box.setObjectName("ParamBox")
+        push_form = QtWidgets.QFormLayout(push_box)
+        push_form.setContentsMargins(12, 10, 12, 10)
+        push_form.setSpacing(8)
+
+        self.cmb_push_pallet = QtWidgets.QComboBox()
+        self.cmb_push_pallet.setMinimumWidth(180)
+        self.cmb_push_pallet.setToolTip("当前结果中 mpm_status=SUCCESS 的托盘编号")
+        push_form.addRow("达标托盘", self.cmb_push_pallet)
+
+        self.btn_push_wcs = QtWidgets.QPushButton("下传")
+        self.btn_push_wcs.setObjectName("PrimaryButton")
+        self.btn_push_wcs.setToolTip("将所选达标托盘构造成接口2 JSON，确认后 POST 给 WCS")
+        self.btn_push_wcs.clicked.connect(self.push_selected_pallet_to_wcs)
+        push_form.addRow("", self.btn_push_wcs)
+
+        self.lbl_push_hint = QtWidgets.QLabel("暂无达标托盘可下传")
+        self.lbl_push_hint.setObjectName("SmallInfo")
+        self.lbl_push_hint.setWordWrap(True)
+        push_form.addRow("", self.lbl_push_hint)
+
+        layout.insertWidget(insert_at + 1, push_box)
+        self._refresh_push_pallet_combo()
+        return panel
+
+    def _ensure_packing_import_path(self) -> Path:
+        packing_root = Path(self.project_dir).resolve() / "packing"
+        root_s = str(packing_root)
+        if root_s not in sys.path:
+            sys.path.insert(0, root_s)
+        return packing_root
+
+    def _refresh_push_pallet_combo(self) -> None:
+        if not hasattr(self, "cmb_push_pallet"):
+            return
+        success = list_success_pallets(getattr(self, "pallets", []) or [])
+        combo = self.cmb_push_pallet
+        prev = combo.currentData()
+        combo.blockSignals(True)
+        combo.clear()
+        for pallet in success:
+            pid = str(pallet.get("pallet_id") or "").strip()
+            combo.addItem(pid, pid)
+        combo.blockSignals(False)
+        if prev:
+            idx = combo.findData(prev)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        has_items = combo.count() > 0
+        combo.setEnabled(has_items)
+        if hasattr(self, "btn_push_wcs"):
+            self.btn_push_wcs.setEnabled(has_items)
+        if hasattr(self, "lbl_push_hint"):
+            self.lbl_push_hint.setText(
+                f"可下传 {combo.count()} 个达标托盘（每次仅推送 1 盘）"
+                if has_items
+                else "暂无达标托盘可下传"
+            )
+        if hasattr(self, "step_push"):
+            detail = (
+                f"已加载 {combo.count()} 个达标托盘"
+                if has_items
+                else "等待装箱结果中的达标托盘"
+            )
+            self.step_push.set_state("done" if has_items else "idle", detail)
+
+    def populate_after_load(self) -> None:
+        super().populate_after_load()
+        self._refresh_push_pallet_combo()
+
+    def push_selected_pallet_to_wcs(self) -> None:
+        """确认后，将单个达标托盘 POST 到接口 2。"""
+        if not hasattr(self, "cmb_push_pallet") or self.cmb_push_pallet.count() == 0:
+            QtWidgets.QMessageBox.information(self, "下传", "当前没有可下传的达标托盘。")
+            return
+        pallet_id = str(self.cmb_push_pallet.currentData() or "").strip()
+        if not pallet_id:
+            QtWidgets.QMessageBox.warning(self, "下传", "请先选择托盘编号。")
+            return
+        pallet = next(
+            (
+                p
+                for p in (getattr(self, "pallets", []) or [])
+                if str(p.get("pallet_id") or "").strip() == pallet_id
+            ),
+            None,
+        )
+        if pallet is None:
+            QtWidgets.QMessageBox.warning(self, "下传", f"未找到托盘：{pallet_id}")
+            return
+
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "确认下传",
+            f"确认是否下传该托盘到 WCS 接口2？\n\n托盘编号：{pallet_id}",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        try:
+            self._ensure_packing_import_path()
+            from src.adapter import success_pallet_to_plan_case
+            from src.service.wcs_service import (
+                load_data_source_config,
+                push_plan_result,
+            )
+
+            case = success_pallet_to_plan_case(pallet, box_index=1)
+            payload = [case]
+            config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
+            ds = load_data_source_config(config_path)
+            url = ds.plan_url()
+
+            # 本地留存本次单盘下传体，便于核对
+            out_dir = workspace_dir_from_project(self.project_dir) / "output"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", pallet_id)
+            save_path = out_dir / f"wcs_push_single_{safe_name}_{stamp}.json"
+            with open(save_path, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+
+            self._write_log(f"[UI-下传] 托盘 {pallet_id} → {url}")
+            self._write_log(f"[UI-下传] 请求体已保存：{save_path}")
+            body = push_plan_result(
+                ds.effective_api_base_url, payload, ds.plan_path
+            )
+            msg = (
+                f"下传成功。\n托盘编号：{pallet_id}\n"
+                f"接口返回 code={body.get('code')}, msg={body.get('msg')}"
+            )
+            self._write_log(f"[UI-下传] {msg.replace(chr(10), ' ')}")
+            if hasattr(self, "step_push"):
+                self.step_push.set_state("done", f"已下传 {pallet_id}")
+            QtWidgets.QMessageBox.information(self, "下传成功", msg)
+        except Exception as exc:
+            err = f"下传失败：{exc}"
+            self._write_log(f"[UI-下传] {err}")
+            if hasattr(self, "step_push"):
+                self.step_push.set_state("error", "下传失败，请查看日志")
+            QtWidgets.QMessageBox.critical(self, "下传失败", err)
 
     def _current_run_mode(self) -> str:
         if hasattr(self, "cmb_run_mode"):

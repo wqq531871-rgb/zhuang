@@ -279,6 +279,26 @@ def _build_layers(items: List[Dict]) -> Tuple[List[Dict], float]:
     return layers, total_height
 
 
+def success_pallet_to_plan_case(pallet: Dict, box_index: int = 1) -> Dict:
+    """把单个达标托盘转成接口 2 的一条 case（数组元素）。
+
+    每次下传只发这一条；``box_index`` 默认 1（单盘批次从 1 起）。
+    """
+    if not pallet:
+        raise ValueError("托盘数据为空")
+    status = str(pallet.get("mpm_status") or "").strip().upper()
+    if status != "SUCCESS":
+        raise ValueError(
+            f"仅允许下传达标托盘（mpm_status=SUCCESS），当前为 {status or 'UNKNOWN'}"
+        )
+    plan = report_to_plan_result({"pallets": [pallet]}, include_failed=False)
+    if not plan.cases:
+        raise ValueError("该托盘无法构造接口2发送体（可能无箱子）")
+    case = dict(plan.cases[0])
+    case["box_index"] = int(box_index)
+    return case
+
+
 def report_to_plan_result(
     report: Optional[Dict],
     include_failed: bool = True,

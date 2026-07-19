@@ -3,6 +3,7 @@ import pytest
 from dashboard_state import (
     RUN_MODE_OPTIONS,
     apply_download_interval,
+    list_success_pallets,
     normalize_download_interval,
     run_mode_policy,
     successful_pallet_count,
@@ -18,6 +19,18 @@ def test_successful_pallet_count_uses_all_status_values_case_insensitively():
     ]
 
     assert successful_pallet_count(pallets) == 2
+
+
+def test_list_success_pallets_requires_success_status_and_pallet_id():
+    pallets = [
+        {"pallet_id": "A-1", "mpm_status": "SUCCESS"},
+        {"pallet_id": "A-2", "mpm_status": "success"},
+        {"pallet_id": "B-1", "mpm_status": "FAILED"},
+        {"pallet_id": "", "mpm_status": "SUCCESS"},
+        {"mpm_status": "SUCCESS"},
+    ]
+    ids = [p["pallet_id"] for p in list_success_pallets(pallets)]
+    assert ids == ["A-1", "A-2"]
 
 
 def test_download_interval_normalizes_valid_values_and_invalid_fallbacks():
