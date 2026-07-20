@@ -65,6 +65,17 @@ def test_dual_path_settings_are_configurable():
     assert c.dual_path_time_limit_seconds == 7.5
 
 
+def test_directed_exchange_settings_are_configurable():
+    c = ConstraintConfig.from_dict({
+        'directed_exchange_enabled': False,
+        'directed_exchange_max_items': 3,
+        'directed_exchange_max_attempts': 12,
+    })
+    assert c.directed_exchange_enabled is False
+    assert c.directed_exchange_max_items == 3
+    assert c.directed_exchange_max_attempts == 12
+
+
 def test_frozen():
     c = ConstraintConfig()
     try:

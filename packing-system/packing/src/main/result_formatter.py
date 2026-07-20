@@ -43,6 +43,7 @@ class ResultFormatter:
         tail_absorb_result: Optional[Dict] = None,
         low_fill_result: Optional[Dict] = None,
         failed_pool_result: Optional[Dict] = None,
+        directed_exchange_result: Optional[Dict] = None,
     ) -> Dict:
         """构建单分组的统计信息。"""
         stats = PalletEvaluator.recompute_type_stats(type_plan)
@@ -88,6 +89,7 @@ class ResultFormatter:
         ta = tail_absorb_result or {}
         lf = low_fill_result or {}
         fp = failed_pool_result or {}
+        de = directed_exchange_result or {}
 
         stats["kpi"] = {
             "failed_near_count": tiers["near"],
@@ -136,6 +138,16 @@ class ResultFormatter:
             "targeted_unreachable": repack_result.get("targeted_unreachable", 0),
             "targeted_geofail": repack_result.get("targeted_geofail", 0),
             "targeted_nonimprove": repack_result.get("targeted_nonimprove", 0),
+            "directed_exchange_tried": de.get("directed_exchange_tried", 0),
+            "directed_exchange_accepted": de.get(
+                "directed_exchange_accepted", 0
+            ),
+            "directed_exchange_geofail": de.get(
+                "directed_exchange_geofail", 0
+            ),
+            "directed_exchange_gate_rejected": de.get(
+                "directed_exchange_gate_rejected", 0
+            ),
             "hole_fill_tried": hf.get("hole_fill_tried", 0),
             "hole_fill_success": hf.get("hole_fill_success", 0),
             "hole_fill_pack_fail": hf.get("hole_fill_pack_fail", 0),
@@ -290,6 +302,18 @@ class ResultFormatter:
                 "pair_improved": pair_improved,
                 "pair_efficiency": round(
                     pair_improved / max(1, pair_tried), 4
+                ),
+                "directed_exchange_tried": _sum(
+                    "directed_exchange_tried"
+                ),
+                "directed_exchange_accepted": _sum(
+                    "directed_exchange_accepted"
+                ),
+                "directed_exchange_geofail": _sum(
+                    "directed_exchange_geofail"
+                ),
+                "directed_exchange_gate_rejected": _sum(
+                    "directed_exchange_gate_rejected"
                 ),
                 "hole_fill_tried": _sum("hole_fill_tried"),
                 "hole_fill_success": _sum("hole_fill_success"),

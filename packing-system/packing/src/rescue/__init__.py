@@ -14,6 +14,7 @@ from .pallet_evaluator import PalletEvaluator
 from .recipe_rebuilder import rescue_by_recipe_rebuild
 from .rescue_optimizer import RescueOptimizer
 from .tail_fragment_absorber import TailFragmentAbsorber
+from .directed_exchange import directed_donor_receiver_exchange
 from .topup_rescuer import fast_rescue_failed_pallets_by_topup
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "LowLoadRebuilder",
     "LowFillRepacker",
     "TailFragmentAbsorber",
+    "directed_donor_receiver_exchange",
     "fast_rescue_failed_pallets_by_topup",
     "fast_rescue_failed_pallets_by_hole_fill",
     "rescue_by_recipe_rebuild",

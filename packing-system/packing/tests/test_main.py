@@ -654,6 +654,12 @@ def test_result_formatter():
         rescued_cnt=0,
         runtime={'packing': 0.5, 'retry': 0.2, 'repack': 0.1, 'total': 0.9},
         repack_result={'pair_tried': 4, 'pair_improved': 1},
+        directed_exchange_result={
+            'directed_exchange_tried': 5,
+            'directed_exchange_accepted': 1,
+            'directed_exchange_geofail': 2,
+            'directed_exchange_gate_rejected': 1,
+        },
     )
     assert stats['total_pallets'] == 2
     assert stats['kpi']['pair_efficiency'] == 0.25
@@ -673,6 +679,10 @@ def test_result_formatter():
     )
     assert overall['total_pallets'] == 2
     assert overall['kpi']['failed_near_count'] == 1
+    assert overall['kpi']['directed_exchange_tried'] == 5
+    assert overall['kpi']['directed_exchange_accepted'] == 1
+    assert overall['kpi']['directed_exchange_geofail'] == 2
+    assert overall['kpi']['directed_exchange_gate_rejected'] == 1
     print(f"总体统计 OK: failed_near={overall['kpi']['failed_near_count']}")
     print("[PASS] ResultFormatter\n")
 

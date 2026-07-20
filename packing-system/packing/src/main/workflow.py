@@ -21,6 +21,7 @@ from .alternative_path import (
     has_uncaptured_opportunity,
     run_alternative_full_path,
 )
+from ..rescue.directed_exchange import directed_donor_receiver_exchange
 
 # 组内子聚类：混合订单拆出的「杂箱子组」临时订单后缀，输出前 _restore_split_orders 还原。
 _SPLIT_REST_TAG = '__SPLITREST__'
@@ -173,20 +174,34 @@ class PackingWorkflow:
             pallet_dims = boxes_in_group[0]['pallet_dims']
             repack_start = time.time()
             canonical = (index_diag.get("canonical_layer_best") or {}).get("best_mpm")
-            geometric_unreachable = (
+            canonical_shortfall_hint = (
                 target_mpm is not None
                 and canonical is not None
                 and float(canonical) + 1e-9 < float(target_mpm)
             )
-            if geometric_unreachable:
-                print(f"  - 几何不可达标记：典型整层上限 {float(canonical):g} < 目标 {float(target_mpm):g}，救援优先压缩托盘数和填充率。")
+            if canonical_shortfall_hint:
+                print(
+                    f"  - 几何诊断提示：典型整层参考值 {float(canonical):g} "
+                    f"< 目标 {float(target_mpm):g}；该值不是不可达证明，继续执行指数救援。"
+                )
 
             main_tail_diag = index_diag.get("main_tail_absorb") or {}
-            skip_index_rescue = geometric_unreachable or main_tail_diag.get("tail_absorb_success", 0) > 0
+            proven_index_unreachable = bool(
+                index_diag.get("index_target_unreachable", False)
+            )
+            skip_index_rescue = proven_index_unreachable
             rescue_timing = {}
 
             t_stage = time.time()
-            pool_diag = {"rescued": 0, "rebuild_attempts": 0, "skipped": True} if geometric_unreachable else self._failed_pool_rebuilder.rebuild(type_plan, pallet_dims, target_mpm)
+            directed_diag = self._call_directed_exchange(
+                type_plan, pallet_dims, target_mpm,
+            )
+            rescue_timing["directed_exchange_seconds"] = (
+                time.time() - t_stage
+            )
+
+            t_stage = time.time()
+            pool_diag = {"rescued": 0, "rebuild_attempts": 0, "skipped": True} if proven_index_unreachable else self._failed_pool_rebuilder.rebuild(type_plan, pallet_dims, target_mpm)
             rescue_timing["failed_pool_seconds"] = time.time() - t_stage
 
             t_stage = time.time()
@@ -198,11 +213,11 @@ class PackingWorkflow:
             rescue_timing["topup_rescue_seconds"] = time.time() - t_stage
 
             t_stage = time.time()
-            rb = {"rescued": 0, "recipe_rebuild_tried": 0, "recipe_rebuild_success": 0, "skipped": True} if geometric_unreachable else self._recipe_rebuild(type_plan, pallet_dims, target_mpm, max_group_boxes=400, max_recipe_count=12)
+            rb = {"rescued": 0, "recipe_rebuild_tried": 0, "recipe_rebuild_success": 0, "skipped": True} if proven_index_unreachable else self._recipe_rebuild(type_plan, pallet_dims, target_mpm, max_group_boxes=400, max_recipe_count=12)
             rescue_timing["recipe_rebuild_seconds"] = time.time() - t_stage
 
             t_stage = time.time()
-            low_fill_diag = {"low_fill_tried": 0, "low_fill_accepted": 0, "reason": "geometric_target_unreachable"} if geometric_unreachable else self._low_fill_repacker.repack(type_plan, pallet_dims, target_mpm, geometric_unreachable)
+            low_fill_diag = {"low_fill_tried": 0, "low_fill_accepted": 0, "reason": "index_target_unreachable"} if proven_index_unreachable else self._low_fill_repacker.repack(type_plan, pallet_dims, target_mpm, False)
             rescue_timing["low_fill_seconds"] = time.time() - t_stage
 
             t_stage = time.time()
@@ -210,7 +225,7 @@ class PackingWorkflow:
             rescue_timing["tail_absorb_seconds"] = time.time() - t_stage
 
             t_stage = time.time()
-            low_diag = self._low_load_rebuilder.compact_low_fill_tails(type_plan, pallet_dims, target_mpm) if geometric_unreachable else self._low_load_rebuilder.rebuild(type_plan, pallet_dims, target_mpm)
+            low_diag = self._low_load_rebuilder.compact_low_fill_tails(type_plan, pallet_dims, target_mpm) if proven_index_unreachable else self._low_load_rebuilder.rebuild(type_plan, pallet_dims, target_mpm)
             rescue_timing["low_load_seconds"] = time.time() - t_stage
             if hasattr(self._low_load_rebuilder, "merge_low_load_pairs"):
                 t_stage = time.time()
@@ -227,11 +242,11 @@ class PackingWorkflow:
 
             self._drop_empty_pallets(type_plan)
             repack_time = time.time() - repack_start
-            rescued = hf.get("rescued", 0) + tu.get("rescued", 0) + rb.get("rescued", 0) + repack.get("rescued", 0) + max(0, low_fill_diag.get("low_fill_new_success", 0) - low_fill_diag.get("low_fill_old_success", 0)) + pool_diag.get("rescued", 0) + max(0, tail_diag.get("tail_absorb_new_success", 0) - tail_diag.get("tail_absorb_old_success", 0)) + max(0, low_diag.get("low_load_new_success", 0) - low_diag.get("low_load_old_success", 0))
+            rescued = directed_diag.get("rescued", 0) + hf.get("rescued", 0) + tu.get("rescued", 0) + rb.get("rescued", 0) + repack.get("rescued", 0) + max(0, low_fill_diag.get("low_fill_new_success", 0) - low_fill_diag.get("low_fill_old_success", 0)) + pool_diag.get("rescued", 0) + max(0, tail_diag.get("tail_absorb_new_success", 0) - tail_diag.get("tail_absorb_old_success", 0)) + max(0, low_diag.get("low_load_new_success", 0) - low_diag.get("low_load_old_success", 0))
 
             group_total = time.time() - group_start
             runtime = {"packing": pack_runtime["packing"], "topup": pack_runtime.get("topup", 0.0), "retry": pack_runtime["retry"], "repack": repack_time, "total": group_total, **rescue_timing}
-            type_stats = ResultFormatter.build_type_stats(type_plan, pallet_type, sales_order_no, index_diag, rescued, runtime, repack, hf, tu, rb, low_diag, tail_diag, low_fill_diag, pool_diag)
+            type_stats = ResultFormatter.build_type_stats(type_plan, pallet_type, sales_order_no, index_diag, rescued, runtime, repack, hf, tu, rb, low_diag, tail_diag, low_fill_diag, pool_diag, directed_diag)
             by_type_stats[f"{pallet_type}__{sales_order_no}"] = type_stats
             final_plan.extend(type_plan)
             runtime_stats["group_pack_seconds"] += pack_runtime["packing"]
@@ -276,12 +291,17 @@ class PackingWorkflow:
         # GCP 无救援链，但失败盘同样要"尽量装满"：挂互借修复（合并重装，
         # 棘轮验收：守恒+门禁+盘数更少或新增达标才接受，结构上不退步）。
         t_repack = time.time()
+        directed_diag = self._call_directed_exchange(
+            type_plan, boxes_in_group[0].get('pallet_dims'), target_mpm,
+        )
         repack = self._call_rescue_optimizer(
             type_plan, target_mpm, boxes_in_group[0].get('pallet_dims'),
         )
         repack_time = time.time() - t_repack
         self._drop_empty_pallets(type_plan)
-        rescued = repack.get("rescued", 0)
+        rescued = (
+            directed_diag.get("rescued", 0) + repack.get("rescued", 0)
+        )
         group_total = time.time() - group_start
         runtime = {
             "packing": pack_runtime["packing"], "topup": 0.0, "retry": 0.0,
@@ -290,7 +310,7 @@ class PackingWorkflow:
         }
         type_stats = ResultFormatter.build_type_stats(
             type_plan, pallet_type, sales_order_no, index_diag, rescued,
-            runtime, repack,
+            runtime, repack, directed_exchange_result=directed_diag,
         )
         by_type_stats[f"{pallet_type}__{sales_order_no}"] = type_stats
         final_plan.extend(type_plan)
@@ -550,6 +570,36 @@ class PackingWorkflow:
                                          "no_low_fill_success_donor"):
             print(f"  - 指数再分配诊断：未接受（{r_reason}）。")
         return diag
+
+    def _call_directed_exchange(
+        self,
+        type_plan: List[Dict],
+        pallet_dims: Optional[Dict],
+        target_mpm: Optional[float],
+    ) -> Dict:
+        """Run fixed-receiver exchange with a configuration-bounded search."""
+
+        if not bool(getattr(
+            self._constraint_config, "directed_exchange_enabled", True
+        )):
+            return {
+                "rescued": 0,
+                "directed_exchange_tried": 0,
+                "directed_exchange_accepted": 0,
+                "skipped": True,
+            }
+        return directed_donor_receiver_exchange(
+            type_plan,
+            pallet_dims or {},
+            target_mpm,
+            self._constraint_config,
+            int(getattr(
+                self._constraint_config, "directed_exchange_max_items", 4
+            )),
+            int(getattr(
+                self._constraint_config, "directed_exchange_max_attempts", 40
+            )),
+        )
 
     def _drop_empty_pallets(self, type_plan: List[Dict]) -> int:
         before = len(type_plan)
