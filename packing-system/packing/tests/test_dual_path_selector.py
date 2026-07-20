@@ -162,6 +162,7 @@ def test_alternative_full_path_returns_complete_report():
     assert result["status"] == "ok", result.get("error")
     assert result["report"] is not None
     assert result["report"]["pallets"]
+    assert result["internal_plans"]
 
 
 def test_workflow_runs_and_adopts_alternative_for_opportunity_group(monkeypatch):
@@ -174,12 +175,15 @@ def test_workflow_runs_and_adopts_alternative_for_opportunity_group(monkeypatch)
     alternative = [
         _plan("P1", [_box("A", 0, 100), _box("B", 100, 100)])
     ]
+    formatted_alternative = deepcopy(alternative)
+    formatted_alternative[0]["formatted_copy"] = True
     monkeypatch.setattr(
         workflow_module,
         "run_alternative_full_path",
         lambda boxes, config, timeout_seconds: {
             "status": "ok",
-            "report": {"pallets": alternative},
+            "report": {"pallets": formatted_alternative},
+            "internal_plans": alternative,
             "error": None,
             "elapsed_seconds": 0.2,
         },
@@ -195,7 +199,7 @@ def test_workflow_runs_and_adopts_alternative_for_opportunity_group(monkeypatch)
         [box_a, box_b], primary, 192.0, PALLET_DIMS
     )
 
-    assert chosen == alternative
+    assert chosen is alternative
     assert diag["triggered"] is True
     assert diag["adopted"] is True
     assert diag["source"] == "alternative"

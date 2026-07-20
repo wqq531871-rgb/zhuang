@@ -7,6 +7,7 @@ import multiprocessing
 import os
 import tempfile
 import time
+from copy import deepcopy
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -37,12 +38,26 @@ def _alternative_path_worker(
                 constraint_config=ConstraintConfig.from_dict(config_data)
             )
             workflow._report_persister = NullReportPersister()
+            captured = {}
+            make_json_plan = workflow._make_json_plan
+
+            def capture_internal_plans(plans, raw_boxes):
+                captured["plans"] = deepcopy(plans)
+                return make_json_plan(plans, raw_boxes)
+
+            workflow._make_json_plan = capture_internal_plans
             report = workflow.run_with_boxes(boxes)
-            payload = {"status": "ok", "report": report, "error": None}
+            payload = {
+                "status": "ok",
+                "report": report,
+                "internal_plans": captured.get("plans"),
+                "error": None,
+            }
         except BaseException as exc:  # Serialize child failures for the parent.
             payload = {
                 "status": "error",
                 "report": None,
+                "internal_plans": None,
                 "error": "%s: %s" % (type(exc).__name__, exc),
             }
     payload["log"] = log_buffer.getvalue()

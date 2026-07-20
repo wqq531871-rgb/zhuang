@@ -7,10 +7,12 @@
 
 import inspect
 import time
+from copy import deepcopy
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from ..utils.case_group import CASE_GROUP_ORDER_TAG, split_case_group_tag
+from ..utils.helpers import repack_ready_item
 from .order_processor import OrderProcessor
 from .pallet_packer import PalletPacker
 from .recipe_first import pack_group_recipe_first
@@ -370,7 +372,9 @@ class PackingWorkflow:
             return gcp_plans, diag
 
         report = result["report"]
-        alternative_plans = list(report.get("pallets") or [])
+        alternative_plans = result.get("internal_plans")
+        if alternative_plans is None:
+            alternative_plans = list(report.get("pallets") or [])
         diag["alternative_rank"] = candidate_rank(alternative_plans)
         chosen, source = choose_guarded_candidate(
             boxes_in_group,
@@ -430,19 +434,17 @@ class PackingWorkflow:
     def _cross_group_fill_compact(
         self, final_plan: List[Dict], by_type_stats: Dict,
     ) -> None:
-        """跨子组装满压实：只处理被组内子聚类拆开的真实订单。
+        """Run opportunity rescue across internally split routing groups.
 
         __SPLITREST__ 拆分是内部路由手段（规则子集走 GCP、杂箱走
-        baseline），但救援链按内部子组运行——杂箱组的碎片失败盘与主组的
-        可行搭档被人为隔开（如 fill 0.07 碎盘在 4 盘杂箱组里无搭档可并）。
-        所有组完成后按"真实订单"重聚（case_group 标签保留在订单号里，
-        业务隔离不破坏），对跨子组失败盘补一次装满压实（纯减盘，守恒+
-        门禁同 `RescueOptimizer._fill_compact`），并同步受影响子组的统计。
+        baseline），但业务机会必须按拆分前的真实订单计算。所有内部子组完成后
+        重聚，在同一 case_group 内依次尝试定向换箱、CP-SAT 目标子集、限时
+        完整替代路径，最后再做纯减盘压实。每次替换都经过守恒和最终门禁棘轮。
         """
-        if self._rescue_optimizer is None or not hasattr(
-            self._rescue_optimizer, 'fill_compact'
-        ):
-            return
+        can_compact = (
+            self._rescue_optimizer is not None
+            and hasattr(self._rescue_optimizer, 'fill_compact')
+        )
         groups: Dict = {}
         for p in final_plan:
             order = p.get('sales_order_no') or ''
@@ -458,12 +460,6 @@ class PackingWorkflow:
             if target_mpm is None:
                 continue
             plans = info['plans']
-            failed = [
-                p for p in plans
-                if p.get('mpm_status') == 'FAILED' and p.get('packed_items')
-            ]
-            if len(failed) < 2:
-                continue
             dims = None
             for p in plans:
                 items = p.get('packed_items') or []
@@ -473,23 +469,148 @@ class PackingWorkflow:
             if not dims:
                 continue
             sub = list(plans)
-            diag = self._rescue_optimizer.fill_compact(
-                sub, float(target_mpm), pallet_dims=dims
+            raw_boxes = [
+                repack_ready_item(deepcopy(item))
+                for plan in plans
+                for item in plan.get('packed_items', [])
+            ]
+            changed = False
+
+            directed_diag = self._call_directed_exchange(
+                sub, dims, float(target_mpm)
             )
-            if not diag.get("fill_compact_merges"):
+            if directed_diag.get('directed_exchange_accepted'):
+                changed = True
+                print(
+                    f"  - 跨子组定向换箱（{pallet_type} / {real_order}）："
+                    f"救回 {directed_diag.get('rescued', 0)} 个达标盘。"
+                )
+
+            exact_enabled = bool(getattr(
+                self._constraint_config,
+                'cpsat_target_subset_enabled',
+                True,
+            ))
+            if (
+                exact_enabled
+                and self._gcp_packer is not None
+                and hasattr(self._gcp_packer, '_build_exact_target_candidate')
+                and has_uncaptured_opportunity(raw_boxes, sub, target_mpm)
+            ):
+                exact_result = self._gcp_packer._build_exact_target_candidate(
+                    pallet_type,
+                    real_order,
+                    raw_boxes,
+                    float(target_mpm),
+                    dims,
+                )
+                if exact_result is not None:
+                    exact_plans, _runtime, _diag = exact_result
+                    chosen, source = choose_guarded_candidate(
+                        raw_boxes,
+                        sub,
+                        exact_plans,
+                        dims,
+                        self._constraint_config,
+                    )
+                    if source == 'alternative':
+                        sub = chosen
+                        changed = True
+                        print(
+                            f"  - 跨子组 CP-SAT 目标子集（{pallet_type} / "
+                            f"{real_order}）：采用严格更优候选。"
+                        )
+
+            dual_diag = None
+            dual_enabled = bool(getattr(
+                self._constraint_config, 'dual_path_enabled', True
+            ))
+            if dual_enabled and has_uncaptured_opportunity(
+                raw_boxes, sub, target_mpm
+            ):
+                result = run_alternative_full_path(
+                    raw_boxes,
+                    self._constraint_config,
+                    timeout_seconds=float(getattr(
+                        self._constraint_config,
+                        'dual_path_time_limit_seconds',
+                        30.0,
+                    )),
+                )
+                dual_diag = {
+                    'enabled': True,
+                    'triggered': True,
+                    'status': result.get('status', 'error'),
+                    'adopted': False,
+                    'source': 'gcp',
+                    'elapsed_seconds': float(
+                        result.get('elapsed_seconds', 0.0) or 0.0
+                    ),
+                }
+                report = result.get('report')
+                if result.get('status') == 'ok' and report:
+                    alternative = result.get('internal_plans')
+                    if alternative is None:
+                        alternative = list(report.get('pallets') or [])
+                    chosen, source = choose_guarded_candidate(
+                        raw_boxes,
+                        sub,
+                        alternative,
+                        dims,
+                        self._constraint_config,
+                    )
+                    dual_diag['source'] = source
+                    dual_diag['adopted'] = source == 'alternative'
+                    if dual_diag['adopted']:
+                        sub = chosen
+                        changed = True
+                        print(
+                            f"  - 跨子组条件双路径（{pallet_type} / "
+                            f"{real_order}）：采用严格更优完整路径。"
+                        )
+
+            compact_diag = {'fill_compact_merges': 0}
+            failed = [
+                plan for plan in sub
+                if plan.get('mpm_status') == 'FAILED'
+                and plan.get('packed_items')
+            ]
+            if can_compact and len(failed) >= 2:
+                compact_candidate = deepcopy(sub)
+                compact_diag = self._rescue_optimizer.fill_compact(
+                    compact_candidate, float(target_mpm), pallet_dims=dims
+                ) or compact_diag
+                if compact_diag.get('fill_compact_merges'):
+                    chosen, source = choose_guarded_candidate(
+                        raw_boxes,
+                        sub,
+                        compact_candidate,
+                        dims,
+                        self._constraint_config,
+                    )
+                    if source == 'alternative':
+                        sub = chosen
+                        changed = True
+                        print(
+                            f"  - 跨子组装满压实（{pallet_type} / {real_order}）："
+                            f"合并 {compact_diag['fill_compact_merges']} 次（纯减盘数）。"
+                        )
+            if not changed:
                 continue
-            print(
-                f"  - 跨子组装满压实（{pallet_type} / {real_order}）："
-                f"合并 {diag['fill_compact_merges']} 次（纯减盘数）。"
-            )
+
             # 原组托盘整体替换（保持组首位置，其余组次序不动）
             group_ids = {id(p) for p in plans}
-            idx = next(
-                i for i, p in enumerate(final_plan) if id(p) in group_ids
-            )
-            rest = [p for p in final_plan if id(p) not in group_ids]
+            rebuilt = []
+            inserted = False
+            for plan in final_plan:
+                if id(plan) in group_ids:
+                    if not inserted:
+                        rebuilt.extend(sub)
+                        inserted = True
+                    continue
+                rebuilt.append(plan)
             final_plan.clear()
-            final_plan.extend(rest[:idx] + sub + rest[idx:])
+            final_plan.extend(rebuilt)
             # 受影响子组统计同步（总汇总按 by_type_stats 累加，必须一致）
             for internal_order in info['orders']:
                 st = by_type_stats.get(f"{pallet_type}__{internal_order}")
@@ -516,6 +637,20 @@ class PackingWorkflow:
                     diag_d['avg_fill_rate'] = round(
                         sum(fills) / max(1, len(fills)), 6
                     )
+            canonical = by_type_stats.get(f"{pallet_type}__{real_order}")
+            if canonical is not None:
+                kpi = canonical.setdefault('kpi', {})
+                for key in (
+                    'directed_exchange_tried',
+                    'directed_exchange_accepted',
+                    'directed_exchange_geofail',
+                    'directed_exchange_gate_rejected',
+                ):
+                    kpi[key] = kpi.get(key, 0) + int(
+                        directed_diag.get(key, 0) or 0
+                    )
+                if dual_diag is not None:
+                    canonical['dual_path'] = dual_diag
 
     def _restore_split_orders(self, final_plan: List[Dict], by_type_stats: Dict) -> None:
         """输出前统一盘号与订单号：还原内部订单后缀（组内子聚类

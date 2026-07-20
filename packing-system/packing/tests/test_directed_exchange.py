@@ -212,3 +212,117 @@ def test_workflow_skips_directed_exchange_when_disabled(monkeypatch):
         "directed_exchange_accepted": 0,
         "skipped": True,
     }
+
+
+def test_cross_split_workflow_runs_directed_exchange_before_compaction():
+    from src.main.workflow import PackingWorkflow
+
+    class NoMergeOptimizer:
+        def fill_compact(self, plans, target_mpm, pallet_dims=None):
+            return {"fill_compact_merges": 0}
+
+    receiver = _plan("R", [_box("receiver", 0, 180)])
+    receiver["sales_order_no"] = "O1"
+    donor = _plan("D", [_box("move", 100, 20)])
+    donor["sales_order_no"] = "O1__SPLITREST__"
+    plans = [receiver, donor]
+    workflow = PackingWorkflow.__new__(PackingWorkflow)
+    workflow._constraint_config = ConstraintConfig(
+        suction_reachability_enabled=False,
+        center_of_mass_tolerance=1.0,
+        dual_path_enabled=False,
+        cpsat_target_subset_enabled=False,
+    )
+    workflow._targets = {"TEST": 192.0}
+    workflow._rescue_optimizer = NoMergeOptimizer()
+    workflow._gcp_packer = None
+    stats = {
+        "TEST__O1": {"kpi": {}, "diagnosis": {}},
+        "TEST__O1__SPLITREST__": {"kpi": {}, "diagnosis": {}},
+    }
+
+    workflow._cross_group_fill_compact(plans, stats)
+
+    assert sum(plan["mpm_status"] == "SUCCESS" for plan in plans) == 1
+    assert stats["TEST__O1"]["kpi"]["directed_exchange_accepted"] == 1
+
+
+def test_cross_split_workflow_evaluates_exact_target_candidate(monkeypatch):
+    import src.main.workflow as workflow_module
+    from src.main.workflow import PackingWorkflow
+
+    class NoMergeOptimizer:
+        def fill_compact(self, plans, target_mpm, pallet_dims=None):
+            return {"fill_compact_merges": 0}
+
+    class ExactPacker:
+        def __init__(self):
+            self.calls = []
+
+        def _build_exact_target_candidate(self, *args):
+            self.calls.append(args)
+            return ([{"packed_items": [], "mpm_status": "SUCCESS",
+                      "mpm_total": 200.0}], {"packing": 0.1}, {})
+
+    receiver = _plan("R", [_box("receiver", 0, 180)])
+    receiver["sales_order_no"] = "O1"
+    donor = _plan("D", [_box("move", 100, 20)])
+    donor["sales_order_no"] = "O1__SPLITREST__"
+    plans = [receiver, donor]
+    exact_plan = [{"packed_items": [], "mpm_status": "SUCCESS",
+                   "mpm_total": 200.0}]
+    monkeypatch.setattr(
+        workflow_module,
+        "choose_guarded_candidate",
+        lambda raw, current, candidate, dims, cfg: (exact_plan, "alternative"),
+    )
+    workflow = PackingWorkflow.__new__(PackingWorkflow)
+    workflow._constraint_config = ConstraintConfig(
+        directed_exchange_enabled=False,
+        dual_path_enabled=False,
+        cpsat_target_subset_enabled=True,
+    )
+    workflow._targets = {"TEST": 192.0}
+    workflow._rescue_optimizer = NoMergeOptimizer()
+    workflow._gcp_packer = ExactPacker()
+    stats = {
+        "TEST__O1": {"kpi": {}, "diagnosis": {}},
+        "TEST__O1__SPLITREST__": {"kpi": {}, "diagnosis": {}},
+    }
+
+    workflow._cross_group_fill_compact(plans, stats)
+
+    assert len(workflow._gcp_packer.calls) == 1
+    assert plans == exact_plan
+
+
+def test_cross_split_failed_compaction_cannot_mutate_current_plan():
+    from src.main.workflow import PackingWorkflow
+
+    class MutatingNoMergeOptimizer:
+        def fill_compact(self, plans, target_mpm, pallet_dims=None):
+            plans[0]["corrupted_by_failed_attempt"] = True
+            return {"fill_compact_merges": 0}
+
+    receiver = _plan("R", [_box("receiver", 0, 100)])
+    receiver["sales_order_no"] = "O1"
+    donor = _plan("D", [_box("move", 100, 100)])
+    donor["sales_order_no"] = "O1__SPLITREST__"
+    plans = [receiver, donor]
+    workflow = PackingWorkflow.__new__(PackingWorkflow)
+    workflow._constraint_config = ConstraintConfig(
+        directed_exchange_enabled=False,
+        dual_path_enabled=False,
+        cpsat_target_subset_enabled=False,
+    )
+    workflow._targets = {"TEST": 192.0}
+    workflow._rescue_optimizer = MutatingNoMergeOptimizer()
+    workflow._gcp_packer = None
+    stats = {
+        "TEST__O1": {"kpi": {}, "diagnosis": {}},
+        "TEST__O1__SPLITREST__": {"kpi": {}, "diagnosis": {}},
+    }
+
+    workflow._cross_group_fill_compact(plans, stats)
+
+    assert all("corrupted_by_failed_attempt" not in plan for plan in plans)
