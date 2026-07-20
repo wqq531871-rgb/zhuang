@@ -1,0 +1,24 @@
+[LOG] 后端日志文件：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\logs\backend_20260720_164406.log
+[LOG] 接口模式：每 200 秒拉取并计算，直到手动停止。
+[CMD] D:\ProgramData\anaconda3\python.exe E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\packing\run_wcs_service.py --config E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260720_164406.yaml --run-mode continuous
+[WCS] 已加载 BMS 参考表：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+============================================================
+WCS 接口装箱服务（DB 模式）
+  接口模式：真实 WCS（use_real_api=True）
+  接口地址：http://192.168.0.191:8092
+  接口1：http://192.168.0.191:8092/api/wcs/reqstockinfo
+  接口2：http://192.168.0.191:8092/api/wcs/sendpalletplanresult
+  拉取间隔：200 秒（仅拉取）
+  原始 JSON：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\input\raw
+  数据库：localhost:3306/zhuangdb 表 wcs_stock_box
+  BMS 参考：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+  输出目录：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output
+  触发：仅「新插入」开算；达标回写 up_to_standard=1
+  约束配置：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260720_164406.yaml
+  按 Ctrl+C 或由 UI 停止按钮结束进程
+============================================================
+============================================================
+[WCS-拉] 20260720_164412：拉取接口 1 …
+[WCS-装] 等待数据库新插入（有新 product_code 才开算）…
+[WCS-STOP] 真实接口调用失败（本轮拉取），服务停止：HTTPConnectionPool(host='192.168.0.191', port=8092): Max retries exceeded with url: /api/wcs/reqstockinfo (Caused by ConnectTimeoutError(<urllib3.connection.HTTPConnection object at 0x00000231ED9A6840>, 'Connection to 192.168.0.191 timed out. (connect timeout=30)'))
+[UI] 接口装箱服务已停止。

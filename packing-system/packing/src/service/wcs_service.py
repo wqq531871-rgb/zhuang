@@ -434,6 +434,23 @@ class WcsPackingService:
             map_path,
             {uid: pallet for uid, pallet in plan.plan_by_unique_id.items()},
         )
+        print(f"[WCS-装] 执行层映射已保存：{map_path}")
+
+        try:
+            from src.config import DEFAULT_PACKING_CONFIG
+            from src.postprocess.execution_planning_hook import (
+                run_execution_planning_for_plan,
+            )
+
+            exec_config = self._config_path or DEFAULT_PACKING_CONFIG
+            run_execution_planning_for_plan(
+                report_path,
+                exec_config,
+                log=print,
+            )
+        except Exception as exc:
+            print(f"[执行规划] 调用异常（不影响本轮装箱结果）：{exc}")
+
         print(f"[UI-RESULT] {report_path.resolve()}")
         return PackRunResult(
             executed=True,

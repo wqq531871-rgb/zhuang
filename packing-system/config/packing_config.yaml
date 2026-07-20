@@ -36,6 +36,24 @@ constraints:
   # 整层从不达标变达标"的箱型换向，救旋转敏感订单且不打乱已紧凑的难组布局）。
   # 仅作用于 baseline 路径；GCP 有独立朝向处理(_fp_orient/CP-SAT)。默认 true。
   allow_box_rotation_90: true
+execution_sequence:
+  # false 时跳过执行顺序规划（run_execution_planning / 一键装箱后置步骤都不生成）。
+  # true 时：根目录 run_packing、以及 UI「一键装箱」（Excel / 接口 WCS）在写出 packing_plan 后自动生成
+  #   *_execution.json / *_execution_wcs.json / *_execution_wcs_map.json。
+  enabled: true
+  # 同高度安全候选箱从指定托盘角点向外扩散。
+  # 可选：x_min_y_min / x_min_y_max / x_max_y_min / x_max_y_max
+  origin: x_min_y_min
+  # 几何比较容差，用于判断接触、重合和同一高度。
+  coordinate_tolerance_mm: 0.000001
+  # 箱体垂直下放路径的 XY 额外安全包络。
+  box_xy_clearance_mm: 2.0
+  # 吸盘垂直下放路径的 XY 额外安全包络。
+  suction_xy_clearance_mm: 2.0
+  # 吸盘下降至目标箱顶时要求保留的 Z 安全余量。
+  suction_z_clearance_mm: 0.0
+  # true 时每个箱子必须包含完整 suction_rect_* 字段。
+  require_suction_pose: true
 tolerances:
   xy_tolerance: 2.0
   z_tolerance: 0.0

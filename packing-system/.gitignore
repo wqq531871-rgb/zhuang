@@ -1,35 +1,34 @@
-# Python
+# Python bytecode and test caches
 __pycache__/
 *.py[cod]
-*$py.class
-*.egg-info/
+*.pyo
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments and local environment variables
 .venv/
 venv/
-.venvs/
-
-# Local secrets / machine-specific config
-config/packing_config.local.yaml
-*.local.yaml
+env/
 .env
 .env.*
 
-# Editor / OS
-.vscode/
+# IDE and local assistant settings
 .idea/
-*.swp
-.DS_Store
-Thumbs.db
+.vscode/
+.claude/
 
-# Runtime artifacts (must live in sibling packing-workspace, never here)
-input/
-output/
-data/
-runtime/
+# Generated analysis and temporary runtime files
+analysis-output/
+temp/
 *.log
 
-# Accidental large dumps
-*.xlsx
-!docs/**/*.xlsx
+# Local backup or scratch files
+*.l2
+*.tmp
+*.bak
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+desktop.ini

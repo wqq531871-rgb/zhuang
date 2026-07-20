@@ -483,14 +483,18 @@ class UiPackingWorker(QtCore.QThread):
             return
 
         time.sleep(0.3)
+        result_path: Optional[Path] = None
         if self.out_path.exists() and _is_valid_packing_json(self.out_path):
-            self.finished_json.emit(str(self.out_path))
-            return
+            result_path = self.out_path
+        else:
+            latest = find_latest_json(self.project_dir)
+            if latest and _is_valid_packing_json(latest):
+                self._emit_log(f"[提醒] 指定输出未生成，改用搜索到的最新结果：{latest}")
+                result_path = latest
 
-        latest = find_latest_json(self.project_dir)
-        if latest and _is_valid_packing_json(latest):
-            self._emit_log(f"[提醒] 指定输出未生成，改用搜索到的最新结果：{latest}")
-            self.finished_json.emit(str(latest))
+        if result_path is not None:
+            self._run_execution_planning(result_path)
+            self.finished_json.emit(str(result_path))
             return
 
         if self.out_path.exists():
@@ -503,6 +507,26 @@ class UiPackingWorker(QtCore.QThread):
                 f"后端已结束，但没有生成指定输出 JSON：{self.out_path}。"
                 "请查看底部日志中的后端错误信息。"
             )
+
+    def _run_execution_planning(self, plan_path: Path) -> None:
+        """一键装箱成功后自动跑执行顺序规划（受 execution_sequence.enabled 控制）。"""
+        try:
+            packing_root = self.project_dir / "packing"
+            packing_root_s = str(packing_root.resolve())
+            if packing_root_s not in sys.path:
+                sys.path.insert(0, packing_root_s)
+            from src.postprocess.execution_planning_hook import (  # type: ignore
+                run_execution_planning_for_plan,
+            )
+
+            run_execution_planning_for_plan(
+                plan_path,
+                self.config_path,
+                project_root=self.project_dir,
+                log=self._emit_log,
+            )
+        except Exception as exc:
+            self._emit_log(f"[执行规划] 调用异常（不影响本轮装箱结果）：{exc}")
 
     def _run_api_mode(self, run_script: Path) -> None:
         wcs_script = self.project_dir / DEFAULT_WCS_RUN_SCRIPT_REL
