@@ -119,6 +119,7 @@ def test_report_summary_counts_successful_and_infeasible_pallets():
 
 
 def test_result_formatter_attaches_robot_sequence_summary():
+    from src.config import ConstraintConfig
     from src.main.result_formatter import ResultFormatter
 
     raw = [box("A", 0, 0, 0)]
@@ -129,6 +130,10 @@ def test_result_formatter_attaches_robot_sequence_summary():
         1.25,
         raw,
         lambda final_plan, raw_boxes: deepcopy(final_plan),
+        constraint_config=ConstraintConfig(
+            suction_reachability_enabled=False,
+            center_of_mass_tolerance=1.0,
+        ),
     )
 
     assert report["robot_sequence_summary"]["successful_pallets_processed"] == 1

@@ -263,7 +263,14 @@ class PackingWorkflow:
         total_runtime = time.time() - start
         summary = {"overall": ResultFormatter.build_overall_summary(final_plan, by_type_stats, runtime_stats, total_runtime), "by_pallet_type": by_type_stats}
         self._print_overall(summary["overall"], runtime_stats, total_runtime)
-        report = ResultFormatter.build_full_report(final_plan, summary, total_runtime, all_boxes, self._make_json_plan)
+        report = ResultFormatter.build_full_report(
+            final_plan,
+            summary,
+            total_runtime,
+            all_boxes,
+            self._make_json_plan,
+            constraint_config=self._constraint_config,
+        )
         if self._report_persister is not None:
             self._report_persister.persist(report, total_runtime)
         return report

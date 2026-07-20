@@ -30,6 +30,7 @@ from src.packing.direct_layer_packer import (
     build_direct_layer_packing_solution,
 )
 from src.rescue import IndexBuilder, PalletEvaluator
+from src.config import ConstraintConfig
 
 
 def test_order_processor():
@@ -745,6 +746,100 @@ def test_output_quality_gate():
     print("[PASS] 输出质量门禁\n")
 
 
+def test_full_report_rejects_final_constraint_violation():
+    """最终报告必须对救援/兜底后的方案重新执行全量整盘门禁。"""
+    pallet_dims = {'length': 1200, 'width': 1000, 'height': 1450}
+
+    def _placed(box_id):
+        return {
+            'id': box_id,
+            'length': 300.0,
+            'width': 300.0,
+            'height': 100.0,
+            'raw_length': 300.0,
+            'raw_width': 300.0,
+            'raw_height': 100.0,
+            'weight': 1.0,
+            'position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+            'pallet_dims': pallet_dims,
+            'volume': 9_000_000.0,
+        }
+
+    raw_boxes = [_placed('A'), _placed('B')]
+    invalid_plan = [{
+        'pallet_id': 'P1',
+        'pallet_type': 'MH423C',
+        'sales_order_no': 'O1',
+        'mpm_target': 192.0,
+        'mpm_total': 0.0,
+        'mpm_status': 'FAILED',
+        'packed_items': [_placed('A'), _placed('B')],
+    }]
+
+    try:
+        ResultFormatter.build_full_report(
+            invalid_plan,
+            summary_stats={},
+            total_runtime=0.0,
+            raw_boxes=raw_boxes,
+            make_json_plan_fn=lambda plan, raw: plan,
+            constraint_config=ConstraintConfig(
+                suction_reachability_enabled=False,
+                center_of_mass_tolerance=1.0,
+            ),
+        )
+    except ValueError as exc:
+        assert 'overlap' in str(exc)
+        return
+    raise AssertionError('最终全量门禁未拒绝重叠托盘')
+
+
+def test_full_report_respects_target_gap_exemption():
+    """最终门禁沿用业务规则：达标盘免 gap，其他硬约束仍检查。"""
+    pallet_dims = {'length': 1200, 'width': 1000, 'height': 1450}
+
+    def _placed(box_id, x):
+        return {
+            'id': box_id,
+            'length': 100.0,
+            'width': 100.0,
+            'height': 100.0,
+            'raw_length': 100.0,
+            'raw_width': 100.0,
+            'raw_height': 100.0,
+            'weight': 1.0,
+            'min_pack_multiple': 96.0,
+            'position': {'x': x, 'y': 0.0, 'z': 0.0},
+            'pallet_dims': pallet_dims,
+            'volume': 1_000_000.0,
+        }
+
+    raw_boxes = [_placed('A', 0.0), _placed('B', 500.0)]
+    target_met_plan = [{
+        'pallet_id': 'P1',
+        'pallet_type': 'MH423C',
+        'sales_order_no': 'O1',
+        'mpm_target': 192.0,
+        'mpm_total': 192.0,
+        'mpm_status': 'SUCCESS',
+        'packed_items': [_placed('A', 0.0), _placed('B', 500.0)],
+    }]
+
+    report = ResultFormatter.build_full_report(
+        target_met_plan,
+        summary_stats={},
+        total_runtime=0.0,
+        raw_boxes=raw_boxes,
+        make_json_plan_fn=lambda plan, raw: plan,
+        constraint_config=ConstraintConfig(
+            suction_reachability_enabled=False,
+            center_of_mass_tolerance=1.0,
+        ),
+    )
+
+    assert report['pallets'][0]['pallet_id'] == 'P1'
+
+
 def test_output_fill_rate():
     print("=" * 60)
     print("测试输出填充率")
@@ -855,6 +950,139 @@ def test_workflow_smoke():
     print("[PASS] PackingWorkflow smoke\n")
 
 
+def test_workflow_canonical_hint_does_not_skip_index_rescue():
+    """诊断提示和已成功的尾料吸收都不能关闭其他指数救援。"""
+    import src.main.workflow as workflow_module
+
+    pallet_dims = {'length': 1200, 'width': 1000, 'height': 1450}
+    box = {
+        'id': 'B1',
+        'type': 'A',
+        'pallet_type': 'A',
+        'sales_order_no': 'O1',
+        'pallet_dims': pallet_dims,
+        'min_pack_multiple': 12.0,
+        'length': 100.0,
+        'width': 100.0,
+        'height': 100.0,
+        'raw_length': 100.0,
+        'raw_width': 100.0,
+        'raw_height': 100.0,
+        'weight': 1.0,
+        'position': {'x': 0.0, 'y': 0.0, 'z': 0.0},
+        'volume': 1_000_000.0,
+    }
+    plan = [{
+        'pallet_id': 'A-O1-1',
+        'pallet_type': 'A',
+        'sales_order_no': 'O1',
+        'packed_items': [box],
+        'mpm_total': 12.0,
+        'mpm_target': 20.0,
+        'mpm_gap': 8.0,
+        'mpm_status': 'FAILED',
+    }]
+    diag = {
+        'box_count': 1,
+        'total_mpm': 12.0,
+        'theoretical_success_pallets': 0,
+        'residual_mpm': 12.0,
+        'canonical_layer_best': {'best_mpm': 12.0},
+        'main_tail_absorb': {'tail_absorb_success': 1},
+    }
+    calls = {
+        'failed_pool': 0,
+        'hole_fill': 0,
+        'topup': 0,
+        'recipe': 0,
+        'low_fill': 0,
+        'low_load_rebuild': 0,
+        'low_load_compact': 0,
+        'tail_absorb': 0,
+    }
+
+    class StubPoolRebuilder:
+        def rebuild(self, plans, dims, target):
+            calls['failed_pool'] += 1
+            return {'rescued': 0, 'rebuild_attempts': 0}
+
+    class StubLowFillRepacker:
+        def repack(self, plans, dims, target, geometric_target_unreachable=False):
+            calls['low_fill'] += 1
+            assert geometric_target_unreachable is False
+            return {'low_fill_tried': 0, 'low_fill_accepted': 0}
+
+    class StubLowLoadRebuilder:
+        def rebuild(self, plans, dims, target):
+            calls['low_load_rebuild'] += 1
+            return {'low_load_tried': 0, 'low_load_accepted': 0}
+
+        def compact_low_fill_tails(self, plans, dims, target):
+            calls['low_load_compact'] += 1
+            return {'low_load_tried': 0, 'low_load_accepted': 0}
+
+    class StubTailFragmentAbsorber:
+        def absorb(self, plans, dims, target):
+            calls['tail_absorb'] += 1
+            return {'tail_absorb_tried': 0, 'tail_absorb_success': 0}
+
+    class StubRescueOptimizer:
+        def optimize_failed_by_failed(self, plans, target):
+            return {'rescued': 0, 'pair_tried': 0, 'pair_improved': 0}
+
+    cfg = ConstraintConfig(
+        main_packer='beam',
+        suction_reachability_enabled=False,
+        center_of_mass_tolerance=1.0,
+    )
+    workflow = PackingWorkflow(
+        preprocess_fn=lambda *a, **k: [box],
+        custom_packer_cls=_make_stub_packer(),
+        build_direct_layer_solution=lambda *a, **k: [],
+        build_centered_single_box_solution=lambda *a, **k: [],
+        validate_center_of_mass=lambda sol, dims: {'is_stable': True},
+        fast_rescue_hole_fill=lambda *a, **k: (
+            calls.__setitem__('hole_fill', calls['hole_fill'] + 1)
+            or {'rescued': 0}
+        ),
+        fast_rescue_topup=lambda *a, **k: (
+            calls.__setitem__('topup', calls['topup'] + 1)
+            or {'rescued': 0}
+        ),
+        rescue_by_recipe_rebuild=lambda *a, **k: (
+            calls.__setitem__('recipe', calls['recipe'] + 1)
+            or {'rescued': 0}
+        ),
+        rescue_optimizer=StubRescueOptimizer(),
+        failed_pool_rebuilder=StubPoolRebuilder(),
+        low_fill_repacker=StubLowFillRepacker(),
+        tail_fragment_absorber=StubTailFragmentAbsorber(),
+        low_load_rebuilder=StubLowLoadRebuilder(),
+        make_json_output_plan=lambda current_plan, raw: current_plan,
+        pallet_index_targets={'A': 20.0},
+        constraint_config=cfg,
+    )
+
+    original = workflow_module.pack_group_recipe_first
+    workflow_module.pack_group_recipe_first = (
+        lambda *a, **k: (plan, {'packing': 0.0, 'topup': 0.0, 'retry': 0.0}, diag)
+    )
+    try:
+        report = workflow.run_with_boxes([box])
+    finally:
+        workflow_module.pack_group_recipe_first = original
+
+    assert report is not None
+    assert calls['failed_pool'] == 1
+    assert calls['hole_fill'] == 1
+    assert calls['topup'] == 1
+    assert calls['recipe'] == 1
+    assert calls['low_fill'] == 1
+    assert calls['low_load_rebuild'] == 1
+    assert calls['low_load_compact'] == 0
+    assert calls['tail_absorb'] == 0
+
+
 if __name__ == '__main__':
     print("\n" + "=" * 60)
     print("主流程模块测试套件")
@@ -864,6 +1092,8 @@ if __name__ == '__main__':
         test_report_persister_writes_pallet_excel_summary()
         test_result_formatter()
         test_output_quality_gate()
+        test_full_report_rejects_final_constraint_violation()
+        test_full_report_respects_target_gap_exemption()
         test_output_fill_rate()
         test_pallet_packer()
         test_pallet_packer_conservation_fallback()
@@ -877,6 +1107,7 @@ if __name__ == '__main__':
         test_main_topup_rejects_fill_that_reduces_future_success()
         test_candidate_selection_preserves_success_potential()
         test_workflow_smoke()
+        test_workflow_canonical_hint_does_not_skip_index_rescue()
         print("=" * 60)
         print("[PASS] 所有测试通过！")
         print("=" * 60)

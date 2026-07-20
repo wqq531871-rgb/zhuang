@@ -381,10 +381,14 @@ class ResultFormatter:
         total_runtime: float,
         raw_boxes: List[Dict],
         make_json_plan_fn: Callable,
+        constraint_config=None,
     ) -> Dict:
         """组装最终 JSON 报告。"""
         pallets = make_json_plan_fn(final_plan, raw_boxes)
         ResultFormatter.validate_output_quality(raw_boxes, pallets)
+        ResultFormatter.validate_final_constraints(
+            pallets, constraint_config=constraint_config
+        )
 
         # 装箱几何完成后再生成机器人执行顺序：只增补顺序/依赖/吸盘字段，
         # 不改变托盘、箱子位置、尺寸、朝向或 packed_items 原始列表顺序。
@@ -398,6 +402,47 @@ class ResultFormatter:
             "robot_sequence_summary": robot_sequence_summary,
             "pallets": pallets,
         }
+
+    @staticmethod
+    def validate_final_constraints(
+        pallets: List[Dict], constraint_config=None
+    ) -> None:
+        """最终全量门禁：拒绝任何违反几何、稳定或机械约束的托盘。"""
+        from src.geometry.constraint_validator import validate_pallet_constraints
+
+        invalid = []
+        for pallet in pallets:
+            items = pallet.get('packed_items', []) or []
+            if not items:
+                continue
+            pallet_dims = items[0].get('pallet_dims') or pallet.get('pallet_dims')
+            if not pallet_dims:
+                invalid.append({
+                    'pallet_id': pallet.get('pallet_id'),
+                    'violations': [{'type': 'missing_pallet_dims'}],
+                })
+                continue
+            gate = validate_pallet_constraints(
+                pallet,
+                pallet_dims,
+                constraint_config=constraint_config,
+                target_mpm=pallet.get('mpm_target'),
+            )
+            if not gate['is_valid']:
+                invalid.append({
+                    'pallet_id': pallet.get('pallet_id'),
+                    'violations': gate['violations'],
+                })
+
+        if invalid:
+            preview = [
+                {
+                    'pallet_id': entry['pallet_id'],
+                    'violations': entry['violations'][:5],
+                }
+                for entry in invalid[:5]
+            ]
+            raise ValueError(f"最终整盘约束门禁失败：{preview}")
 
     @staticmethod
     def validate_output_quality(raw_boxes: List[Dict], pallets: List[Dict]) -> None:

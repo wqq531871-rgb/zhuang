@@ -36,26 +36,26 @@ def validate_pallet_constraints(
     require_suction: bool = True,
     center_of_mass_tolerance: float = 1.0 / 3.0,
     small_box_below_enabled: bool = True,
+    same_size_heavier_below_enabled: bool = True,
     constraint_config=None,
     target_mpm=None,
 ) -> Dict:
     """校验单个托盘方案的全部硬约束。
 
     必须约束（恒查，仅阈值可配）：越界、重叠、间隙、支撑率、重心稳定。
-    可关约束：小箱在下（small_box_below_enabled）、吸盘字段（require_suction）。
+    可关约束：小箱在下（small_box_below_enabled）、同尺寸重箱在下
+    （same_size_heavier_below_enabled）、吸盘字段（require_suction）。
 
     Args:
         center_of_mass_tolerance: 重心相对托盘中心的最大允许偏移比例。
         small_box_below_enabled: 是否校验「小箱在下」。
+        same_size_heavier_below_enabled: 是否校验「同尺寸重箱在下」。
         constraint_config: 可选 ConstraintConfig，提供时统一覆盖上述阈值/开关，
             保证门禁与放置层同源。不提供时沿用各参数默认值（行为不变）。
         target_mpm: 可选目标指数。提供且整盘指数 ≥ target 时跳过 gap 间隙校验
             （达标盘免 gap：gap 约束本意是防止偷懒留大空隙，达标即已尽力装满，
             剩余空隙是高密度装载的几何必然）；未达标盘仍查 gap。None 时永远查
             gap（历史行为不变）。
-
-    注：「同尺寸重箱在下」是放置时偏好约束，不在整盘硬门禁内校验，以保持
-    门禁与历史行为一致；其开关在放置层（BeamSearchPacker/direct_layer）生效。
     """
     if constraint_config is not None:
         support_ratio_threshold = constraint_config.support_ratio_threshold
@@ -63,6 +63,13 @@ def validate_pallet_constraints(
         require_suction = constraint_config.suction_reachability_enabled
         center_of_mass_tolerance = constraint_config.center_of_mass_tolerance
         small_box_below_enabled = constraint_config.small_box_below_enabled
+        same_size_heavier_below_enabled = (
+            constraint_config.same_size_heavier_below_enabled
+        )
+    if same_size_heavier_below_enabled:
+        from ..packing.stacking_policy import (
+            passes_same_size_heavier_below_constraint,
+        )
     violations: List[Dict] = []
     items = pallet_plan.get("packed_items", []) or []
     # case_group 同组约束（必须约束，数据驱动：全 0/缺失时永不触发）：
@@ -153,6 +160,14 @@ def validate_pallet_constraints(
         ):
             violations.append({
                 "type": "small_box_on_larger",
+                "box_id": item_id,
+            })
+
+        if same_size_heavier_below_enabled and not (
+            passes_same_size_heavier_below_constraint(item, pos, dims, others)
+        ):
+            violations.append({
+                "type": "same_size_heavier_below",
                 "box_id": item_id,
             })
 

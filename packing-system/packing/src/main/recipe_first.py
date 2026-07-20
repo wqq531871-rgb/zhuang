@@ -73,6 +73,9 @@ def _oriented_for_pallet(
             return box
     nb = dict(box)
     nb['length'], nb['width'] = W, L
+    nb['raw_length'], nb['raw_width'] = W, L
+    nb['raw_height'] = H
+    nb['layered_oriented'] = True
     return nb
 
 
@@ -107,6 +110,7 @@ def _pack_instance(
         gate = validate_pallet_constraints(
             {'packed_items': packed}, pallet_dims,
             constraint_config=getattr(packer, '_cfg', None),
+            target_mpm=target_mpm,
         )
         if gate['is_valid']:
             return packed

@@ -23,6 +23,7 @@ from typing import Dict, List, Optional, Tuple
 from ..config.constants import PALLET_INDEX_TARGETS
 from ..geometry.constraint_validator import validate_pallet_constraints
 from .beam_search_packer import BeamSearchPacker
+from .direct_layer_packer import build_centered_single_box_solution
 from .layered_packer import _assemble, _ffd_columns
 
 try:
@@ -1207,9 +1208,18 @@ class GlobalColumnPacker:
                 # output_formatter 取 position 会崩。剩余箱继续单柱兜底直到清空。
                 beam_dead = True
                 one = residual_boxes[0]
-                col = {'xlen': float(one.get('length', 0) or 0),
-                       'ylen': float(one.get('width', 0) or 0), 'boxes': [one]}
-                items_one = _assemble([(col, 0.0, 0.0)], packer, pallet_dims)
+                items_one = build_centered_single_box_solution(
+                    [one], pallet_dims,
+                    xy_tolerance=tol,
+                    z_tolerance=packer.z_tolerance,
+                    constraint_config=self._cfg,
+                )
+                if not items_one:
+                    col = {'xlen': float(one.get('length', 0) or 0),
+                           'ylen': float(one.get('width', 0) or 0), 'boxes': [one]}
+                    items_one = _assemble(
+                        [(col, 0.0, 0.0)], packer, pallet_dims
+                    )
                 total_one = sum(float(b.get('min_pack_multiple', 0) or 0) for b in items_one)
                 plan.append({
                     'pallet_id': f'{pallet_type}-{sales_order_no}-{seq}',

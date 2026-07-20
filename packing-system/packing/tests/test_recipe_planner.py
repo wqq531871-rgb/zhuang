@@ -11,6 +11,8 @@ from src.main.recipe_planner import (
     plan_recipe_pools,
 )
 from src.main.recipe_first import pack_group_recipe_first
+from src.main.recipe_first import _pack_instance
+from src.config import ConstraintConfig
 
 
 PALLET = {'length': 1440, 'width': 2240, 'height': 720}
@@ -206,10 +208,46 @@ def test_safe_mode_still_runs_baseline():
     print('[PASS] safe_mode_still_runs_baseline: 双跑棘轮保留')
 
 
+def test_pack_instance_respects_target_gap_exemption():
+    """配方已达目标时应按业务规则免 gap，其他完整门禁仍执行。"""
+    pallet = {'length': 1200, 'width': 1000, 'height': 1450}
+
+    def placed(box_id, x):
+        return {
+            'id': box_id,
+            'length': 100.0,
+            'width': 100.0,
+            'height': 100.0,
+            'raw_length': 100.0,
+            'raw_width': 100.0,
+            'raw_height': 100.0,
+            'weight': 1.0,
+            'min_pack_multiple': 96.0,
+            'position': {'x': x, 'y': 0.0, 'z': 0.0},
+            'pallet_dims': pallet,
+        }
+
+    pool = [placed('A', 0.0), placed('B', 500.0)]
+
+    class Packer:
+        _cfg = ConstraintConfig(
+            suction_reachability_enabled=False,
+            center_of_mass_tolerance=1.0,
+        )
+
+        def _initial_pack(self, *args, **kwargs):
+            return list(pool)
+
+    packed = _pack_instance(Packer(), pool, 192.0, pallet, 1)
+    assert packed is not None
+    assert {item['id'] for item in packed} == {'A', 'B'}
+
+
 if __name__ == '__main__':
     test_planner_group2_like_reaches_12_plus()
     test_recipe_use_counts_consistent_with_mpm()
     test_recipe_first_falls_back_when_instances_fail()
     test_fast_mode_skips_baseline_when_recipe_succeeds()
     test_safe_mode_still_runs_baseline()
+    test_pack_instance_respects_target_gap_exemption()
     print('[PASS] 所有测试通过！')
