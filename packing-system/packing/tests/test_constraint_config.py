@@ -76,6 +76,17 @@ def test_directed_exchange_settings_are_configurable():
     assert c.directed_exchange_max_attempts == 12
 
 
+def test_cpsat_target_subset_settings_are_configurable():
+    c = ConstraintConfig.from_dict({
+        'cpsat_target_subset_enabled': False,
+        'cpsat_target_subset_time_limit_seconds': 2.5,
+        'cpsat_target_subset_max_attempts': 3,
+    })
+    assert c.cpsat_target_subset_enabled is False
+    assert c.cpsat_target_subset_time_limit_seconds == 2.5
+    assert c.cpsat_target_subset_max_attempts == 3
+
+
 def test_frozen():
     c = ConstraintConfig()
     try:

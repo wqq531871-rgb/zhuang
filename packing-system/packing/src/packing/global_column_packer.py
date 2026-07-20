@@ -296,6 +296,114 @@ def _gcp_candidate_passes_gates(
     return True
 
 
+def _select_target_subset_cpsat(
+    boxes: List[Dict],
+    pallet_dims: Dict[str, float],
+    target_mpm: float,
+    excluded_signatures=None,
+    time_limit: float = 3.0,
+) -> List[Dict]:
+    """Select a volume-feasible target subset with minimum index overshoot."""
+
+    if not _HAS_ORTOOLS or target_mpm <= 0:
+        return []
+    pallet_length = float(pallet_dims.get('length', 0) or 0)
+    pallet_width = float(pallet_dims.get('width', 0) or 0)
+    pallet_height = float(pallet_dims.get('height', 0) or 0)
+    pallet_volume = int(round(
+        pallet_length * pallet_width * pallet_height
+    ))
+    if pallet_volume <= 0:
+        return []
+
+    eligible = []
+    for box in boxes:
+        length = float(box.get('length', 0) or 0)
+        width = float(box.get('width', 0) or 0)
+        height = float(box.get('height', 0) or 0)
+        mpm = float(box.get('min_pack_multiple', 0) or 0)
+        footprint_fits = (
+            (length <= pallet_length + 1e-9
+             and width <= pallet_width + 1e-9)
+            or (width <= pallet_length + 1e-9
+                and length <= pallet_width + 1e-9)
+        )
+        if mpm > 0 and height <= pallet_height + 1e-9 and footprint_fits:
+            eligible.append(box)
+    if not eligible:
+        return []
+
+    scale = 1000
+    target_value = int(round(float(target_mpm) * scale))
+    mpm_values = [
+        int(round(float(box.get('min_pack_multiple', 0) or 0) * scale))
+        for box in eligible
+    ]
+    volumes = [
+        int(round(
+            float(box.get('length', 0) or 0)
+            * float(box.get('width', 0) or 0)
+            * float(box.get('height', 0) or 0)
+        ))
+        for box in eligible
+    ]
+    volume_units = [max(1, int(round(volume / 1_000_000.0)))
+                    for volume in volumes]
+
+    model = cp_model.CpModel()
+    selected = [model.NewBoolVar(f'select_{i}') for i in range(len(eligible))]
+    total_mpm = sum(mpm_values[i] * selected[i]
+                    for i in range(len(eligible)))
+    model.Add(total_mpm >= target_value)
+    model.Add(sum(volumes[i] * selected[i]
+                  for i in range(len(eligible))) <= pallet_volume)
+
+    footprint_indices: Dict[Tuple[int, int], List[int]] = defaultdict(list)
+    for i, box in enumerate(eligible):
+        footprint = tuple(sorted((
+            int(round(float(box.get('length', 0) or 0))),
+            int(round(float(box.get('width', 0) or 0))),
+        )))
+        footprint_indices[footprint].append(i)
+    footprint_used = []
+    for fp_index, indices in enumerate(footprint_indices.values()):
+        used = model.NewBoolVar(f'footprint_{fp_index}')
+        footprint_used.append(used)
+        for index in indices:
+            model.Add(selected[index] <= used)
+        model.Add(used <= sum(selected[index] for index in indices))
+
+    ids = [str(box.get('id')) for box in eligible]
+    for signature in excluded_signatures or []:
+        signature_ids = {str(box_id) for box_id in signature}
+        exact_match_terms = [
+            selected[i] if ids[i] in signature_ids else 1 - selected[i]
+            for i in range(len(eligible))
+        ]
+        model.Add(sum(exact_match_terms) <= len(eligible) - 1)
+
+    max_volume_units = max(1, int(round(pallet_volume / 1_000_000.0)))
+    footprint_weight = max_volume_units + 1
+    overshoot_weight = (len(footprint_used) + 1) * footprint_weight
+    overshoot = total_mpm - target_value
+    model.Minimize(
+        overshoot * overshoot_weight
+        + sum(footprint_used) * footprint_weight
+        - sum(volume_units[i] * selected[i] for i in range(len(eligible)))
+    )
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = max(0.01, float(time_limit))
+    solver.parameters.num_search_workers = 8
+    solver.parameters.random_seed = 42
+    status = solver.Solve(model)
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return []
+    return [
+        box for i, box in enumerate(eligible) if solver.Value(selected[i])
+    ]
+
+
 def _col_units(ylen: float, tol: float) -> int:
     """柱沿 y 占用的 265-单元数（ceil，保证任意 ylen 不重叠）。"""
     return max(1, int(-(-(ylen + tol) // (_UNIT + tol))))
@@ -724,6 +832,59 @@ class GlobalColumnPacker:
                 diag,
             ))
 
+        normal_viable = [entry for entry in evaluated if entry[0]]
+        captured = max(
+            (entry[1][0] for entry in normal_viable), default=0
+        )
+        total_index = sum(
+            float(box.get('min_pack_multiple', 0) or 0)
+            for box in boxes_in_group
+        )
+        upper_bound = (
+            int(total_index // float(target_mpm))
+            if target_mpm is not None and target_mpm > 0 else 0
+        )
+        exact_enabled = bool(getattr(
+            self._cfg, 'cpsat_target_subset_enabled', True
+        ))
+        if exact_enabled and captured < upper_bound:
+            exact_result = self._build_exact_target_candidate(
+                pallet_type,
+                sales_order_no,
+                boxes_in_group,
+                target_mpm,
+                pallet_dims,
+            )
+            if exact_result is not None:
+                plans, exact_runtime, diag = exact_result
+                strategy_name = 'cpsat_target_subset'
+                bailed = bool(diag.get('gcp_bailout'))
+                gates_passed = _gcp_candidate_passes_gates(
+                    boxes_in_group, plans, self._cfg
+                )
+                rank = _plan_rank(plans)
+                diagnostics.append({
+                    'strategy': strategy_name,
+                    'rank': list(rank),
+                    'pallets': len(plans),
+                    'success': rank[0],
+                    'gcp_bailout': bailed,
+                    'gates_passed': gates_passed,
+                    'packing_seconds': round(float(
+                        exact_runtime.get('packing', 0.0) or 0.0
+                    ), 6),
+                    'subset_attempts': diag.get(
+                        'cpsat_target_subset_attempts', 0
+                    ),
+                })
+                evaluated.append((
+                    gates_passed and not bailed,
+                    rank,
+                    strategy_name,
+                    plans,
+                    diag,
+                ))
+
         viable = [entry for entry in evaluated if entry[0]]
         chosen = max(viable or evaluated, key=lambda entry: entry[1])
         _valid, _rank, strategy_name, plans, diag = chosen
@@ -735,6 +896,153 @@ class GlobalColumnPacker:
         diag['gcp_column_candidates'] = diagnostics
         runtime = {'packing': time.time() - started, 'topup': 0.0, 'retry': 0.0}
         return plans, runtime, diag
+
+    def _place_exact_target_subset(
+        self,
+        pallet_type,
+        sales_order_no,
+        selected_boxes,
+        target_mpm,
+        pallet_dims,
+    ):
+        """Place every selected box through exact 2D columns and exact stacking."""
+
+        if not selected_boxes:
+            return None
+        packer = BeamSearchPacker(
+            pallet_dims=pallet_dims, constraint_config=self._cfg
+        )
+        selected_ids = sorted(str(box.get('id')) for box in selected_boxes)
+        for _strategy, columns in _build_column_candidates(
+            selected_boxes, pallet_dims, target_mpm
+        ):
+            placed, unplaced = _cpsat_pack_2d(
+                columns,
+                pallet_dims,
+                time_limit=float(getattr(
+                    self._cfg,
+                    'cpsat_target_subset_time_limit_seconds',
+                    3.0,
+                )),
+            )
+            if unplaced or len(placed) != len(columns):
+                continue
+            placed = _center_placed(placed, pallet_dims, packer.size_tolerance)
+            board = self._new_board(
+                pallet_type,
+                sales_order_no,
+                1,
+                placed,
+                packer,
+                pallet_dims,
+                target_mpm,
+                gap=0.0,
+            )
+            if board is None:
+                continue
+            actual_ids = sorted(
+                str(box.get('id')) for box in board['packed_items']
+            )
+            if actual_ids == selected_ids and board['mpm_status'] == 'SUCCESS':
+                return board
+        return None
+
+    def _build_exact_target_candidate(
+        self,
+        pallet_type,
+        sales_order_no,
+        boxes_in_group,
+        target_mpm,
+        pallet_dims,
+    ):
+        """Retry CP-SAT subsets with no-good cuts until exact placement works."""
+
+        import time
+        started = time.time()
+        max_attempts = max(1, int(getattr(
+            self._cfg, 'cpsat_target_subset_max_attempts', 6
+        )))
+        time_limit = float(getattr(
+            self._cfg, 'cpsat_target_subset_time_limit_seconds', 3.0
+        ))
+        excluded = set()
+        diag = {
+            'gcp_bailout': False,
+            'gcp_column_strategy': 'cpsat_target_subset',
+            'cpsat_target_subset_attempts': 0,
+            'cpsat_target_subset_geometry_failures': 0,
+            'cpsat_target_subset_gate_failures': 0,
+        }
+        for _attempt in range(max_attempts):
+            selected = _select_target_subset_cpsat(
+                boxes_in_group,
+                pallet_dims,
+                float(target_mpm),
+                excluded_signatures=excluded,
+                time_limit=time_limit,
+            )
+            if not selected:
+                break
+            diag['cpsat_target_subset_attempts'] += 1
+            signature = frozenset(str(box.get('id')) for box in selected)
+            board = self._place_exact_target_subset(
+                pallet_type,
+                sales_order_no,
+                selected,
+                target_mpm,
+                pallet_dims,
+            )
+            if board is None:
+                diag['cpsat_target_subset_geometry_failures'] += 1
+                excluded.add(signature)
+                continue
+
+            selected_ids = {box.get('id') for box in selected}
+            residual = [
+                box for box in boxes_in_group
+                if box.get('id') not in selected_ids
+            ]
+            residual_plans = []
+            residual_bailout = False
+            if residual:
+                residual_candidates = _build_column_candidates(
+                    residual, pallet_dims, target_mpm
+                )
+                residual_columns = (
+                    residual_candidates[0][1]
+                    if residual_candidates else []
+                )
+                residual_plans, _runtime, residual_diag = (
+                    self._pack_group_with_columns(
+                        pallet_type,
+                        sales_order_no,
+                        residual,
+                        target_mpm,
+                        residual_columns,
+                        'cpsat_target_residual',
+                    )
+                )
+                residual_bailout = bool(
+                    residual_diag.get('gcp_bailout')
+                )
+            plans = [board] + residual_plans
+            for seq, plan in enumerate(plans, 1):
+                plan['pallet_id'] = (
+                    f'{pallet_type}-{sales_order_no}-{seq}'
+                )
+            if residual_bailout or not _gcp_candidate_passes_gates(
+                boxes_in_group, plans, self._cfg
+            ):
+                diag['cpsat_target_subset_gate_failures'] += 1
+                excluded.add(signature)
+                continue
+            return (
+                plans,
+                {'packing': time.time() - started,
+                 'topup': 0.0, 'retry': 0.0},
+                diag,
+            )
+        return None
 
     def _pack_group_with_columns(
         self,

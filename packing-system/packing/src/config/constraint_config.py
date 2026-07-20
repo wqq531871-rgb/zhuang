@@ -56,6 +56,9 @@ class ConstraintConfig:
         directed_exchange_enabled: 是否在整盘重排前尝试同 case_group 定向换箱。
         directed_exchange_max_items: 单次允许从 donor 取出的最大箱数。
         directed_exchange_max_attempts: 单业务组的最大候选尝试次数。
+        cpsat_target_subset_enabled: 未捕获指数上限时是否启用 CP-SAT 目标子集。
+        cpsat_target_subset_time_limit_seconds: 单次子集选择的求解时限秒数。
+        cpsat_target_subset_max_attempts: 几何失败后最多重选子集的次数。
     """
 
     # —— 必须约束的可配数值 ——
@@ -89,6 +92,11 @@ class ConstraintConfig:
     directed_exchange_enabled: bool = True
     directed_exchange_max_items: int = 4
     directed_exchange_max_attempts: int = 40
+
+    # —— CP-SAT 目标子集 + 精确柱式三维落地 ——
+    cpsat_target_subset_enabled: bool = True
+    cpsat_target_subset_time_limit_seconds: float = 3.0
+    cpsat_target_subset_max_attempts: int = 6
 
     # —— baseline 朝向规整（允许箱子 90° 旋转）——
     # baseline(beam+配方) 入口为每个箱子选「托盘上每层格数更大」的朝向，
