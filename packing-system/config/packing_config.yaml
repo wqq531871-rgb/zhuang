@@ -73,7 +73,7 @@ data_source:
   mode: api
   # TODO(真实接口开关/后端调试): true=用 api_base_url，失败则整服务停止；
   #   false=用 api_fallback_url（Postman）。仅改本配置，无界面开关。
-  use_real_api: false
+  use_real_api: true
   # TODO(现场接口根地址): 真实 WCS「协议+IP/域名+端口」，到现场改成正式地址。
   api_base_url: http://10.205.46.191:8092
   # TODO(备用 Mock 地址): use_real_api=false 时使用；换成你的 Postman Mock 根地址。
