@@ -122,6 +122,180 @@ def _build_columns(boxes: List[Dict], pallet_dims: Dict[str, float]) -> List[Dic
     return cols
 
 
+def _column_signature(columns: List[Dict]) -> Tuple[Tuple[str, ...], ...]:
+    """Return an order-independent signature for candidate deduplication."""
+
+    return tuple(sorted(
+        tuple(sorted(str(box.get('id')) for box in column['boxes']))
+        for column in columns
+    ))
+
+
+def _balanced_columns(group: List[Dict], cap: float) -> List[List[Dict]]:
+    """Spread high-index boxes across the lowest-index feasible columns."""
+
+    base_count = max(1, len(_ffd_columns(group, cap)))
+    bins = [
+        {'rem': cap, 'idx': 0.0, 'boxes': []}
+        for _ in range(base_count)
+    ]
+    ordered = sorted(
+        group,
+        key=lambda box: (
+            -float(box.get('min_pack_multiple', 0) or 0),
+            -float(box.get('height', 0) or 0),
+            str(box.get('id')),
+        ),
+    )
+    for box in ordered:
+        height = float(box.get('height', 0) or 0)
+        feasible = [
+            (index, column)
+            for index, column in enumerate(bins)
+            if column['rem'] >= height - 1e-9
+        ]
+        if feasible:
+            _index, chosen = min(
+                feasible,
+                key=lambda entry: (
+                    entry[1]['idx'],
+                    -entry[1]['rem'],
+                    entry[0],
+                ),
+            )
+        else:
+            chosen = {'rem': cap, 'idx': 0.0, 'boxes': []}
+            bins.append(chosen)
+        chosen['boxes'].append(box)
+        chosen['rem'] -= height
+        chosen['idx'] += float(
+            box.get('min_pack_multiple', 0) or 0
+        )
+    return [column['boxes'] for column in bins if column['boxes']]
+
+
+def _concentrated_columns(group: List[Dict], cap: float) -> List[List[Dict]]:
+    """Concentrate high-index boxes using index-descending first fit."""
+
+    columns: List[Dict] = []
+    ordered = sorted(
+        group,
+        key=lambda box: (
+            -float(box.get('min_pack_multiple', 0) or 0),
+            -float(box.get('height', 0) or 0),
+            str(box.get('id')),
+        ),
+    )
+    for box in ordered:
+        height = float(box.get('height', 0) or 0)
+        for column in columns:
+            if column['rem'] >= height - 1e-9:
+                column['rem'] -= height
+                column['boxes'].append(box)
+                break
+        else:
+            columns.append({'rem': cap - height, 'boxes': [box]})
+    return [column['boxes'] for column in columns]
+
+
+def _build_column_candidates(
+    boxes: List[Dict],
+    pallet_dims: Dict[str, float],
+    target_mpm: Optional[float],
+) -> List[Tuple[str, List[Dict]]]:
+    """Build distinct height, index-balanced, and target-focused columns."""
+
+    del target_mpm  # The target affects board selection after columnization.
+    cap = float(pallet_dims.get('height', 0) or 0)
+    by_fp: Dict[Tuple[int, int], List[Dict]] = defaultdict(list)
+    for box in boxes:
+        key = tuple(sorted((
+            int(round(float(box.get('length', 0) or 0))),
+            int(round(float(box.get('width', 0) or 0))),
+        )))
+        by_fp[key].append(box)
+
+    builders = (
+        ('height_first', _ffd_columns),
+        ('index_balanced', _balanced_columns),
+        ('target_concentrated', _concentrated_columns),
+    )
+    candidates: List[Tuple[str, List[Dict]]] = []
+    seen = set()
+    for strategy_name, builder in builders:
+        columns: List[Dict] = []
+        for fp, group in by_fp.items():
+            xlen, ylen = _fp_orient(fp)
+            for column_boxes in builder(group, cap):
+                index = sum(
+                    float(box.get('min_pack_multiple', 0) or 0)
+                    for box in column_boxes
+                )
+                columns.append({
+                    'fp': fp,
+                    'xlen': xlen,
+                    'ylen': ylen,
+                    'boxes': column_boxes,
+                    'idx': round(index, 3),
+                })
+        signature = _column_signature(columns)
+        if signature in seen:
+            continue
+        seen.add(signature)
+        candidates.append((strategy_name, columns))
+    return candidates
+
+
+def _plan_rank(plans: List[Dict]) -> Tuple[int, int, float]:
+    """Rank GCP candidates by successes, pallet count, then failed peak."""
+
+    success = sum(plan.get('mpm_status') == 'SUCCESS' for plan in plans)
+    failed_peak = max(
+        (
+            float(plan.get('mpm_total', 0) or 0)
+            for plan in plans
+            if plan.get('mpm_status') != 'SUCCESS'
+        ),
+        default=0.0,
+    )
+    return success, -len(plans), failed_peak
+
+
+def _gcp_candidate_passes_gates(
+    raw_boxes: List[Dict],
+    plans: List[Dict],
+    constraint_config,
+) -> bool:
+    """Require exact conservation and the final full gate on every pallet."""
+
+    input_ids = sorted(str(box.get('id')) for box in raw_boxes)
+    output_ids = sorted(
+        str(box.get('id'))
+        for plan in plans
+        for box in plan.get('packed_items', [])
+    )
+    if len(output_ids) != len(input_ids) or output_ids != input_ids:
+        return False
+    pallet_dims = raw_boxes[0].get('pallet_dims') if raw_boxes else None
+    if not pallet_dims:
+        return False
+    try:
+        for plan in plans:
+            if not plan.get('packed_items'):
+                return False
+            gate = validate_pallet_constraints(
+                plan,
+                pallet_dims,
+                constraint_config=constraint_config,
+                target_mpm=plan.get('mpm_target'),
+            )
+            if not gate.get('is_valid'):
+                return False
+    except (KeyError, TypeError, ValueError):
+        return False
+    return True
+
+
 def _col_units(ylen: float, tol: float) -> int:
     """柱沿 y 占用的 265-单元数（ceil，保证任意 ylen 不重叠）。"""
     return max(1, int(-(-(ylen + tol) // (_UNIT + tol))))
@@ -504,18 +678,81 @@ class GlobalColumnPacker:
         return regular, rest
 
     def pack_group(self, pallet_type, sales_order_no, boxes_in_group, target_mpm):
-        """对一个分组做全局列式装箱。返回 (type_plan, runtime, index_diag)。"""
+        """Evaluate distinct columnizations and keep the strongest GCP plan."""
+
+        import time
+        started = time.time()
+        pallet_dims = boxes_in_group[0]['pallet_dims']
+        candidates = _build_column_candidates(
+            boxes_in_group, pallet_dims, target_mpm
+        )
+        if not candidates:
+            candidates = [('height_first', [])]
+
+        evaluated = []
+        diagnostics = []
+        for strategy_name, columns in candidates:
+            plans, runtime, diag = self._pack_group_with_columns(
+                pallet_type,
+                sales_order_no,
+                boxes_in_group,
+                target_mpm,
+                columns,
+                strategy_name,
+            )
+            bailed = bool(diag.get('gcp_bailout'))
+            gates_passed = _gcp_candidate_passes_gates(
+                boxes_in_group, plans, self._cfg
+            )
+            rank = _plan_rank(plans)
+            diagnostics.append({
+                'strategy': strategy_name,
+                'rank': list(rank),
+                'pallets': len(plans),
+                'success': rank[0],
+                'gcp_bailout': bailed,
+                'gates_passed': gates_passed,
+                'packing_seconds': round(
+                    float(runtime.get('packing', 0.0) or 0.0), 6
+                ),
+            })
+            evaluated.append((
+                gates_passed and not bailed,
+                rank,
+                strategy_name,
+                plans,
+                diag,
+            ))
+
+        viable = [entry for entry in evaluated if entry[0]]
+        chosen = max(viable or evaluated, key=lambda entry: entry[1])
+        _valid, _rank, strategy_name, plans, diag = chosen
+        diag = dict(diag)
+        if not viable:
+            diag['gcp_bailout'] = True
+            diag['gcp_candidate_gate_failure'] = True
+        diag['gcp_selected_column_strategy'] = strategy_name
+        diag['gcp_column_candidates'] = diagnostics
+        runtime = {'packing': time.time() - started, 'topup': 0.0, 'retry': 0.0}
+        return plans, runtime, diag
+
+    def _pack_group_with_columns(
+        self,
+        pallet_type,
+        sales_order_no,
+        boxes_in_group,
+        target_mpm,
+        columns,
+        strategy_name,
+    ):
+        """Run the original GCP pipeline for one fixed columnization."""
+
         import time
         t0 = time.time()
         pallet_dims = boxes_in_group[0]['pallet_dims']
         packer = BeamSearchPacker(pallet_dims=pallet_dims, constraint_config=self._cfg)
         tol = packer.size_tolerance
-
-        # 复用 suits_group 刚凑好的柱，避免重复凑柱
-        if self._cols_cache[0] == id(boxes_in_group) and self._cols_cache[1] is not None:
-            cols = self._cols_cache[1]
-        else:
-            cols = _build_columns(boxes_in_group, pallet_dims)
+        cols = list(columns)
         plan: List[Dict] = []
         seq = 1
         boards: List[tuple] = []  # [(placed, gap)]：gap=0=CP-SAT 紧贴落地，None=265 网格
@@ -707,6 +944,7 @@ class GlobalColumnPacker:
             'residual_mpm': 0,
             'global_column_packer': {'pallets': len(plan), 'success': success},
             'gcp_bailout': bailed,
+            'gcp_column_strategy': strategy_name,
         }
         runtime = {'packing': time.time() - t0, 'topup': 0.0, 'retry': 0.0}
         return plan, runtime, index_diag

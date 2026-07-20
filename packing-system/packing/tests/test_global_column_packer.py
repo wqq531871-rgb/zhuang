@@ -79,6 +79,195 @@ def test_no_target_returns_plan():
     print('[PASS] 无目标也守恒出盘')
 
 
+def test_single_box_residual_fallback_is_centered():
+    """beam 无法放置残料时，单箱守恒兜底也必须通过重心门禁。"""
+    import src.packing.global_column_packer as gcp_module
+
+    class NoFitPacker:
+        def __init__(self, pallet_dims, constraint_config=None):
+            self.size_tolerance = 2.0
+            self.z_tolerance = 0.0
+            self.robot_reachability_enabled = False
+
+        def pack(self, *args, **kwargs):
+            return [], []
+
+    cfg = ConstraintConfig(suction_reachability_enabled=False)
+    boxes = _mk('S', 1, 350, 265, 240, 2)
+    original = gcp_module.BeamSearchPacker
+    gcp_module.BeamSearchPacker = NoFitPacker
+    try:
+        plan, _, _ = GlobalColumnPacker(cfg).pack_group(
+            'MH423C', 'T', boxes, 192.0
+        )
+    finally:
+        gcp_module.BeamSearchPacker = original
+
+    assert len(plan) == 1
+    assert [item['id'] for item in plan[0]['packed_items']] == ['S0']
+    gate = validate_pallet_constraints(
+        plan[0], PALLET, constraint_config=cfg,
+        target_mpm=plan[0]['mpm_target'],
+    )
+    assert gate['is_valid'], gate['violations']
+
+
+def test_column_candidates_cover_three_strategies_and_conserve_boxes():
+    from src.packing.global_column_packer import _build_column_candidates
+
+    pallet = {'length': 300.0, 'width': 200.0, 'height': 10.0}
+    boxes = [
+        *_mk('A', 1, 100, 100, 6, 1),
+        *_mk('B', 1, 100, 100, 6, 100),
+        *_mk('C', 1, 100, 100, 4, 90),
+        *_mk('D', 1, 100, 100, 4, 2),
+    ]
+    for box in boxes:
+        box['pallet_dims'] = pallet
+
+    candidates = _build_column_candidates(boxes, pallet, 192.0)
+
+    assert {name for name, _ in candidates} == {
+        'height_first',
+        'index_balanced',
+        'target_concentrated',
+    }
+    expected_ids = sorted(box['id'] for box in boxes)
+    signatures = set()
+    for _name, columns in candidates:
+        actual_ids = sorted(
+            box['id'] for column in columns for box in column['boxes']
+        )
+        assert actual_ids == expected_ids
+        signatures.add(tuple(sorted(
+            tuple(sorted(box['id'] for box in column['boxes']))
+            for column in columns
+        )))
+    assert len(signatures) >= 2
+
+
+def test_pack_group_evaluates_candidates_and_selects_best_rank(monkeypatch):
+    import src.packing.global_column_packer as gcp_module
+
+    boxes = _mk('Q', 1, 100, 100, 100, 1)
+    candidates = [
+        ('height_first', [{'token': 'height'}]),
+        ('index_balanced', [{'token': 'balanced'}]),
+        ('target_concentrated', [{'token': 'concentrated'}]),
+    ]
+    monkeypatch.setattr(
+        gcp_module,
+        '_build_column_candidates',
+        lambda *_args, **_kwargs: candidates,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        gcp_module,
+        '_gcp_candidate_passes_gates',
+        lambda *_args, **_kwargs: True,
+        raising=False,
+    )
+    gcp = GlobalColumnPacker(constraint_config=ConstraintConfig())
+    calls = []
+
+    def fake_pack(
+        pallet_type,
+        sales_order_no,
+        boxes_in_group,
+        target_mpm,
+        columns,
+        strategy_name,
+    ):
+        calls.append(strategy_name)
+        successes = {
+            'height_first': 0,
+            'index_balanced': 1,
+            'target_concentrated': 2,
+        }[strategy_name]
+        plans = [
+            {
+                'packed_items': [],
+                'mpm_total': 192.0,
+                'mpm_status': 'SUCCESS',
+            }
+            for _ in range(successes)
+        ]
+        return plans, {'packing': 0.01}, {'strategy': strategy_name}
+
+    monkeypatch.setattr(gcp, '_pack_group_with_columns', fake_pack, raising=False)
+
+    plan, _runtime, diag = gcp.pack_group('MH423C', 'T', boxes, 192.0)
+
+    assert calls == [
+        'height_first',
+        'index_balanced',
+        'target_concentrated',
+    ]
+    assert len(plan) == 2
+    assert diag['gcp_selected_column_strategy'] == 'target_concentrated'
+    assert [
+        item['strategy'] for item in diag['gcp_column_candidates']
+    ] == calls
+
+
+def test_pack_group_rejects_higher_ranked_candidate_that_fails_gates(
+    monkeypatch,
+):
+    import src.packing.global_column_packer as gcp_module
+
+    boxes = _mk('G', 1, 100, 100, 100, 1)
+    candidates = [
+        ('height_first', [{'token': 'height'}]),
+        ('target_concentrated', [{'token': 'concentrated'}]),
+    ]
+    monkeypatch.setattr(
+        gcp_module,
+        '_build_column_candidates',
+        lambda *_args, **_kwargs: candidates,
+    )
+    monkeypatch.setattr(
+        gcp_module,
+        '_gcp_candidate_passes_gates',
+        lambda _boxes, plans, _config: plans[0]['candidate_valid'],
+        raising=False,
+    )
+    gcp = GlobalColumnPacker(constraint_config=ConstraintConfig())
+
+    def fake_pack(
+        pallet_type,
+        sales_order_no,
+        boxes_in_group,
+        target_mpm,
+        columns,
+        strategy_name,
+    ):
+        success_count = 1 if strategy_name == 'height_first' else 2
+        plans = [
+            {
+                'packed_items': [],
+                'mpm_total': 192.0,
+                'mpm_status': 'SUCCESS',
+                'candidate_valid': strategy_name == 'height_first',
+            }
+            for _ in range(success_count)
+        ]
+        return plans, {'packing': 0.01}, {'gcp_bailout': False}
+
+    monkeypatch.setattr(gcp, '_pack_group_with_columns', fake_pack)
+
+    plan, _runtime, diag = gcp.pack_group('MH423C', 'T', boxes, 192.0)
+
+    assert len(plan) == 1
+    assert diag['gcp_selected_column_strategy'] == 'height_first'
+    status = {
+        item['strategy']: item['gates_passed']
+        for item in diag['gcp_column_candidates']
+    }
+    assert status == {
+        'height_first': True,
+        'target_concentrated': False,
+    }
+
 if __name__ == '__main__':
     test_contract_and_conservation()
     test_regular_reaches_target()
