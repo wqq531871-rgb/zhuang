@@ -368,9 +368,9 @@ class PalletPreviewCanvas(QtWidgets.QWidget):
         self.has_gl = False
         self.gl = None
         self.np = None
-        self.show_suction = True
+        self.show_suction = False
         self.only_risk = False
-        self.color_mode = "按支撑风险着色"
+        self.color_mode = "按箱子区分着色"
         self.sequence_mode = "robot"
         self.visible_count: Optional[int] = None
         self.selected_box_key = None
@@ -560,6 +560,32 @@ class PalletPreviewCanvas(QtWidgets.QWidget):
         ], dtype=int)
         return self.gl.MeshData(vertexes=verts, faces=faces)
 
+    def _box_meshdata_highlighted(self, rgba):
+        """不透明箱体 + 顶面高光，避免 shaded/半透明把颜色压暗。"""
+        r, g, b = float(rgba[0]), float(rgba[1]), float(rgba[2])
+        a = float(rgba[3]) if len(rgba) > 3 else 1.0
+
+        def mix_white(c, w):
+            return tuple(min(1.0, x * (1.0 - w) + w) for x in c)
+
+        base = (r, g, b, a)
+        top = (*mix_white((r, g, b), 0.58), a)      # 顶面高光
+        side_hi = (*mix_white((r, g, b), 0.28), a)  # 受光侧面
+        side = base
+        bottom = (r * 0.78, g * 0.78, b * 0.78, a)
+        # faces: 底0-1, 顶2-3, 前4-5, 右6-7, 后8-9, 左10-11
+        face_colors = self.np.array([
+            bottom, bottom,
+            top, top,
+            side, side,
+            side_hi, side_hi,
+            side, side,
+            side, side,
+        ], dtype=float)
+        md = self._box_meshdata()
+        md.setFaceColors(face_colors)
+        return md
+
     def _risk_level(self, item) -> int:
         # “吸盘矩形越界”在真实装箱执行里不作为箱体风险，
         # 这里过滤掉，避免风险箱数量、风险筛选和红黄框被它误触发。
@@ -629,6 +655,24 @@ class PalletPreviewCanvas(QtWidgets.QWidget):
             value = safe_float(pos.get("z"), 0.0)
             t = 0.0 if abs(vmax - vmin) < 1e-9 else (value - vmin) / (vmax - vmin)
             return blue_red_rgba(t, alpha=0.82)
+        if mode == "按箱子区分着色":
+            # 高对比霓虹色板；渲染侧会再打顶面高光，这里尽量给足饱和度
+            palette = (
+                (1.00, 0.22, 0.22),  # 红
+                (0.15, 1.00, 0.35),  # 亮绿
+                (0.20, 0.55, 1.00),  # 蓝
+                (1.00, 0.95, 0.12),  # 黄
+                (1.00, 0.50, 0.08),  # 橙
+                (1.00, 0.25, 1.00),  # 品红
+                (0.05, 1.00, 1.00),  # 青
+                (0.65, 0.30, 1.00),  # 紫
+                (0.20, 1.00, 0.75),  # 青绿
+                (1.00, 0.60, 0.80),  # 粉
+                (0.75, 1.00, 0.20),  # 黄绿
+                (0.40, 0.85, 1.00),  # 天蓝
+            )
+            r, g, b = palette[idx % len(palette)]
+            return (r, g, b, 1.0)
         key = safe_str(item.get("type"), safe_str(item.get("suction_orientation"), str(idx)))
         return categorical_rgba(key, 0.82)
 
@@ -690,6 +734,7 @@ class PalletPreviewCanvas(QtWidgets.QWidget):
         self.scene_items.append(grid)
         self._add_pallet_wireframe(L, W, H)
 
+        distinct_mode = self.color_mode == "按箱子区分着色"
         meshdata = self._box_meshdata()
         for idx, it in enumerate(items[:140]):
             pos = it.get("position", {}) or {}
@@ -700,15 +745,25 @@ class PalletPreviewCanvas(QtWidgets.QWidget):
             ly = max(safe_float(it.get("width"), 0.0), 1.0)
             lz = max(safe_float(it.get("height"), 0.0), 1.0)
             rgba = self._color_for_item(idx, it, all_items)
-            box = self.gl.GLMeshItem(
-                meshdata=meshdata,
-                smooth=False,
-                color=rgba,
-                shader="shaded",
-                drawEdges=True,
-                edgeColor=(0.10, 0.10, 0.10, 0.45),
-                glOptions="translucent",
-            )
+            if distinct_mode:
+                # 面色烘焙高光 + 不透明，颜色不会被 shaded 压暗
+                box = self.gl.GLMeshItem(
+                    meshdata=self._box_meshdata_highlighted(rgba),
+                    smooth=False,
+                    drawEdges=True,
+                    edgeColor=(1.0, 1.0, 1.0, 0.95),
+                    glOptions="opaque",
+                )
+            else:
+                box = self.gl.GLMeshItem(
+                    meshdata=meshdata,
+                    smooth=False,
+                    color=rgba,
+                    shader="shaded",
+                    drawEdges=True,
+                    edgeColor=(0.10, 0.10, 0.10, 0.45),
+                    glOptions="translucent",
+                )
             box.scale(lx, ly, lz)
             box.translate(x, y, z)
             self.view.addItem(box)
@@ -778,11 +833,12 @@ class PalletPreviewCard(QtWidgets.QFrame):
             b.setObjectName("TinyButton")
             tools.addWidget(b)
         self.cmb_color = QtWidgets.QComboBox()
-        self.cmb_color.addItems(["按支撑风险着色", "按重量着色", "按层高着色", "按箱型着色"])
+        self.cmb_color.addItems(["按支撑风险着色", "按重量着色", "按层高着色", "按箱型着色", "按箱子区分着色"])
+        self.cmb_color.setCurrentText("按箱子区分着色")
         self.cmb_color.setMinimumWidth(110)
         tools.addWidget(self.cmb_color, 1)
         self.chk_suction = QtWidgets.QCheckBox("吸盘")
-        self.chk_suction.setChecked(True)
+        self.chk_suction.setChecked(False)
         self.chk_risk = QtWidgets.QCheckBox("风险")
         tools.addWidget(self.chk_suction)
         tools.addWidget(self.chk_risk)
@@ -907,7 +963,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
         self.overview_cards = []
         ensure_runtime_dirs(self.project_dir)
         super().__init__()
-        self.setWindowTitle("工业装箱工作台 V2 - 后端装箱 + 前端可视化")
+        self.setWindowTitle("面向控序混码场景智能装箱规划系统 V2 - 后端装箱 + 前端可视化")
         self.resize(1840, 1060)
         self._set_status("idle")
         self._write_log(f"[UI] 工作区目录：{workspace_dir_from_project(self.project_dir)}")
@@ -945,7 +1001,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
         layout.setSpacing(12)
 
         title_box = QtWidgets.QVBoxLayout()
-        self.title_label = QtWidgets.QLabel("工业装箱工作台")
+        self.title_label = QtWidgets.QLabel("面向控序混码场景智能装箱规划系统")
         self.title_label.setObjectName("MainTitle")
         self.subtitle_label = QtWidgets.QLabel("装箱算法后端计算 · 托盘可视化 · 稳定性评估 · 风险提示")
         self.subtitle_label.setObjectName("MainSubtitle")
@@ -1233,11 +1289,12 @@ class IndustrialPackingWorkbench(BaseDashboard):
             tools.addWidget(b)
         tools.addWidget(QtWidgets.QLabel("着色"))
         self.zoom_cmb_color = QtWidgets.QComboBox()
-        self.zoom_cmb_color.addItems(["按支撑风险着色", "按重量着色", "按层高着色", "按箱型着色"])
+        self.zoom_cmb_color.addItems(["按支撑风险着色", "按重量着色", "按层高着色", "按箱型着色", "按箱子区分着色"])
+        self.zoom_cmb_color.setCurrentText("按箱子区分着色")
         self.zoom_cmb_color.setMinimumWidth(180)
         tools.addWidget(self.zoom_cmb_color)
         self.zoom_chk_suction = QtWidgets.QCheckBox("吸盘")
-        self.zoom_chk_suction.setChecked(True)
+        self.zoom_chk_suction.setChecked(False)
         self.zoom_chk_risk = QtWidgets.QCheckBox("风险箱")
         tools.addWidget(self.zoom_chk_suction)
         tools.addWidget(self.zoom_chk_risk)

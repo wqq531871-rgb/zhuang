@@ -1,4 +1,4 @@
-# 工业装箱工作台 V2 使用说明
+# 面向控序混码场景智能装箱规划系统 V2 使用说明
 
 ## 1. 这版界面的设计目标
 
@@ -31,7 +31,7 @@ E:\research_code\zhuang-ui\zhuangxiang_code
 ```text
 apps\realtime_dashboard\realtime_dashboard_v2.py
 tools\windows\start_realtime_dashboard_v2.bat
-docs\README_工业装箱工作台V2.md
+docs\README_面向控序混码场景智能装箱规划系统V2.md
 ```
 
 不会覆盖你原来的 `stability_business_dashboard_json.py` 和旧版 `realtime_dashboard_runner.py`。

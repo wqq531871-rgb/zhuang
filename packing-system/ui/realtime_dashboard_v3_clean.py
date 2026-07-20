@@ -612,7 +612,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             configured_interval = 200
         self.download_interval = normalize_download_interval(configured_interval)
         super().__init__(project_dir)
-        self.setWindowTitle("工业装箱工作台 V3 - 一键装箱 + 结果分析")
+        self.setWindowTitle("面向控序混码场景智能装箱规划系统 V3 - 一键装箱 + 结果分析")
         self._write_log("[UI] V3模式：主流程为 选择Excel → 一键装箱；高级算法操作已合并到“算法设置”。")
         self.refresh_result_history()
 
@@ -626,7 +626,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         layout.setSpacing(10)
 
         title_box = QtWidgets.QVBoxLayout()
-        self.title_label = QtWidgets.QLabel("工业装箱工作台")
+        self.title_label = QtWidgets.QLabel("面向控序混码场景智能装箱规划系统")
         self.title_label.setObjectName("MainTitle")
         self.subtitle_label = QtWidgets.QLabel("一键装箱 · 结果分析 · 托盘切换 · 稳定性评估")
         self.subtitle_label.setObjectName("MainSubtitle")
