@@ -128,10 +128,12 @@ def test_end_to_end_roundtrip():
         assert all(ct['length'] == 350.0 and ct['width'] == 265.0
                    and ct['height'] == 240.0 for ct in cartons)
         assert all(ct['product_code'] in (111, 222) for ct in cartons)
-    # 执行层映射：含坐标的完整方案
+    # 执行层映射：含坐标的完整方案；packed_items 按数组顺序带 seq
     assert set(result.plan_by_unique_id) == {c['box_unique_id'] for c in cases}
     any_plan = next(iter(result.plan_by_unique_id.values()))
     assert any_plan['packed_items'][0].get('position') is not None
+    n_items = len(any_plan['packed_items'])
+    assert [it.get('seq') for it in any_plan['packed_items']] == list(range(1, n_items + 1))
     print('[PASS] 端到端往返（排序/层/seq/尺寸口径/映射）')
 
 

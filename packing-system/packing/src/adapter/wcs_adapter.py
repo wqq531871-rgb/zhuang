@@ -377,5 +377,9 @@ def report_to_plan_result(
             'case_type': str(pallet.get('pallet_type') or ''),
             'layers': layers,
         })
+        for seq, it in enumerate(items, 1):
+            # map 文件用：按当前 JSON 数组顺序编号，字段放在对象末尾
+            it.pop('seq', None)
+            it['seq'] = seq
         plan_by_unique_id[unique_id] = pallet
     return WcsPlanResult(cases=cases, plan_by_unique_id=plan_by_unique_id)
