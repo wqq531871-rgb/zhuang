@@ -15,6 +15,12 @@ from .order_processor import OrderProcessor
 from .pallet_packer import PalletPacker
 from .recipe_first import pack_group_recipe_first
 from .result_formatter import ResultFormatter
+from .alternative_path import (
+    candidate_rank,
+    choose_guarded_candidate,
+    has_uncaptured_opportunity,
+    run_alternative_full_path,
+)
 
 # 组内子聚类：混合订单拆出的「杂箱子组」临时订单后缀，输出前 _restore_split_orders 还原。
 _SPLIT_REST_TAG = '__SPLITREST__'
@@ -122,10 +128,35 @@ class PackingWorkflow:
                 boxes_in_group, target_mpm
             ):
                 print("  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。")
+                group_plan_start = len(final_plan)
                 if self._run_group_gcp(
                     pallet_type, sales_order_no, boxes_in_group, target_mpm,
                     group_start, final_plan, by_type_stats, runtime_stats,
                 ):
+                    gcp_plans = final_plan[group_plan_start:]
+                    chosen, dual_diag = self._run_dual_path_candidate(
+                        boxes_in_group,
+                        gcp_plans,
+                        target_mpm,
+                        boxes_in_group[0].get('pallet_dims') or {},
+                    )
+                    runtime_stats["group_total_seconds"] += float(
+                        dual_diag.get("elapsed_seconds", 0.0) or 0.0
+                    )
+                    stats_key = f"{pallet_type}__{sales_order_no}"
+                    public_diag = {
+                        key: value
+                        for key, value in dual_diag.items()
+                        if not key.startswith("_")
+                    }
+                    if chosen is not gcp_plans:
+                        final_plan[group_plan_start:] = chosen
+                        alternative_stats = dual_diag.get("_type_stats")
+                        if isinstance(alternative_stats, dict):
+                            by_type_stats[stats_key] = alternative_stats
+                    by_type_stats.setdefault(stats_key, {})[
+                        "dual_path"
+                    ] = public_diag
                     continue
                 print("  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。")
             elif self._gcp_packer is not None:
@@ -271,6 +302,80 @@ class PackingWorkflow:
             group_total, pallet_type, sales_order_no, repack,
         )
         return True
+
+    def _run_dual_path_candidate(
+        self,
+        boxes_in_group: List[Dict],
+        gcp_plans: List[Dict],
+        target_mpm: Optional[float],
+        pallet_dims: Dict,
+    ) -> tuple:
+        """Run the full alternative path only for an uncaptured opportunity."""
+
+        enabled = bool(getattr(
+            self._constraint_config, "dual_path_enabled", True
+        ))
+        diag = {
+            "enabled": enabled,
+            "triggered": False,
+            "adopted": False,
+            "source": "gcp",
+            "status": "skipped",
+            "gcp_rank": candidate_rank(gcp_plans),
+            "alternative_rank": None,
+            "elapsed_seconds": 0.0,
+        }
+        if not enabled or not has_uncaptured_opportunity(
+            boxes_in_group, gcp_plans, target_mpm
+        ):
+            return gcp_plans, diag
+
+        diag["triggered"] = True
+        timeout = float(getattr(
+            self._constraint_config,
+            "dual_path_time_limit_seconds",
+            30.0,
+        ))
+        result = run_alternative_full_path(
+            boxes_in_group,
+            self._constraint_config,
+            timeout_seconds=timeout,
+        )
+        diag["status"] = result.get("status", "error")
+        diag["elapsed_seconds"] = float(
+            result.get("elapsed_seconds", 0.0) or 0.0
+        )
+        if result.get("status") != "ok" or not result.get("report"):
+            diag["error"] = result.get("error")
+            return gcp_plans, diag
+
+        report = result["report"]
+        alternative_plans = list(report.get("pallets") or [])
+        diag["alternative_rank"] = candidate_rank(alternative_plans)
+        chosen, source = choose_guarded_candidate(
+            boxes_in_group,
+            gcp_plans,
+            alternative_plans,
+            pallet_dims,
+            self._constraint_config,
+        )
+        diag["source"] = source
+        diag["adopted"] = source == "alternative"
+        if diag["adopted"]:
+            by_type = (
+                (report.get("summary") or {}).get("by_pallet_type") or {}
+            )
+            if by_type:
+                diag["_type_stats"] = next(iter(by_type.values()))
+            print(
+                "  - 条件双路径棘轮：替代完整路径通过守恒和最终门禁，"
+                "严格优于 GCP，已采用。"
+            )
+        else:
+            print(
+                "  - 条件双路径棘轮：替代完整路径未严格改善，保留 GCP。"
+            )
+        return chosen, diag
 
     def _partition_groups(self, grouped: Dict) -> Dict:
         """组内子聚类：把「规则子集 + 杂箱」混合的销售订单组拆成两个子组。

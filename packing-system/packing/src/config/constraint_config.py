@@ -50,6 +50,9 @@ class ConstraintConfig:
         main_packer: 主装箱算法。'gcp'（默认）= 全局列式装箱 + 柱级组合
             优化（Set-Partitioning ILP，达标率优先）；'beam' = 旧 beam search
             逐盘贪心 + 配方优先 + 救援链（回退/审计用，保证零回归）。
+        dual_path_enabled: GCP 未捕获业务组指数上限时，是否限时运行完整
+            替代路径并经过守恒、最终门禁后择优。
+        dual_path_time_limit_seconds: 单业务组替代完整路径的硬超时秒数。
     """
 
     # —— 必须约束的可配数值 ——
@@ -74,6 +77,10 @@ class ConstraintConfig:
     # 'gcp' = 全局列式装箱 + 柱级组合优化（默认，达标率优先）；
     # 'beam' = 旧 beam search 逐盘贪心 + 配方优先 + 救援链（回退/审计用）。
     main_packer: str = 'gcp'
+
+    # —— 未捕获机会组双路径棘轮 ——
+    dual_path_enabled: bool = True
+    dual_path_time_limit_seconds: float = 30.0
 
     # —— baseline 朝向规整（允许箱子 90° 旋转）——
     # baseline(beam+配方) 入口为每个箱子选「托盘上每层格数更大」的朝向，

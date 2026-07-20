@@ -56,6 +56,15 @@ def test_from_dict_tolerant():
     print('[PASS] from_dict 容错（未知键忽略 / 缺省回退）')
 
 
+def test_dual_path_settings_are_configurable():
+    c = ConstraintConfig.from_dict({
+        'dual_path_enabled': False,
+        'dual_path_time_limit_seconds': 7.5,
+    })
+    assert c.dual_path_enabled is False
+    assert c.dual_path_time_limit_seconds == 7.5
+
+
 def test_frozen():
     c = ConstraintConfig()
     try:
