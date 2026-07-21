@@ -100,6 +100,24 @@ PARAMETER_SCHEMES = {
 
 IGNORED_RISK_PHRASES = {"吸盘矩形越界"}
 
+# 三维动画播放速度：滑条档位 → 相对 1.0x 的倍率（基准间隔约 400ms）
+ANIM_SPEED_PRESETS = (0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0)
+ANIM_BASE_INTERVAL_MS = 400
+ANIM_DEFAULT_SPEED_INDEX = 3  # 1.0x
+
+
+def anim_speed_multiplier(speed_index: int) -> float:
+    idx = max(0, min(int(speed_index), len(ANIM_SPEED_PRESETS) - 1))
+    return float(ANIM_SPEED_PRESETS[idx])
+
+
+def anim_interval_ms(speed_index: int, base_ms: int = ANIM_BASE_INTERVAL_MS) -> int:
+    return max(40, int(round(base_ms / anim_speed_multiplier(speed_index))))
+
+
+def anim_speed_text(speed_index: int) -> str:
+    return f"{anim_speed_multiplier(speed_index):g}×"
+
 
 def normalize_risk_text(text: object) -> str:
     """Remove prompts that should not be treated as real装箱风险."""
@@ -828,10 +846,17 @@ class PalletPreviewCard(QtWidgets.QFrame):
         self.btn_final = QtWidgets.QPushButton("最终")
         self.btn_play = QtWidgets.QPushButton("播放")
         self.btn_pause = QtWidgets.QPushButton("暂停")
+        self.btn_prev = QtWidgets.QPushButton("前一步")
+        self.btn_next = QtWidgets.QPushButton("后一步")
         self.btn_reset = QtWidgets.QPushButton("重置")
-        for b in [self.btn_final, self.btn_play, self.btn_pause, self.btn_reset]:
+        for b in [
+            self.btn_final, self.btn_play, self.btn_pause,
+            self.btn_prev, self.btn_next, self.btn_reset,
+        ]:
             b.setObjectName("TinyButton")
             tools.addWidget(b)
+        self.btn_prev.setToolTip("回退一箱，逐步观察装箱过程")
+        self.btn_next.setToolTip("前进一箱，逐步观察装箱过程")
         self.cmb_color = QtWidgets.QComboBox()
         self.cmb_color.addItems(["按支撑风险着色", "按重量着色", "按层高着色", "按箱型着色", "按箱子区分着色"])
         self.cmb_color.setCurrentText("按箱子区分着色")
@@ -844,6 +869,31 @@ class PalletPreviewCard(QtWidgets.QFrame):
         tools.addWidget(self.chk_risk)
         layout.addLayout(tools)
 
+        speed_row = QtWidgets.QHBoxLayout()
+        speed_row.setSpacing(6)
+        speed_lbl = QtWidgets.QLabel("速度")
+        speed_lbl.setObjectName("PreviewSub")
+        self.speed_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.speed_slider.setObjectName("AnimSpeedSlider")
+        self.speed_slider.setRange(0, len(ANIM_SPEED_PRESETS) - 1)
+        self.speed_slider.setValue(ANIM_DEFAULT_SPEED_INDEX)
+        self.speed_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self.speed_slider.setTickInterval(1)
+        self.speed_slider.setSingleStep(1)
+        self.speed_slider.setPageStep(1)
+        self.speed_slider.setMinimumHeight(18)
+        self.speed_slider.setToolTip("拖动调整三维动画播放速度（慢 → 快）")
+        self.speed_value = QtWidgets.QLabel(anim_speed_text(ANIM_DEFAULT_SPEED_INDEX))
+        self.speed_value.setObjectName("AnimSpeedValue")
+        self.speed_value.setMinimumWidth(36)
+        self.speed_value.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        speed_row.addWidget(speed_lbl)
+        speed_row.addWidget(QtWidgets.QLabel("慢"))
+        speed_row.addWidget(self.speed_slider, 1)
+        speed_row.addWidget(QtWidgets.QLabel("快"))
+        speed_row.addWidget(self.speed_value)
+        layout.addLayout(speed_row)
+
         self.canvas = PalletPreviewCanvas()
         self.canvas.clicked.connect(self.clicked)
         layout.addWidget(self.canvas, 1)
@@ -851,11 +901,14 @@ class PalletPreviewCard(QtWidgets.QFrame):
         self.btn_final.clicked.connect(self.show_final)
         self.btn_play.clicked.connect(self.play)
         self.btn_pause.clicked.connect(self.pause)
+        self.btn_prev.clicked.connect(self.step_prev)
+        self.btn_next.clicked.connect(self.step_next)
         self.btn_reset.clicked.connect(self.reset)
         self.btn_zoom.clicked.connect(lambda: self.request_zoom.emit(self.pallet))
         self.cmb_color.currentIndexChanged.connect(self._apply_options)
         self.chk_suction.stateChanged.connect(self._apply_options)
         self.chk_risk.stateChanged.connect(self._apply_options)
+        self.speed_slider.valueChanged.connect(self._on_speed_changed)
 
     def mousePressEvent(self, event):
         if event.button() == QtCore.Qt.LeftButton:
@@ -925,11 +978,19 @@ class PalletPreviewCard(QtWidgets.QFrame):
         self._anim_index = len(self.pallet.get("packed_items", []) or [])
         self.canvas.set_options(visible_count=None)
 
+    def _anim_interval_ms(self) -> int:
+        return anim_interval_ms(self.speed_slider.value())
+
+    def _on_speed_changed(self, value: int) -> None:
+        self.speed_value.setText(anim_speed_text(value))
+        if self.timer.isActive():
+            self.timer.setInterval(self._anim_interval_ms())
+
     def play(self):
         if not self.pallet:
             return
         self._anim_index = 0
-        self.timer.start(400)
+        self.timer.start(self._anim_interval_ms())
 
     def pause(self):
         self.timer.stop()
@@ -938,6 +999,37 @@ class PalletPreviewCard(QtWidgets.QFrame):
         self.timer.stop()
         self._anim_index = 0
         self.canvas.set_options(visible_count=0, reset_camera=True)
+
+    def step_next(self):
+        """手动前进一箱，方便逐步观察装箱过程。"""
+        if not self.pallet:
+            return
+        self.timer.stop()
+        n = len(self.pallet.get("packed_items", []) or [])
+        if n <= 0:
+            return
+        # 初始全显（index=0 且 visible_count=None）时，从第 1 箱开始逐步演示
+        if self._anim_index <= 0 and self.canvas.visible_count is None:
+            self._anim_index = 1
+        elif self._anim_index >= n:
+            return
+        else:
+            self._anim_index = min(n, self._anim_index + 1)
+        self.canvas.set_options(visible_count=min(self._anim_index, n))
+
+    def step_prev(self):
+        """手动回退一箱。"""
+        if not self.pallet:
+            return
+        self.timer.stop()
+        n = len(self.pallet.get("packed_items", []) or [])
+        if n <= 0:
+            return
+        if self._anim_index <= 0 and self.canvas.visible_count is None:
+            self._anim_index = max(0, n - 1)
+        else:
+            self._anim_index = max(0, self._anim_index - 1)
+        self.canvas.set_options(visible_count=self._anim_index)
 
     def _anim_step(self):
         if not self.pallet:
@@ -1283,10 +1375,39 @@ class IndustrialPackingWorkbench(BaseDashboard):
         self.zoom_btn_final = QtWidgets.QPushButton("最终")
         self.zoom_btn_play = QtWidgets.QPushButton("播放")
         self.zoom_btn_pause = QtWidgets.QPushButton("暂停")
+        self.zoom_btn_prev = QtWidgets.QPushButton("前一步")
+        self.zoom_btn_next = QtWidgets.QPushButton("后一步")
         self.zoom_btn_reset = QtWidgets.QPushButton("重置")
-        for b in [self.zoom_btn_final, self.zoom_btn_play, self.zoom_btn_pause, self.zoom_btn_reset]:
+        for b in [
+            self.zoom_btn_final, self.zoom_btn_play, self.zoom_btn_pause,
+            self.zoom_btn_prev, self.zoom_btn_next, self.zoom_btn_reset,
+        ]:
             b.setObjectName("MiniButton")
             tools.addWidget(b)
+        self.zoom_btn_prev.setToolTip("回退一箱，逐步观察装箱过程")
+        self.zoom_btn_next.setToolTip("前进一箱，逐步观察装箱过程")
+        tools.addSpacing(8)
+        tools.addWidget(QtWidgets.QLabel("速度"))
+        tools.addWidget(QtWidgets.QLabel("慢"))
+        self.zoom_speed_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.zoom_speed_slider.setObjectName("AnimSpeedSlider")
+        self.zoom_speed_slider.setRange(0, len(ANIM_SPEED_PRESETS) - 1)
+        self.zoom_speed_slider.setValue(ANIM_DEFAULT_SPEED_INDEX)
+        self.zoom_speed_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self.zoom_speed_slider.setTickInterval(1)
+        self.zoom_speed_slider.setSingleStep(1)
+        self.zoom_speed_slider.setPageStep(1)
+        self.zoom_speed_slider.setMinimumWidth(140)
+        self.zoom_speed_slider.setMaximumWidth(220)
+        self.zoom_speed_slider.setMinimumHeight(22)
+        self.zoom_speed_slider.setToolTip("拖动调整三维动画播放速度（慢 → 快）")
+        tools.addWidget(self.zoom_speed_slider)
+        tools.addWidget(QtWidgets.QLabel("快"))
+        self.zoom_speed_value = QtWidgets.QLabel(anim_speed_text(ANIM_DEFAULT_SPEED_INDEX))
+        self.zoom_speed_value.setObjectName("AnimSpeedValue")
+        self.zoom_speed_value.setMinimumWidth(40)
+        tools.addWidget(self.zoom_speed_value)
+        tools.addSpacing(8)
         tools.addWidget(QtWidgets.QLabel("着色"))
         self.zoom_cmb_color = QtWidgets.QComboBox()
         self.zoom_cmb_color.addItems(["按支撑风险着色", "按重量着色", "按层高着色", "按箱型着色", "按箱子区分着色"])
@@ -1313,10 +1434,13 @@ class IndustrialPackingWorkbench(BaseDashboard):
         self.zoom_btn_final.clicked.connect(self._zoom_show_final)
         self.zoom_btn_play.clicked.connect(self._zoom_play)
         self.zoom_btn_pause.clicked.connect(self._zoom_pause)
+        self.zoom_btn_prev.clicked.connect(self._zoom_step_prev)
+        self.zoom_btn_next.clicked.connect(self._zoom_step_next)
         self.zoom_btn_reset.clicked.connect(self._zoom_reset)
         self.zoom_cmb_color.currentIndexChanged.connect(self._apply_zoom_options)
         self.zoom_chk_suction.stateChanged.connect(self._apply_zoom_options)
         self.zoom_chk_risk.stateChanged.connect(self._apply_zoom_options)
+        self.zoom_speed_slider.valueChanged.connect(self._on_zoom_speed_changed)
         return panel
 
     @staticmethod
@@ -1677,6 +1801,39 @@ class IndustrialPackingWorkbench(BaseDashboard):
         QProgressBar::chunk {
             background: #2563EB;
             border-radius: 7px;
+        }
+        QSlider#AnimSpeedSlider::groove:horizontal {
+            border: 1px solid #CBD5E1;
+            height: 10px;
+            background: #E5E7EB;
+            border-radius: 5px;
+        }
+        QSlider#AnimSpeedSlider::sub-page:horizontal {
+            background: #2563EB;
+            border: 1px solid #1D4ED8;
+            height: 10px;
+            border-radius: 5px;
+        }
+        QSlider#AnimSpeedSlider::add-page:horizontal {
+            background: #E5E7EB;
+            border: 1px solid #CBD5E1;
+            height: 10px;
+            border-radius: 5px;
+        }
+        QSlider#AnimSpeedSlider::handle:horizontal {
+            background: #FFFFFF;
+            border: 2px solid #2563EB;
+            width: 16px;
+            margin: -5px 0;
+            border-radius: 8px;
+        }
+        QSlider#AnimSpeedSlider::handle:horizontal:hover {
+            background: #DBEAFE;
+        }
+        QLabel#AnimSpeedValue {
+            color: #1D4ED8;
+            font-weight: 900;
+            font-size: 12px;
         }
         QFrame#MetricCard, QFrame#SummaryKpi {
             background: #FFFFFF;
@@ -2269,6 +2426,14 @@ class IndustrialPackingWorkbench(BaseDashboard):
             reset_camera=reset_camera,
         )
 
+    def _zoom_anim_interval_ms(self) -> int:
+        return anim_interval_ms(self.zoom_speed_slider.value())
+
+    def _on_zoom_speed_changed(self, value: int) -> None:
+        self.zoom_speed_value.setText(anim_speed_text(value))
+        if self.zoom_timer.isActive():
+            self.zoom_timer.setInterval(self._zoom_anim_interval_ms())
+
     def _zoom_show_final(self) -> None:
         if not getattr(self, "zoom_pallet", None):
             return
@@ -2281,7 +2446,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
             return
         self.zoom_anim_index = 0
         self._apply_zoom_options()
-        self.zoom_timer.start(420)
+        self.zoom_timer.start(self._zoom_anim_interval_ms())
 
     def _zoom_pause(self) -> None:
         self.zoom_timer.stop()
@@ -2292,6 +2457,27 @@ class IndustrialPackingWorkbench(BaseDashboard):
         self.zoom_timer.stop()
         self.zoom_anim_index = 0
         self._apply_zoom_options(reset_camera=True)
+
+    def _zoom_step_next(self) -> None:
+        """手动前进一箱。"""
+        if not getattr(self, "zoom_pallet", None):
+            return
+        self.zoom_timer.stop()
+        n = len(self.zoom_pallet.get("packed_items", []) or [])
+        if n <= 0 or self.zoom_anim_index >= n:
+            return
+        self.zoom_anim_index += 1
+        self._apply_zoom_options()
+
+    def _zoom_step_prev(self) -> None:
+        """手动回退一箱。"""
+        if not getattr(self, "zoom_pallet", None):
+            return
+        self.zoom_timer.stop()
+        if self.zoom_anim_index <= 0:
+            return
+        self.zoom_anim_index -= 1
+        self._apply_zoom_options()
 
     def _zoom_anim_step(self) -> None:
         if not getattr(self, "zoom_pallet", None):
