@@ -1,0 +1,14 @@
+# Peer-side receiver for POST /adaptor/api/wcs/internal
+# Saves full packing_plan JSON under save_dir.
+
+# TODO(listen): 0.0.0.0 = LAN; 127.0.0.1 = local only
+host: "0.0.0.0"
+
+# TODO(port): must match what the packing side POSTs to
+port: 8094
+
+# TODO(save_dir): absolute path on the peer machine
+save_dir: "D:/research_code/xiafa"
+
+# TODO(path): must match packing_config.yaml data_source.internal_path
+internal_path: /adaptor/api/wcs/internal

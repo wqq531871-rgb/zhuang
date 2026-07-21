@@ -95,6 +95,7 @@ class DataSourceConfig:
     api_fallback_url: str
     stock_path: str
     plan_path: str
+    internal_path: str
     download_interval: int
     input_dir: Path
     bms_reference_file: Path
@@ -112,6 +113,9 @@ class DataSourceConfig:
 
     def plan_url(self) -> str:
         return f"{self.effective_api_base_url.rstrip('/')}{self.plan_path}"
+
+    def internal_url(self) -> str:
+        return f"{self.effective_api_base_url.rstrip('/')}{self.internal_path}"
 
 
 @dataclass(frozen=True)
@@ -138,12 +142,17 @@ def load_data_source_config(config_path: Optional[Path] = None) -> DataSourceCon
         raise ValueError("data_source.api_base_url 未配置")
     stock_path = str(raw.get("stock_path") or "").strip()
     plan_path = str(raw.get("plan_path") or "").strip()
+    internal_path = str(
+        raw.get("internal_path") or "/adaptor/api/wcs/internal"
+    ).strip()
     if not stock_path or not plan_path:
         raise ValueError("data_source.stock_path / plan_path 未配置")
     if not stock_path.startswith("/"):
         stock_path = "/" + stock_path
     if not plan_path.startswith("/"):
         plan_path = "/" + plan_path
+    if not internal_path.startswith("/"):
+        internal_path = "/" + internal_path
     return DataSourceConfig(
         mode=str(raw.get("mode") or "api").strip().lower(),
         use_real_api=bool(raw.get("use_real_api", True)),
@@ -151,6 +160,7 @@ def load_data_source_config(config_path: Optional[Path] = None) -> DataSourceCon
         api_fallback_url=str(raw.get("api_fallback_url") or "").strip(),
         stock_path=stock_path,
         plan_path=plan_path,
+        internal_path=internal_path,
         download_interval=max(1, int(raw.get("download_interval") or 200)),
         input_dir=input_path.resolve(),
         bms_reference_file=(DATA_DIR / bms_rel).resolve(),
@@ -203,6 +213,25 @@ def push_plan_result(
             f"接口 2 返回错误: code={body.get('code')}, msg={body.get('msg')}"
         )
     return body
+
+
+def push_internal_plan(
+    base_url: str,
+    plan_payload: Dict,
+    internal_path: str = "/adaptor/api/wcs/internal",
+    timeout: int = 120,
+) -> Dict:
+    """POST 完整 packing_plan JSON 到对方 /adaptor/api/wcs/internal。"""
+    path = internal_path if internal_path.startswith("/") else f"/{internal_path}"
+    url = f"{base_url.rstrip('/')}{path}"
+    resp = requests.post(url, json=plan_payload, timeout=timeout, verify=False)
+    resp.raise_for_status()
+    body = resp.json()
+    if isinstance(body, dict) and body.get("code") not in (None, 0):
+        raise RuntimeError(
+            f"完整方案下传返回错误: code={body.get('code')}, msg={body.get('msg')}"
+        )
+    return body if isinstance(body, dict) else {"code": 0, "msg": "ok", "data": body}
 
 
 def _save_json(path: Path, payload) -> None:

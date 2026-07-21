@@ -109,8 +109,10 @@ data_source:
   api_fallback_url: https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io
   # TODO(接口1 path): 库存拉取路径，拼在根地址后。
   stock_path: /api/wcs/reqstockinfo
-  # TODO(接口2 path): 规划结果推送路径，拼在根地址后。
+  # TODO(接口2 path): 规划结果推送路径，拼在根地址后（注意：/api/wcs/...，不是 /adaptor/...）。
   plan_path: /api/wcs/sendpalletplanresult
+  # TODO(完整方案下传 path): 整份 packing_plan_*.json POST 到对方；完整 URL = 根地址 + 本 path。
+  internal_path: /adaptor/api/wcs/internal
   # TODO(拉取间隔): 接口1 轮询间隔（秒）。UI「拉取间隔」可改，写入本次临时配置后生效。
   download_interval: 200
   input_dir: input

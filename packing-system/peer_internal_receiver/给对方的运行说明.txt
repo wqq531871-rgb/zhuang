@@ -1,0 +1,100 @@
+========================================
+完整方案接收端 — 给对方的运行说明
+========================================
+
+一、你需要收到的文件（整个文件夹即可）
+----------------------------------------
+把下面这个目录原样拷贝到对方电脑（可打成 zip）：
+
+  peer_internal_receiver/
+  ├── run_receiver.py                 # 启动入口（必给）
+  ├── requirements.txt                # Python 依赖（必给）
+  ├── config/
+  │   └── receiver_config.yaml        # 监听端口 / 保存目录（必给）
+  ├── README.txt                      # 英文简要说明（可选）
+  └── 给对方的运行说明.txt            # 本文件（建议一起给）
+
+不需要对方安装装箱算法、UI、数据库，只要 Python 3.8+。
+
+
+二、对方电脑环境准备
+----------------------------------------
+1. 安装 Python 3.8 或以上（建议 3.10+）
+2. 打开命令行，进入本目录：
+
+   cd peer_internal_receiver
+
+3. 安装依赖：
+
+   pip install -r requirements.txt
+
+
+三、配置（一般用默认即可）
+----------------------------------------
+编辑：config/receiver_config.yaml
+
+  host: "0.0.0.0"          # 允许局域网访问，不要改成 127.0.0.1
+  port: 8094               # 监听端口；若被占用可改，并告知我方
+  save_dir: "D:/research_code/xiafa"   # 收到的 JSON 保存目录
+  internal_path: /adaptor/api/wcs/internal   # 接口路径，勿改
+
+请提前创建目录：D:\research_code\xiafa
+（或改 save_dir 为对方实际路径）
+
+Windows 防火墙：放行入站端口 8094（或你改后的端口）。
+
+
+四、启动
+----------------------------------------
+  python run_receiver.py
+
+启动成功后窗口保持打开，不要关。
+浏览器可打开接口文档：
+
+  http://127.0.0.1:8094/swagger/index.html
+
+局域网访问（把 IP 换成对方本机 IPv4）：
+
+  http://对方IP:8094/swagger/index.html
+  POST http://对方IP:8094/adaptor/api/wcs/internal
+
+
+五、对方收到后会怎样
+----------------------------------------
+我方装箱侧会把整份 packing_plan_*.json POST 到：
+
+  POST /adaptor/api/wcs/internal
+
+对方服务会把文件存到：
+
+  D:\research_code\xiafa\packing_plan_YYYYMMDD_HHMMSS.json
+
+控制台会打印：[SAVE] 文件路径 …
+
+
+六、自测（可选）
+----------------------------------------
+对方本机另开一个命令行：
+
+  curl -X POST http://127.0.0.1:8094/adaptor/api/wcs/internal ^
+    -H "Content-Type: application/json" ^
+    -d "{\"packing_plan_id\":\"test\",\"pallets\":[]}"
+
+然后检查 D:\research_code\xiafa 下是否出现新 json。
+
+
+七、联调时需要告诉我方的信息
+----------------------------------------
+1. 对方电脑局域网 IPv4（例如 192.168.x.x）
+2. 实际监听端口（默认 8094）
+3. 确认防火墙已放行
+
+我方会把请求发到：
+  http://对方IP:端口/adaptor/api/wcs/internal
+
+
+八、常见问题
+----------------------------------------
+- 端口被占用：改 config 里 port，重启，并告知我方新端口
+- 连不上：检查防火墙、host 是否为 0.0.0.0、双方是否同一网段
+- 目录写不了：确认 D:\research_code\xiafa 存在且有写权限，或改 save_dir

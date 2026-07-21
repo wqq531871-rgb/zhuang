@@ -13,6 +13,9 @@ Industrial Packing Workbench V3 Clean
     python ui/realtime_dashboard_v3_clean.py --project .
     或 tools/windows/start_realtime_dashboard_v3_clean.bat
 
+启动仪表盘时会自动后台拉起 local_wcs_receiver（局域网接口 3/4/7）；
+关闭窗口时自动停止。配置见 local_wcs_receiver/config/receiver_config.yaml。
+
 数据目录默认：同级 packing-workspace/（可用 PACKING_WORKSPACE 覆盖）
 """
 
@@ -84,6 +87,121 @@ except Exception as exc:  # pragma: no cover
     ) from exc
 
 DEFAULT_WCS_RUN_SCRIPT_REL = Path(r"packing\run_wcs_service.py")
+LOCAL_WCS_RECEIVER_REL = Path("local_wcs_receiver")
+LOCAL_WCS_RECEIVER_SCRIPT = LOCAL_WCS_RECEIVER_REL / "run_receiver.py"
+LOCAL_WCS_RECEIVER_CONFIG = LOCAL_WCS_RECEIVER_REL / "config" / "receiver_config.yaml"
+
+
+def _receiver_advertise_url(project_dir: Path) -> str:
+    cfg = Path(project_dir) / LOCAL_WCS_RECEIVER_CONFIG
+    try:
+        with open(cfg, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        if not isinstance(data, dict):
+            return "http://127.0.0.1:8093"
+        url = str(data.get("advertise_base_url") or "").strip()
+        if url:
+            return url.rstrip("/")
+        server = data.get("server") or {}
+        port = int(server.get("port") or data.get("port") or 8093)
+        return f"http://127.0.0.1:{port}"
+    except Exception:
+        return "http://127.0.0.1:8093"
+
+
+def _start_local_wcs_receiver(
+    project_dir: Path,
+    emit_log,
+) -> Optional[subprocess.Popen]:
+    """随仪表盘后台启动局域网接收端；已在跑则跳过。"""
+    project_dir = Path(project_dir).resolve()
+    script = project_dir / LOCAL_WCS_RECEIVER_SCRIPT
+    config = project_dir / LOCAL_WCS_RECEIVER_CONFIG
+    if not script.exists():
+        emit_log(f"[UI] 未找到接收端脚本，跳过自动启动：{script}")
+        return None
+    if not config.exists():
+        emit_log(f"[UI] 未找到接收端配置，跳过自动启动：{config}")
+        return None
+
+    receiver_root = project_dir / LOCAL_WCS_RECEIVER_REL
+    log_dir = receiver_root / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = log_dir / f"receiver_ui_{stamp}.log"
+    log_fp = open(log_path, "a", encoding="utf-8", errors="replace")
+
+    cmd = [sys.executable, str(script), "--config", str(config)]
+    creationflags = 0
+    if sys.platform.startswith("win"):
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(receiver_root),
+            stdout=log_fp,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            creationflags=creationflags,
+        )
+    except OSError as exc:
+        log_fp.close()
+        emit_log(f"[UI] 自动启动局域网接收端失败：{exc}")
+        return None
+
+    # 短暂等待：端口被占用时进程会很快退出
+    time.sleep(0.8)
+    if proc.poll() is not None:
+        log_fp.close()
+        emit_log(
+            f"[UI] 局域网接收端未能保持运行（退出码 {proc.returncode}）。"
+            f"请看日志：{log_path}（常见原因：8093 端口已被占用）。"
+        )
+        return None
+
+    # 进程还活着时保持文件句柄，随进程生命周期由 OS 回收；存到 proc 上便于关闭
+    proc._receiver_log_fp = log_fp  # type: ignore[attr-defined]
+    advertise = _receiver_advertise_url(project_dir)
+    emit_log(f"[UI] 已自动启动局域网接收端（PID {proc.pid}）")
+    emit_log(f"[UI] 接收端根地址：{advertise}")
+    emit_log(f"[UI] 接收端 Swagger：{advertise}/swagger/index.html")
+    emit_log(f"[UI] 接收端日志：{log_path}")
+    return proc
+
+
+def _stop_local_wcs_receiver(proc: Optional[subprocess.Popen], emit_log) -> None:
+    if proc is None:
+        return
+    if proc.poll() is not None:
+        fp = getattr(proc, "_receiver_log_fp", None)
+        if fp:
+            try:
+                fp.close()
+            except Exception:
+                pass
+        return
+    emit_log(f"[UI] 正在停止局域网接收端（PID {proc.pid}）…")
+    try:
+        if sys.platform.startswith("win"):
+            proc.terminate()
+        else:
+            proc.send_signal(signal.SIGTERM)
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=3)
+    except Exception as exc:
+        emit_log(f"[UI] 停止接收端时异常：{exc}")
+    finally:
+        fp = getattr(proc, "_receiver_log_fp", None)
+        if fp:
+            try:
+                fp.close()
+            except Exception:
+                pass
+        emit_log("[UI] 局域网接收端已停止。")
 
 
 REQUIRED_INCREMENTAL_SHEETS = {"最终挑选结果", "新增箱", "包装物料主数据(BMS)"}
@@ -335,6 +453,24 @@ def list_result_json_files(project_dir: Path, limit: int = _HISTORY_LIMIT) -> Li
                 )
     entries.sort(key=lambda e: e.mtime, reverse=True)
     return entries[:limit]
+
+
+def list_packing_plan_files(project_dir: Path, limit: int = _HISTORY_LIMIT) -> List[Path]:
+    """仅整份装箱报告 packing_plan_*.json / ui_packing_plan_*.json（排除 execution 衍生文件）。"""
+    entries = list_result_json_files(project_dir, limit=limit * 2)
+    out: List[Path] = []
+    for entry in entries:
+        name = entry.path.name.lower()
+        if "_execution" in name:
+            continue
+        if not (
+            name.startswith("packing_plan_") or name.startswith("ui_packing_plan_")
+        ):
+            continue
+        out.append(entry.path)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def _make_out_path(project_dir: Path, prefix: str = "ui_packing_plan") -> Path:
@@ -635,10 +771,14 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         except (OSError, ValueError, TypeError):
             configured_interval = 200
         self.download_interval = normalize_download_interval(configured_interval)
+        self._local_wcs_receiver_proc: Optional[subprocess.Popen] = None
         super().__init__(project_dir)
         self.setWindowTitle("面向控序混码场景智能装箱规划系统 V3 - 一键装箱 + 结果分析")
         self._write_log("[UI] V3模式：主流程为 选择Excel → 一键装箱；高级算法操作已合并到“算法设置”。")
         self.refresh_result_history()
+        self._local_wcs_receiver_proc = _start_local_wcs_receiver(
+            self.project_dir, self._write_log
+        )
 
     # ------------------------------------------------------------------ header
     def _build_header(self) -> QtWidgets.QWidget:
@@ -791,7 +931,37 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         push_form.addRow("", self.lbl_push_hint)
 
         layout.insertWidget(insert_at + 1, push_box)
+
+        self.step_push_plan = StepCard("↓", "下传完整方案", "选 packing_plan JSON，POST 接口 internal")
+        layout.insertWidget(insert_at + 2, self.step_push_plan)
+
+        plan_box = QtWidgets.QFrame()
+        plan_box.setObjectName("ParamBox")
+        plan_form = QtWidgets.QFormLayout(plan_box)
+        plan_form.setContentsMargins(12, 10, 12, 10)
+        plan_form.setSpacing(8)
+
+        self.cmb_push_plan = QtWidgets.QComboBox()
+        self.cmb_push_plan.setMinimumWidth(220)
+        self.cmb_push_plan.setToolTip("可选「当前」结果，或历史 packing_plan_*.json")
+        plan_form.addRow("方案 JSON", self.cmb_push_plan)
+
+        self.btn_push_plan = QtWidgets.QPushButton("确定下传")
+        self.btn_push_plan.setObjectName("PrimaryButton")
+        self.btn_push_plan.setToolTip(
+            "将整份 packing_plan JSON POST 到 /adaptor/api/wcs/internal"
+        )
+        self.btn_push_plan.clicked.connect(self.push_selected_plan_internal)
+        plan_form.addRow("", self.btn_push_plan)
+
+        self.lbl_push_plan_hint = QtWidgets.QLabel("暂无可下传的 packing_plan")
+        self.lbl_push_plan_hint.setObjectName("SmallInfo")
+        self.lbl_push_plan_hint.setWordWrap(True)
+        plan_form.addRow("", self.lbl_push_plan_hint)
+
+        layout.insertWidget(insert_at + 3, plan_box)
         self._refresh_push_pallet_combo()
+        self._refresh_push_plan_combo()
         return panel
 
     def _ensure_packing_import_path(self) -> Path:
@@ -838,6 +1008,122 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
     def populate_after_load(self) -> None:
         super().populate_after_load()
         self._refresh_push_pallet_combo()
+        self._refresh_push_plan_combo()
+
+    def _resolve_current_plan_path(self) -> Optional[Path]:
+        for candidate in (
+            getattr(self, "_live_result_path", None),
+            getattr(self, "_current_result_path", None),
+            getattr(self, "generated_out_path", None),
+        ):
+            if candidate is None:
+                continue
+            path = Path(candidate)
+            if path.exists() and _is_valid_packing_json(path):
+                return path.resolve()
+        return None
+
+    def _refresh_push_plan_combo(self) -> None:
+        if not hasattr(self, "cmb_push_plan"):
+            return
+        combo = self.cmb_push_plan
+        prev = combo.currentData()
+        plans = list_packing_plan_files(self.project_dir)
+        current = self._resolve_current_plan_path()
+
+        combo.blockSignals(True)
+        combo.clear()
+        if current is not None:
+            combo.addItem(f"当前 · {current.name}", str(current))
+        for path in plans:
+            if current is not None and path.resolve() == current:
+                continue
+            combo.addItem(path.name, str(path))
+        combo.blockSignals(False)
+
+        if prev:
+            idx = combo.findData(prev)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        has_items = combo.count() > 0
+        combo.setEnabled(has_items)
+        if hasattr(self, "btn_push_plan"):
+            self.btn_push_plan.setEnabled(has_items)
+        if hasattr(self, "lbl_push_plan_hint"):
+            self.lbl_push_plan_hint.setText(
+                f"可选 {combo.count()} 个方案文件（整份 JSON 下传到 internal）"
+                if has_items
+                else "暂无可下传的 packing_plan"
+            )
+        if hasattr(self, "step_push_plan"):
+            self.step_push_plan.set_state(
+                "done" if has_items else "idle",
+                f"已找到 {combo.count()} 个方案" if has_items else "等待 packing_plan 结果",
+            )
+
+    def push_selected_plan_internal(self) -> None:
+        """确认后，将整份 packing_plan JSON POST 到 /adaptor/api/wcs/internal。"""
+        if not hasattr(self, "cmb_push_plan") or self.cmb_push_plan.count() == 0:
+            QtWidgets.QMessageBox.information(self, "下传完整方案", "没有可下传的 packing_plan。")
+            return
+        raw = self.cmb_push_plan.currentData()
+        if not raw:
+            QtWidgets.QMessageBox.warning(self, "下传完整方案", "请先选择方案 JSON。")
+            return
+        plan_path = Path(str(raw))
+        if not plan_path.exists():
+            QtWidgets.QMessageBox.warning(self, "下传完整方案", f"文件不存在：{plan_path}")
+            return
+        if not _is_valid_packing_json(plan_path):
+            QtWidgets.QMessageBox.warning(
+                self, "下传完整方案", f"不是有效装箱报告：{plan_path.name}"
+            )
+            return
+
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "确认下传完整方案",
+            f"确认将该 JSON 整份 POST 到对方接口？\n\n"
+            f"文件：{plan_path.name}\n"
+            f"路径：/adaptor/api/wcs/internal",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        try:
+            self._ensure_packing_import_path()
+            from src.service.wcs_service import (
+                load_data_source_config,
+                push_internal_plan,
+            )
+
+            with open(plan_path, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
+            ds = load_data_source_config(config_path)
+            url = ds.internal_url()
+            self._write_log(f"[UI-完整方案] {plan_path.name} → {url}")
+            body = push_internal_plan(
+                ds.effective_api_base_url,
+                payload,
+                ds.internal_path,
+            )
+            msg = (
+                f"完整方案下传成功。\n文件：{plan_path.name}\n"
+                f"接口返回 code={body.get('code')}, msg={body.get('msg')}"
+            )
+            self._write_log(f"[UI-完整方案] {msg.replace(chr(10), ' ')}")
+            if hasattr(self, "step_push_plan"):
+                self.step_push_plan.set_state("done", f"已下传 {plan_path.name}")
+            QtWidgets.QMessageBox.information(self, "下传成功", msg)
+        except Exception as exc:
+            err = f"完整方案下传失败：{exc}"
+            self._write_log(f"[UI-完整方案] {err}")
+            if hasattr(self, "step_push_plan"):
+                self.step_push_plan.set_state("error", "下传失败，请查看日志")
+            QtWidgets.QMessageBox.critical(self, "下传失败", err)
 
     def push_selected_pallet_to_wcs(self) -> None:
         """确认后，将单个达标托盘 POST 到接口 2。"""
@@ -1004,6 +1290,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             combo.blockSignals(False)
         finally:
             self._history_refreshing = False
+            self._refresh_push_plan_combo()
 
     def on_result_history_changed(self, index: int) -> None:
         if self._history_refreshing or index < 0:
@@ -1271,6 +1558,17 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
                 self.run_progress.setRange(0, 100)
                 self.run_progress.setValue(0)
                 self.run_progress.setFormat("已结束")
+
+    def closeEvent(self, event) -> None:
+        try:
+            _stop_local_wcs_receiver(
+                getattr(self, "_local_wcs_receiver_proc", None),
+                self._write_log,
+            )
+        except Exception:
+            pass
+        self._local_wcs_receiver_proc = None
+        super().closeEvent(event)
 
     def on_backend_finished_json(self, json_path: str) -> None:
         path = Path(json_path)
