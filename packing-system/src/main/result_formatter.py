@@ -365,6 +365,11 @@ class ResultFormatter:
         ResultFormatter.validate_final_constraints(
             pallets, constraint_config=constraint_config
         )
+        for pallet in pallets:
+            for seq, item in enumerate(pallet.get("packed_items") or [], 1):
+                item.pop("original_packing_sequence", None)
+                item.pop("robot_packing_sequence", None)
+                item["seq"] = seq
         return {
             "packing_plan_id": None,
             "total_runtime_seconds": round(total_runtime, 2),

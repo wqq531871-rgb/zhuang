@@ -394,6 +394,11 @@ class ResultFormatter:
         # 不改变托盘、箱子位置、尺寸、朝向或 packed_items 原始列表顺序。
         from src.postprocess.robot_sequence import apply_robot_sequences
         robot_sequence_summary = apply_robot_sequences(pallets)
+        for pallet in pallets:
+            for seq, item in enumerate(pallet.get("packed_items") or [], 1):
+                item.pop("original_packing_sequence", None)
+                item.pop("robot_packing_sequence", None)
+                item["seq"] = seq
 
         return {
             "packing_plan_id": None,

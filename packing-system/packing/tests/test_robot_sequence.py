@@ -138,7 +138,10 @@ def test_result_formatter_attaches_robot_sequence_summary():
 
     assert report["robot_sequence_summary"]["successful_pallets_processed"] == 1
     assert report["pallets"][0]["sequence_status"] == "GEOMETRICALLY_FEASIBLE"
-    assert report["pallets"][0]["packed_items"][0]["robot_packing_sequence"] == 1
+    item = report["pallets"][0]["packed_items"][0]
+    assert item["seq"] == 1
+    assert "original_packing_sequence" not in item
+    assert "robot_packing_sequence" not in item
 
 
 def test_successful_postprocess_preserves_final_geometry_and_list_order():

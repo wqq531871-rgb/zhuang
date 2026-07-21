@@ -12,6 +12,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import signal
 import subprocess
@@ -70,8 +71,7 @@ try:
         categorical_rgba,
     )
     from sequence_order import (
-        ORIGINAL_MODE_LABEL,
-        ROBOT_MODE_LABEL,
+        EXECUTION_MODE_LABEL,
         ordered_packed_items,
         sequence_mode_key,
     )
@@ -172,13 +172,25 @@ def find_latest_json(project_dir: Path) -> Optional[Path]:
         for pattern in patterns:
             candidates.extend([p for p in root.rglob(pattern) if p.is_file()])
 
-    filtered: List[Path] = []
-    for p in candidates:
+    ordered_candidates = sorted(
+        set(candidates),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for p in ordered_candidates:
         low = str(p).lower()
         if "config" in low or "__pycache__" in low or "site-packages" in low:
             continue
-        filtered.append(p)
-    return max(filtered, key=lambda p: p.stat().st_mtime) if filtered else None
+        if "_execution_wcs" in p.stem:
+            continue
+        try:
+            payload = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict) or not isinstance(payload.get("pallets"), list):
+            continue
+        return p
+    return None
 
 
 class PackingWorker(QtCore.QThread):
@@ -288,6 +300,24 @@ class PackingWorker(QtCore.QThread):
                 return
             if latest.stat().st_mtime < before_mtime:
                 self.log.emit(f"[提醒] 找到的 JSON 可能不是本次新生成文件：{latest}")
+            try:
+                packing_root = self.project_dir / "packing"
+                packing_root_s = str(packing_root.resolve())
+                if packing_root_s not in sys.path:
+                    sys.path.insert(0, packing_root_s)
+                from src.postprocess.execution_planning_hook import (
+                    run_execution_planning_for_plan,
+                )
+
+                outcome = run_execution_planning_for_plan(
+                    latest,
+                    self.config_path,
+                    project_root=self.project_dir,
+                    log=self.log.emit,
+                )
+                latest = outcome.report_path
+            except Exception as exc:
+                self.log.emit(f"[执行规划] 调用异常，自动使用原方案：{exc}")
             self.finished_json.emit(str(latest))
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -389,7 +419,7 @@ class PalletPreviewCanvas(QtWidgets.QWidget):
         self.show_suction = False
         self.only_risk = False
         self.color_mode = "按箱子区分着色"
-        self.sequence_mode = "robot"
+        self.sequence_mode = "execution"
         self.visible_count: Optional[int] = None
         self.selected_box_key = None
 
@@ -812,7 +842,7 @@ class PalletPreviewCard(QtWidgets.QFrame):
         self.setObjectName("PalletPreviewCard")
         self.setProperty("selected", False)
         self.pallet = None
-        self.sequence_mode = "robot"
+        self.sequence_mode = "execution"
         self._anim_index = 0
 
         self.timer = QtCore.QTimer(self)
@@ -1296,11 +1326,13 @@ class IndustrialPackingWorkbench(BaseDashboard):
         sequence_layout.setContentsMargins(10, 6, 10, 6)
         sequence_layout.addWidget(QtWidgets.QLabel("播放顺序"))
         self.cmb_sequence_mode = QtWidgets.QComboBox()
-        self.cmb_sequence_mode.addItems([ROBOT_MODE_LABEL, ORIGINAL_MODE_LABEL])
-        self.cmb_sequence_mode.setToolTip("机器人执行顺序来自成功托盘的固定左上角600×800吸盘后处理；不可执行或旧结果会自动回退原算法顺序。")
+        self.cmb_sequence_mode.addItem(EXECUTION_MODE_LABEL)
+        self.cmb_sequence_mode.setToolTip(
+            "可视化、WCS 和机械臂统一按箱子的 seq 字段执行。"
+        )
         self.cmb_sequence_mode.currentTextChanged.connect(self._on_sequence_mode_changed)
         sequence_layout.addWidget(self.cmb_sequence_mode)
-        self.lbl_sequence_status = QtWidgets.QLabel("默认：机器人执行顺序")
+        self.lbl_sequence_status = QtWidgets.QLabel("统一按 seq 播放")
         self.lbl_sequence_status.setObjectName("SmallInfo")
         sequence_layout.addWidget(self.lbl_sequence_status, 1)
         layout.addWidget(sequence_bar)
@@ -2284,21 +2316,11 @@ class IndustrialPackingWorkbench(BaseDashboard):
     def _sequence_mode(self) -> str:
         if hasattr(self, "cmb_sequence_mode"):
             return sequence_mode_key(self.cmb_sequence_mode.currentText())
-        return "robot"
+        return "execution"
 
     def _on_sequence_mode_changed(self, _text: str = "") -> None:
         mode = self._sequence_mode()
-        current = getattr(self, "current_pallet", None) or {}
-        status = safe_str(current.get("sequence_status"), "未生成")
-        if mode == "robot":
-            if status == "GEOMETRICALLY_FEASIBLE":
-                message = "机器人执行顺序：固定左上角，吸盘600×800 mm"
-            elif current:
-                message = f"机器人顺序不可用（{status}），播放自动回退原算法顺序"
-            else:
-                message = "机器人执行顺序：等待加载结果"
-        else:
-            message = "原算法顺序：保持 packed_items 原始顺序"
+        message = "统一执行顺序：按 seq 播放"
         if hasattr(self, "lbl_sequence_status"):
             self.lbl_sequence_status.setText(message)
         for card in getattr(self, "overview_cards", []) or []:

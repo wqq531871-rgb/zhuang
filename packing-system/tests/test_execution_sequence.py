@@ -246,6 +246,16 @@ def test_non_finite_execution_clearances_are_rejected(field, value):
 def test_report_schema_and_item_values_are_preserved_while_order_changes():
     tall = _box("tall", 0, 0, 0, height=300)
     short = _box("short", 200, 0, 0, height=100)
+    tall.update({
+        "seq": 1,
+        "original_packing_sequence": 1,
+        "robot_packing_sequence": 2,
+    })
+    short.update({
+        "seq": 2,
+        "original_packing_sequence": 2,
+        "robot_packing_sequence": 1,
+    })
     source = {
         "packing_plan_id": None,
         "total_runtime_seconds": 1.25,
@@ -269,8 +279,12 @@ def test_report_schema_and_item_values_are_preserved_while_order_changes():
     assert set(result["pallets"][0]) == set(source["pallets"][0])
     assert _ids(result["pallets"][0]["packed_items"]) == ["short", "tall"]
     source_by_id = {item["id"]: item for item in source["pallets"][0]["packed_items"]}
-    for item in result["pallets"][0]["packed_items"]:
-        assert item == source_by_id[item["id"]]
+    for seq, item in enumerate(result["pallets"][0]["packed_items"], 1):
+        expected = deepcopy(source_by_id[item["id"]])
+        expected.pop("original_packing_sequence")
+        expected.pop("robot_packing_sequence")
+        expected["seq"] = seq
+        assert item == expected
 
 
 def test_wcs_seq_follows_execution_order_while_layer_id_remains_geometric():

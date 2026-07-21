@@ -158,6 +158,48 @@ def test_failed_pallet_toggle():
     print('[PASS] 未达标盘开关')
 
 
+def test_seq_is_the_single_source_for_wcs_cases_and_plan_map():
+    def item(box_id, seq, x, product_code):
+        return {
+            'id': box_id,
+            'seq': seq,
+            'original_packing_sequence': 99,
+            'robot_packing_sequence': 98,
+            'product_code': product_code,
+            'length': 100.0,
+            'width': 100.0,
+            'height': 100.0,
+            'position': {'x': float(x), 'y': 0.0, 'z': 0.0},
+            'pallet_dims': {'length': 1000.0, 'width': 1000.0, 'height': 1000.0},
+        }
+
+    report = {
+        'pallets': [{
+            'pallet_id': 'P1',
+            'pallet_type': 'MH423C',
+            'sales_order_no': 'O1',
+            'case_group': 0,
+            'mpm_status': 'SUCCESS',
+            'packed_items': [item('A', 2, 0, 1), item('B', 1, 200, 2)],
+        }]
+    }
+
+    result = report_to_plan_result(report)
+
+    cartons = [
+        carton
+        for layer in result.cases[0]['layers']
+        for carton in layer['cartons']
+    ]
+    assert [c['product_code'] for c in sorted(cartons, key=lambda c: c['seq'])] \
+        == [2, 1]
+    mapped = next(iter(result.plan_by_unique_id.values()))['packed_items']
+    assert [entry['id'] for entry in mapped] == ['B', 'A']
+    assert [entry['seq'] for entry in mapped] == [1, 2]
+    assert all('original_packing_sequence' not in entry for entry in mapped)
+    assert all('robot_packing_sequence' not in entry for entry in mapped)
+
+
 def test_empty_inputs():
     """空库存/空报告 → 空数组（接口允许 []）。"""
     assert stock_to_boxes([], bms_map={}) == []
