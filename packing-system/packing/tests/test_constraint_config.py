@@ -56,6 +56,37 @@ def test_from_dict_tolerant():
     print('[PASS] from_dict 容错（未知键忽略 / 缺省回退）')
 
 
+def test_dual_path_settings_are_configurable():
+    c = ConstraintConfig.from_dict({
+        'dual_path_enabled': False,
+        'dual_path_time_limit_seconds': 7.5,
+    })
+    assert c.dual_path_enabled is False
+    assert c.dual_path_time_limit_seconds == 7.5
+
+
+def test_directed_exchange_settings_are_configurable():
+    c = ConstraintConfig.from_dict({
+        'directed_exchange_enabled': False,
+        'directed_exchange_max_items': 3,
+        'directed_exchange_max_attempts': 12,
+    })
+    assert c.directed_exchange_enabled is False
+    assert c.directed_exchange_max_items == 3
+    assert c.directed_exchange_max_attempts == 12
+
+
+def test_cpsat_target_subset_settings_are_configurable():
+    c = ConstraintConfig.from_dict({
+        'cpsat_target_subset_enabled': False,
+        'cpsat_target_subset_time_limit_seconds': 2.5,
+        'cpsat_target_subset_max_attempts': 3,
+    })
+    assert c.cpsat_target_subset_enabled is False
+    assert c.cpsat_target_subset_time_limit_seconds == 2.5
+    assert c.cpsat_target_subset_max_attempts == 3
+
+
 def test_frozen():
     c = ConstraintConfig()
     try:
@@ -143,6 +174,36 @@ def test_gate_com_tolerance_configurable():
     print('[PASS] 门禁重心偏差可配（0.5 稳定 / 0.05 不稳定）')
 
 
+def test_gate_same_size_heavier_below_switch():
+    """同尺寸重箱在下必须进入整盘门禁，并受统一开关控制。"""
+    pallet_dims = {'length': 1200, 'width': 1000, 'height': 1450}
+    light = _box('light', 0, 0, 0, 300, 300, 100, weight=5.0)
+    heavy = _box('heavy', 0, 0, 100, 300, 300, 100, weight=10.0)
+    plan = {'packed_items': [light, heavy]}
+
+    enabled = validate_pallet_constraints(
+        plan,
+        pallet_dims,
+        constraint_config=ConstraintConfig(
+            center_of_mass_tolerance=1.0,
+            same_size_heavier_below_enabled=True,
+        ),
+    )
+    enabled_types = {v['type'] for v in enabled['violations']}
+    assert 'same_size_heavier_below' in enabled_types, enabled_types
+
+    disabled = validate_pallet_constraints(
+        plan,
+        pallet_dims,
+        constraint_config=ConstraintConfig(
+            center_of_mass_tolerance=1.0,
+            same_size_heavier_below_enabled=False,
+        ),
+    )
+    disabled_types = {v['type'] for v in disabled['violations']}
+    assert 'same_size_heavier_below' not in disabled_types, disabled_types
+
+
 def test_sanitizer_com_tolerance_same_source():
     """放置层清理(sanitizer)与门禁用同一重心阈值：严格阈值下偏置盘会被清理拆箱。"""
     from src.packing.sanitizer import sanitize_packed_items
@@ -173,5 +234,6 @@ if __name__ == '__main__':
     test_gate_small_box_switch()
     test_gate_gap_value_configurable()
     test_gate_com_tolerance_configurable()
+    test_gate_same_size_heavier_below_switch()
     test_sanitizer_com_tolerance_same_source()
     print('\n所有约束配置测试通过！')

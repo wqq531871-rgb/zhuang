@@ -21,6 +21,7 @@ from ..geometry.constraint_validator import REQUIRED_SUCTION_FIELDS
 from ..geometry.gap_checker import passes_box_gap_constraint
 from ..geometry.overlap import axis_overlap_len
 from ..geometry.support import direct_support_ratio
+from .stacking_policy import passes_same_size_heavier_below_constraint
 
 
 def _dims(item: Dict) -> Dict[str, float]:
@@ -54,10 +55,14 @@ def incremental_pallet_ok(
     路径。constraint_config 提供时统一覆盖支撑率/间隙/吸盘开关，与门禁同源；
     不提供时沿用各参数默认值（行为不变）。
     """
+    same_size_heavier_below_enabled = True
     if constraint_config is not None:
         support_ratio_threshold = constraint_config.support_ratio_threshold
         max_gap = constraint_config.max_box_gap_mm
         require_suction = constraint_config.suction_reachability_enabled
+        same_size_heavier_below_enabled = (
+            constraint_config.same_size_heavier_below_enabled
+        )
     pos = new_box.get('position')
     if not pos:
         return False
@@ -111,6 +116,13 @@ def incremental_pallet_ok(
         ratio = direct_support_ratio(pos, dims, placed)
         if ratio + 1e-9 < support_ratio_threshold:
             return False
+
+    if same_size_heavier_below_enabled and not (
+        passes_same_size_heavier_below_constraint(
+            new_box, pos, dims, placed
+        )
+    ):
+        return False
 
     # 5. new_box 间隙（vs 全部既有箱）
     if not passes_box_gap_constraint(

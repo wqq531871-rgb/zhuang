@@ -258,6 +258,75 @@ class BeamSearchPacker:
             rng.shuffle(items_copy)
         return items_copy
 
+    def pack_additions(
+        self,
+        existing_placements: List[Dict],
+        items_to_add: List[Dict],
+        num_restarts: int = 4,
+        beam_width: int = 4,
+        candidate_limit: int = 16,
+        random_seed: Optional[int] = None,
+        target_mpm: Optional[float] = None,
+    ) -> Tuple[List[Dict], List[Dict]]:
+        """Place additions without moving or rewriting existing placements."""
+
+        fixed = [deepcopy(item) for item in existing_placements]
+        fixed_by_id = {item.get("id"): item for item in fixed}
+        rng = random.Random(random_seed)
+        prefiltered = []
+        pre_unfitted = []
+        for item in items_to_add:
+            if self.placement_validator.can_fit_in_pallet(item):
+                prefiltered.append(item)
+            else:
+                pre_unfitted.append(item)
+        if not prefiltered:
+            return fixed, list(items_to_add)
+
+        strategies = [
+            "volume_asc",
+            "volume_desc",
+            "weight_desc",
+            "base_area_desc",
+        ]
+        best_state = None
+        for restart_idx in range(max(1, num_restarts)):
+            strategy = strategies[restart_idx % len(strategies)]
+            ordered = self._order_items(prefiltered, strategy, rng)
+            state = self._pack_with_beam_search(
+                ordered,
+                beam_width=beam_width,
+                candidate_limit=candidate_limit,
+                rng=rng,
+                target_mpm=target_mpm,
+                stop_when_target_met=True,
+                allow_skip_items=True,
+                initial_placed_boxes=fixed,
+            )
+            if pre_unfitted:
+                state["unfitted_items"] = (
+                    list(state["unfitted_items"]) + list(pre_unfitted)
+                )
+            if best_state is None or self._state_score(
+                state, target_mpm
+            ) > self._state_score(best_state, target_mpm):
+                best_state = state
+
+        sanitized, removed = self._sanitize_packed_items(
+            best_state["placed_boxes"]
+        )
+        sanitized_by_id = {item.get("id"): item for item in sanitized}
+        if any(box_id not in sanitized_by_id for box_id in fixed_by_id):
+            return fixed, list(items_to_add)
+
+        combined = [
+            deepcopy(fixed_by_id.get(item.get("id"), item))
+            for item in sanitized
+        ]
+        unfitted = list(best_state["unfitted_items"]) + removed
+        self.placed_boxes = combined
+        return combined, unfitted
+
     def _pack_with_beam_search(
         self,
         ordered_items: List[Dict],
@@ -266,7 +335,8 @@ class BeamSearchPacker:
         rng: random.Random,
         target_mpm: Optional[float] = None,
         stop_when_target_met: bool = True,
-        allow_skip_items: bool = True
+        allow_skip_items: bool = True,
+        initial_placed_boxes: Optional[List[Dict]] = None,
     ) -> Dict:
         """
         使用束搜索算法进行装箱
@@ -289,7 +359,9 @@ class BeamSearchPacker:
                 - unfitted_items (list): 无法放置的物品列表
         """
         initial_state = {
-            "placed_boxes": [],
+            "placed_boxes": [
+                deepcopy(item) for item in (initial_placed_boxes or [])
+            ],
             "unfitted_items": []
         }
         states = [initial_state]

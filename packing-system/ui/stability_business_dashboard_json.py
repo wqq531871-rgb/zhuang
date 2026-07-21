@@ -590,6 +590,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_play.clicked.connect(self.play_animation)
         self.btn_pause = QtWidgets.QPushButton("暂停")
         self.btn_pause.clicked.connect(self.pause_animation)
+        self.btn_prev = QtWidgets.QPushButton("前一步")
+        self.btn_prev.clicked.connect(self.step_prev_animation)
+        self.btn_prev.setToolTip("回退一箱，逐步观察装箱过程")
+        self.btn_next = QtWidgets.QPushButton("后一步")
+        self.btn_next.clicked.connect(self.step_next_animation)
+        self.btn_next.setToolTip("前进一箱，逐步观察装箱过程")
         self.btn_reset = QtWidgets.QPushButton("重置")
         self.btn_reset.clicked.connect(self.reset_animation)
         self.cmb_color = QtWidgets.QComboBox()
@@ -607,10 +613,31 @@ class MainWindow(QtWidgets.QMainWindow):
         self.chk_only_risk = QtWidgets.QCheckBox("风险箱")
         self.chk_only_risk.stateChanged.connect(self.refresh_3d_scene)
         self.anim_label = QtWidgets.QLabel("进度：0 / 0")
+        self.anim_speed_presets = (0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0)
+        self.anim_base_interval_ms = 550
+        self.speed_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.speed_slider.setRange(0, len(self.anim_speed_presets) - 1)
+        self.speed_slider.setValue(3)
+        self.speed_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self.speed_slider.setTickInterval(1)
+        self.speed_slider.setMinimumWidth(120)
+        self.speed_slider.setMaximumWidth(200)
+        self.speed_slider.setToolTip("拖动调整三维动画播放速度（慢 → 快）")
+        self.speed_value = QtWidgets.QLabel("1×")
+        self.speed_value.setMinimumWidth(36)
+        self.speed_slider.valueChanged.connect(self._on_anim_speed_changed)
         ctrl.addWidget(self.btn_show_final)
         ctrl.addWidget(self.btn_play)
         ctrl.addWidget(self.btn_pause)
+        ctrl.addWidget(self.btn_prev)
+        ctrl.addWidget(self.btn_next)
         ctrl.addWidget(self.btn_reset)
+        ctrl.addSpacing(8)
+        ctrl.addWidget(QtWidgets.QLabel("速度"))
+        ctrl.addWidget(QtWidgets.QLabel("慢"))
+        ctrl.addWidget(self.speed_slider)
+        ctrl.addWidget(QtWidgets.QLabel("快"))
+        ctrl.addWidget(self.speed_value)
         ctrl.addSpacing(12)
         ctrl.addWidget(QtWidgets.QLabel("着色"))
         ctrl.addWidget(self.cmb_color)
@@ -1644,6 +1671,16 @@ class MainWindow(QtWidgets.QMainWindow):
             self.add_cg_projection_marker(L, W)
         self.anim_label.setText(f"进度：{min(self.animation_idx, len(self.animation_order))} / {len(self.animation_order)}")
 
+    def _anim_interval_ms(self) -> int:
+        idx = max(0, min(int(self.speed_slider.value()), len(self.anim_speed_presets) - 1))
+        return max(40, int(round(self.anim_base_interval_ms / float(self.anim_speed_presets[idx]))))
+
+    def _on_anim_speed_changed(self, value: int) -> None:
+        idx = max(0, min(int(value), len(self.anim_speed_presets) - 1))
+        self.speed_value.setText(f"{self.anim_speed_presets[idx]:g}×")
+        if self.anim_timer.isActive():
+            self.anim_timer.setInterval(self._anim_interval_ms())
+
     def play_animation(self):
         if self.df_eval is None:
             return
@@ -1651,7 +1688,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.prepare_animation_order()
         if self.animation_idx >= len(self.animation_order):
             self.animation_idx = 0
-        self.anim_timer.start(550)
+        self.anim_timer.start(self._anim_interval_ms())
 
     def pause_animation(self):
         self.anim_timer.stop()
@@ -1659,6 +1696,30 @@ class MainWindow(QtWidgets.QMainWindow):
     def reset_animation(self):
         self.anim_timer.stop()
         self.animation_idx = 0
+        self.refresh_3d_scene()
+
+    def step_next_animation(self):
+        if self.df_eval is None:
+            return
+        self.anim_timer.stop()
+        if not self.animation_order:
+            self.prepare_animation_order()
+        if not self.animation_order:
+            return
+        if self.animation_idx >= len(self.animation_order):
+            return
+        self.animation_idx += 1
+        self.refresh_3d_scene()
+
+    def step_prev_animation(self):
+        if self.df_eval is None:
+            return
+        self.anim_timer.stop()
+        if not self.animation_order:
+            self.prepare_animation_order()
+        if self.animation_idx <= 0:
+            return
+        self.animation_idx -= 1
         self.refresh_3d_scene()
 
     def _anim_step(self):

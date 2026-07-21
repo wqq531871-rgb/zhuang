@@ -20,6 +20,17 @@ constraints:
   # 主装箱算法：'gcp' = 全局列式装箱 + 柱级组合优化（默认，规则数据达标率最高，
   # 复杂/不规则分组自动回退 beam）；'beam' = 旧 beam + 配方优先 + 救援链。
   main_packer: gcp
+  # GCP 未捕获业务组指数上限时，限时运行 beam+配方+完整救援链并严格择优。
+  dual_path_enabled: true
+  dual_path_time_limit_seconds: 30.0
+  # 在破坏性整盘重排前，保留 receiver 布局，仅从同 case_group donor 取顶层箱补缺口。
+  directed_exchange_enabled: true
+  directed_exchange_max_items: 4
+  directed_exchange_max_attempts: 40
+  # 现有 GCP 未达到指数理论上限时，先用 CP-SAT 选择达标子集，再精确摆柱落地。
+  cpsat_target_subset_enabled: true
+  cpsat_target_subset_time_limit_seconds: 3.0
+  cpsat_target_subset_max_attempts: 6
   max_box_gap_mm: 6.0
   support_ratio_threshold: 0.8
   center_of_mass_tolerance: 0.3333333333333333

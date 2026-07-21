@@ -1,0 +1,38 @@
+[LOG] 后端日志文件：E:\yue's project\maduo\zhuang-integrated\packing-workspace\runtime\packing-realtime\logs\backend_20260721_091010.log
+[LOG] 本次结果将输出到：E:\yue's project\maduo\zhuang-integrated\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260721_091010.json
+[CMD] D:\anaconda3\install\python.exe "E:\yue's project\maduo\zhuang-integrated\packing-system\packing\run_packing.py" --config "E:\yue's project\maduo\zhuang-integrated\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20260721_091007.yaml" --out "E:\yue's project\maduo\zhuang-integrated\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260721_091010.json"
+已加载约束配置：E:\yue's project\maduo\zhuang-integrated\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20260721_091007.yaml
+load D:\anaconda3\install\lib\site-packages\ortools\.libs\zlib1.dll...
+load D:\anaconda3\install\lib\site-packages\ortools\.libs\abseil_dll.dll...
+load D:\anaconda3\install\lib\site-packages\ortools\.libs\utf8_validity.dll...
+load D:\anaconda3\install\lib\site-packages\ortools\.libs\re2.dll...
+load D:\anaconda3\install\lib\site-packages\ortools\.libs\libprotobuf.dll...
+load D:\anaconda3\install\lib\site-packages\ortools\.libs\highs.dll...
+load D:\anaconda3\install\lib\site-packages\ortools\.libs\ortools.dll...
+已加载配置数据集：E:\yue's project\maduo\zhuang-integrated\packing-workspace\data\ui_inputs\20260721_091006_668.xlsx
+检测到小箱子体积阈值: 11130000.00 mm^3
+小箱子数量: 0，非小箱子数量: 668
+数据预处理和箱子分组完成（按托盘类型+销售订单号）。
+----------------------------------------
+正在处理托盘类型：MH423C，销售订单号：ANALYSIS_001
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：ANALYSIS_001）处理完成：总托盘 12，指数达标 10，未达标 2，平均缺口 96.00，最大缺口 178.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/1/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=71.57s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=6.55s，total=78.12s。
+  - 条件双路径棘轮：替代完整路径未严格改善，保留 GCP。
+========================================
+统计汇总：总托盘 12，指数达标 10，未达标 2，未知 0，平均缺口 96.00，最大缺口 178.00，失败托盘互借修复成功 0
+KPI汇总：near/mid/deep=0/1/1，pair尝试=0，pair改进=0，pair效率=0.00%
+耗时汇总：packing=71.57s，main_topup=0.00s，retry=0.00s，repack=6.55s，end_to_end=94.26s
+========================================
+========================================
+最终装箱方案已保存至：E:\yue's project\maduo\zhuang-integrated\packing-workspace\output\packing_plan_20260721_091145.json
+托盘统计Excel已保存至：E:\yue's project\maduo\zhuang-integrated\packing-workspace\output\packing_plan_summary_20260721_091145.xlsx
+========================================
+算法总运行时间：94.26 秒
+========================================
+方案另存为: E:\yue's project\maduo\zhuang-integrated\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260721_091010.json
+[执行规划] 开始：D:\anaconda3\install\python.exe E:\yue's project\maduo\zhuang-integrated\packing-system\run_execution_planning.py E:\yue's project\maduo\zhuang-integrated\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260721_091010.json --config E:\yue's project\maduo\zhuang-integrated\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20260721_091007.yaml --wcs-output E:\yue's project\maduo\zhuang-integrated\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260721_091010_execution_wcs.json
+execution planning failed: pallet 'MH423C-ANALYSIS_001-1' has cyclic execution dependencies; blocked boxes=[117, 126, 625, 628, 631, 634, 637, 640, 643, 646, 649, 652]...
+[执行规划] 失败，退出码：1

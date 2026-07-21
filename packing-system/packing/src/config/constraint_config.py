@@ -50,6 +50,15 @@ class ConstraintConfig:
         main_packer: 主装箱算法。'gcp'（默认）= 全局列式装箱 + 柱级组合
             优化（Set-Partitioning ILP，达标率优先）；'beam' = 旧 beam search
             逐盘贪心 + 配方优先 + 救援链（回退/审计用，保证零回归）。
+        dual_path_enabled: GCP 未捕获业务组指数上限时，是否限时运行完整
+            替代路径并经过守恒、最终门禁后择优。
+        dual_path_time_limit_seconds: 单业务组替代完整路径的硬超时秒数。
+        directed_exchange_enabled: 是否在整盘重排前尝试同 case_group 定向换箱。
+        directed_exchange_max_items: 单次允许从 donor 取出的最大箱数。
+        directed_exchange_max_attempts: 单业务组的最大候选尝试次数。
+        cpsat_target_subset_enabled: 未捕获指数上限时是否启用 CP-SAT 目标子集。
+        cpsat_target_subset_time_limit_seconds: 单次子集选择的求解时限秒数。
+        cpsat_target_subset_max_attempts: 几何失败后最多重选子集的次数。
     """
 
     # —— 必须约束的可配数值 ——
@@ -74,6 +83,20 @@ class ConstraintConfig:
     # 'gcp' = 全局列式装箱 + 柱级组合优化（默认，达标率优先）；
     # 'beam' = 旧 beam search 逐盘贪心 + 配方优先 + 救援链（回退/审计用）。
     main_packer: str = 'gcp'
+
+    # —— 未捕获机会组双路径棘轮 ——
+    dual_path_enabled: bool = True
+    dual_path_time_limit_seconds: float = 30.0
+
+    # —— 保留 receiver 布局的定向换箱 ——
+    directed_exchange_enabled: bool = True
+    directed_exchange_max_items: int = 4
+    directed_exchange_max_attempts: int = 40
+
+    # —— CP-SAT 目标子集 + 精确柱式三维落地 ——
+    cpsat_target_subset_enabled: bool = True
+    cpsat_target_subset_time_limit_seconds: float = 3.0
+    cpsat_target_subset_max_attempts: int = 6
 
     # —— baseline 朝向规整（允许箱子 90° 旋转）——
     # baseline(beam+配方) 入口为每个箱子选「托盘上每层格数更大」的朝向，

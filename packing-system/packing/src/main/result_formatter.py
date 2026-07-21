@@ -43,6 +43,7 @@ class ResultFormatter:
         tail_absorb_result: Optional[Dict] = None,
         low_fill_result: Optional[Dict] = None,
         failed_pool_result: Optional[Dict] = None,
+        directed_exchange_result: Optional[Dict] = None,
     ) -> Dict:
         """构建单分组的统计信息。"""
         stats = PalletEvaluator.recompute_type_stats(type_plan)
@@ -88,6 +89,7 @@ class ResultFormatter:
         ta = tail_absorb_result or {}
         lf = low_fill_result or {}
         fp = failed_pool_result or {}
+        de = directed_exchange_result or {}
 
         stats["kpi"] = {
             "failed_near_count": tiers["near"],
@@ -136,6 +138,16 @@ class ResultFormatter:
             "targeted_unreachable": repack_result.get("targeted_unreachable", 0),
             "targeted_geofail": repack_result.get("targeted_geofail", 0),
             "targeted_nonimprove": repack_result.get("targeted_nonimprove", 0),
+            "directed_exchange_tried": de.get("directed_exchange_tried", 0),
+            "directed_exchange_accepted": de.get(
+                "directed_exchange_accepted", 0
+            ),
+            "directed_exchange_geofail": de.get(
+                "directed_exchange_geofail", 0
+            ),
+            "directed_exchange_gate_rejected": de.get(
+                "directed_exchange_gate_rejected", 0
+            ),
             "hole_fill_tried": hf.get("hole_fill_tried", 0),
             "hole_fill_success": hf.get("hole_fill_success", 0),
             "hole_fill_pack_fail": hf.get("hole_fill_pack_fail", 0),
@@ -291,6 +303,18 @@ class ResultFormatter:
                 "pair_efficiency": round(
                     pair_improved / max(1, pair_tried), 4
                 ),
+                "directed_exchange_tried": _sum(
+                    "directed_exchange_tried"
+                ),
+                "directed_exchange_accepted": _sum(
+                    "directed_exchange_accepted"
+                ),
+                "directed_exchange_geofail": _sum(
+                    "directed_exchange_geofail"
+                ),
+                "directed_exchange_gate_rejected": _sum(
+                    "directed_exchange_gate_rejected"
+                ),
                 "hole_fill_tried": _sum("hole_fill_tried"),
                 "hole_fill_success": _sum("hole_fill_success"),
                 "topup_tried": _sum("topup_tried"),
@@ -357,10 +381,14 @@ class ResultFormatter:
         total_runtime: float,
         raw_boxes: List[Dict],
         make_json_plan_fn: Callable,
+        constraint_config=None,
     ) -> Dict:
         """组装最终 JSON 报告。"""
         pallets = make_json_plan_fn(final_plan, raw_boxes)
         ResultFormatter.validate_output_quality(raw_boxes, pallets)
+        ResultFormatter.validate_final_constraints(
+            pallets, constraint_config=constraint_config
+        )
 
         # 装箱几何完成后再生成机器人执行顺序：只增补顺序/依赖/吸盘字段，
         # 不改变托盘、箱子位置、尺寸、朝向或 packed_items 原始列表顺序。
@@ -374,6 +402,47 @@ class ResultFormatter:
             "robot_sequence_summary": robot_sequence_summary,
             "pallets": pallets,
         }
+
+    @staticmethod
+    def validate_final_constraints(
+        pallets: List[Dict], constraint_config=None
+    ) -> None:
+        """最终全量门禁：拒绝任何违反几何、稳定或机械约束的托盘。"""
+        from src.geometry.constraint_validator import validate_pallet_constraints
+
+        invalid = []
+        for pallet in pallets:
+            items = pallet.get('packed_items', []) or []
+            if not items:
+                continue
+            pallet_dims = items[0].get('pallet_dims') or pallet.get('pallet_dims')
+            if not pallet_dims:
+                invalid.append({
+                    'pallet_id': pallet.get('pallet_id'),
+                    'violations': [{'type': 'missing_pallet_dims'}],
+                })
+                continue
+            gate = validate_pallet_constraints(
+                pallet,
+                pallet_dims,
+                constraint_config=constraint_config,
+                target_mpm=pallet.get('mpm_target'),
+            )
+            if not gate['is_valid']:
+                invalid.append({
+                    'pallet_id': pallet.get('pallet_id'),
+                    'violations': gate['violations'],
+                })
+
+        if invalid:
+            preview = [
+                {
+                    'pallet_id': entry['pallet_id'],
+                    'violations': entry['violations'][:5],
+                }
+                for entry in invalid[:5]
+            ]
+            raise ValueError(f"最终整盘约束门禁失败：{preview}")
 
     @staticmethod
     def validate_output_quality(raw_boxes: List[Dict], pallets: List[Dict]) -> None:
