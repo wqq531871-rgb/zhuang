@@ -1,3 +1,4 @@
+import json
 import sys
 import types
 from pathlib import Path
@@ -19,7 +20,11 @@ except ModuleNotFoundError:
     sys.modules["pymysql"] = pymysql_module
     sys.modules["pymysql.cursors"] = pymysql_cursors
 
-from src.service.wcs_service import PackRunResult, WcsPackingService
+from src.service.wcs_service import (
+    PackRunResult,
+    WcsPackingService,
+    select_wcs_plan_result,
+)
 import run_wcs_service
 
 
@@ -169,3 +174,54 @@ def test_wcs_cli_defaults_to_continuous_and_rejects_unknown_mode():
     assert run_wcs_service._parse_cli([])[2] == "continuous"
     with pytest.raises(SystemExit, match="不支持的运行方式"):
         run_wcs_service._parse_cli(["--run-mode", "unknown"])
+
+
+def test_wcs_uses_execution_cases_and_map_when_planning_succeeds(tmp_path):
+    cases = [{"box_unique_id": "execution-id", "layers": []}]
+    plan_map = {"execution-id": {"pallet_id": "P1", "packed_items": []}}
+    wcs_path = tmp_path / "packing_execution_wcs.json"
+    map_path = tmp_path / "packing_execution_wcs_map.json"
+    wcs_path.write_text(json.dumps(cases), encoding="utf-8")
+    map_path.write_text(json.dumps(plan_map), encoding="utf-8")
+    outcome = SimpleNamespace(
+        succeeded=True,
+        wcs_path=wcs_path,
+        wcs_map_path=map_path,
+    )
+
+    selected = select_wcs_plan_result({"pallets": []}, outcome)
+
+    assert selected.cases == cases
+    assert selected.plan_by_unique_id == plan_map
+
+
+def test_wcs_falls_back_to_original_plan_when_execution_planning_fails():
+    report = {"pallets": []}
+    outcome = SimpleNamespace(
+        succeeded=False,
+        wcs_path=None,
+        wcs_map_path=None,
+    )
+
+    selected = select_wcs_plan_result(report, outcome)
+
+    assert selected.cases == []
+    assert selected.plan_by_unique_id == {}
+
+
+def test_wcs_rejects_execution_case_missing_from_plan_map(tmp_path):
+    wcs_path = tmp_path / "packing_execution_wcs.json"
+    map_path = tmp_path / "packing_execution_wcs_map.json"
+    wcs_path.write_text(
+        json.dumps([{"box_unique_id": "missing", "layers": []}]),
+        encoding="utf-8",
+    )
+    map_path.write_text(json.dumps({}), encoding="utf-8")
+    outcome = SimpleNamespace(
+        succeeded=True,
+        wcs_path=wcs_path,
+        wcs_map_path=map_path,
+    )
+
+    with pytest.raises(ValueError, match="box_unique_id"):
+        select_wcs_plan_result({"pallets": []}, outcome)

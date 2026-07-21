@@ -190,6 +190,33 @@ def test_report_persister_writes_execution_bundle_when_enabled(tmp_path):
     assert [item["id"] for item in mapped["packed_items"]] == ["short", "tall"]
 
 
+def test_report_persister_keeps_original_when_execution_planning_fails(tmp_path):
+    persister = JsonFileReportPersister(
+        tmp_path,
+        lambda fmt: "20260721_120000",
+        execution_sequence_config=ExecutionSequenceConfig(
+            box_xy_clearance_mm=1.0,
+        ),
+    )
+    left = _execution_test_box("left", 0, 100, 1)
+    right = _execution_test_box("right", 100, 100, 2)
+    report = {
+        "pallets": [{
+            "pallet_id": "P-cycle",
+            "pallet_type": "TEST",
+            "sales_order_no": "O1",
+            "case_group": 0,
+            "mpm_status": "FAILED",
+            "packed_items": [left, right],
+        }]
+    }
+
+    persister.persist(report, 1.0)
+
+    assert (tmp_path / "packing_plan_20260721_120000.json").exists()
+    assert not list(tmp_path.glob("*_execution*.json"))
+
+
 @pytest.mark.parametrize(
     "enabled, expected",
     [(False, None), (True, "x_max_y_min")],

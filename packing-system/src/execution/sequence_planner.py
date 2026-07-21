@@ -452,7 +452,14 @@ def sequence_pallet_items(
             % (pallet.get("pallet_id"), preview, suffix)
         )
     _assert_replay_safe(source_items, ordered_indices, supports, cfg)
-    return [deepcopy(source_items[idx]) for idx in ordered_indices]
+    ordered_items = []
+    for sequence, idx in enumerate(ordered_indices, 1):
+        item = deepcopy(source_items[idx])
+        item.pop("original_packing_sequence", None)
+        item.pop("robot_packing_sequence", None)
+        item["seq"] = sequence
+        ordered_items.append(item)
+    return ordered_items
 
 
 def plan_execution_report(

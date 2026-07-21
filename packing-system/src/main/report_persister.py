@@ -13,6 +13,7 @@ import pandas as pd
 
 from src.execution import (
     ExecutionSequenceConfig,
+    ExecutionSequenceError,
     publish_execution_bundle,
 )
 
@@ -44,11 +45,16 @@ class JsonFileReportPersister:
 
         execution_paths = None
         if self._execution_sequence_config is not None:
-            execution_paths = publish_execution_bundle(
-                report,
-                json_path,
-                self._execution_sequence_config,
-            )
+            try:
+                execution_paths = publish_execution_bundle(
+                    report,
+                    json_path,
+                    self._execution_sequence_config,
+                )
+            except (ExecutionSequenceError, OSError, TypeError, ValueError) as exc:
+                print(
+                    "执行顺序规划失败，保留并使用原装箱方案：%s" % exc
+                )
 
         print("=" * 40)
         print(f"最终装箱方案已保存至：{json_path}")

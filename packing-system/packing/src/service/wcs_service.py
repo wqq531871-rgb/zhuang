@@ -32,7 +32,11 @@ from src.adapter import (
     report_to_plan_result,
     stock_to_boxes,
 )
-from src.adapter.wcs_adapter import build_stock_request, coerce_product_code
+from src.adapter.wcs_adapter import (
+    WcsPlanResult,
+    build_stock_request,
+    coerce_product_code,
+)
 from src.config import (
     DATA_DIR,
     DEFAULT_PACKING_CONFIG,
@@ -209,6 +213,28 @@ def _save_json(path: Path, payload) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def select_wcs_plan_result(report: Dict, execution_outcome) -> WcsPlanResult:
+    """Use the execution bundle only when both WCS artifacts are available."""
+
+    if not getattr(execution_outcome, "succeeded", False):
+        return report_to_plan_result(report)
+    wcs_path = getattr(execution_outcome, "wcs_path", None)
+    map_path = getattr(execution_outcome, "wcs_map_path", None)
+    if wcs_path is None or map_path is None:
+        return report_to_plan_result(report)
+    cases = json.loads(Path(wcs_path).read_text(encoding="utf-8"))
+    plan_map = json.loads(Path(map_path).read_text(encoding="utf-8"))
+    if not isinstance(cases, list) or not isinstance(plan_map, dict):
+        raise ValueError("execution WCS artifacts have invalid JSON shapes")
+    try:
+        case_ids = {str(case["box_unique_id"]) for case in cases}
+    except (KeyError, TypeError) as exc:
+        raise ValueError("execution case is missing box_unique_id") from exc
+    if case_ids != {str(unique_id) for unique_id in plan_map}:
+        raise ValueError("execution cases and map have different box_unique_id sets")
+    return WcsPlanResult(cases=cases, plan_by_unique_id=plan_map)
 
 
 def _filter_mh423c(stock_entries: List[Dict]):
@@ -408,10 +434,46 @@ class WcsPackingService:
         _save_json(report_path, report)
         print(f"[WCS-装] 装箱报告已保存：{report_path}")
 
-        plan = report_to_plan_result(report)
+        execution_outcome = None
+        try:
+            from src.postprocess.execution_planning_hook import (
+                run_execution_planning_for_plan,
+            )
+
+            exec_config = self._config_path or DEFAULT_PACKING_CONFIG
+            execution_outcome = run_execution_planning_for_plan(
+                report_path,
+                exec_config,
+                log=print,
+            )
+        except Exception as exc:
+            print(f"[执行规划] 调用异常，统一回退原方案：{exc}")
+
+        try:
+            plan = select_wcs_plan_result(report, execution_outcome)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+            print(f"[执行规划] 执行文件读取失败，统一回退原方案：{exc}")
+            execution_outcome = None
+            plan = report_to_plan_result(report)
+
+        execution_used = bool(
+            execution_outcome is not None
+            and getattr(execution_outcome, "succeeded", False)
+        )
+        selected_label = "执行顺序方案" if execution_used else "原装箱方案"
         plan_path = self._ds.output_dir / f"wcs_plan_{ts}.json"
         _save_json(plan_path, plan.cases)
-        print(f"[WCS-装] 接口 2 发送体已保存：{plan_path}（{len(plan.cases)} 个 case）")
+        print(
+            f"[WCS-装] 接口 2 使用{selected_label}，发送体已保存："
+            f"{plan_path}（{len(plan.cases)} 个 case）"
+        )
+
+        map_path = self._ds.output_dir / f"wcs_plan_map_{ts}.json"
+        _save_json(
+            map_path,
+            {uid: pallet for uid, pallet in plan.plan_by_unique_id.items()},
+        )
+        print(f"[WCS-装] {selected_label}执行层映射已保存：{map_path}")
 
         if _PUSH_PLAN_TO_WCS:
             try:
@@ -429,33 +491,16 @@ class WcsPackingService:
         else:
             print("[WCS-装] 已跳过接口 2 推送（仅本地保存）。")
 
-        map_path = self._ds.output_dir / f"wcs_plan_map_{ts}.json"
-        _save_json(
-            map_path,
-            {uid: pallet for uid, pallet in plan.plan_by_unique_id.items()},
+        effective_report_path = (
+            execution_outcome.report_path
+            if execution_used
+            else report_path.resolve()
         )
-        print(f"[WCS-装] 执行层映射已保存：{map_path}")
-
-        try:
-            from src.config import DEFAULT_PACKING_CONFIG
-            from src.postprocess.execution_planning_hook import (
-                run_execution_planning_for_plan,
-            )
-
-            exec_config = self._config_path or DEFAULT_PACKING_CONFIG
-            run_execution_planning_for_plan(
-                report_path,
-                exec_config,
-                log=print,
-            )
-        except Exception as exc:
-            print(f"[执行规划] 调用异常（不影响本轮装箱结果）：{exc}")
-
-        print(f"[UI-RESULT] {report_path.resolve()}")
+        print(f"[UI-RESULT] {effective_report_path}")
         return PackRunResult(
             executed=True,
             success_pallets=success_pallets,
-            report_path=report_path.resolve(),
+            report_path=effective_report_path,
         )
 
     # ------------------------------------------------------------------ loops

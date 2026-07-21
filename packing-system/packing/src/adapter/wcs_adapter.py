@@ -238,6 +238,18 @@ def _item_xyz(item: Dict) -> Tuple[float, float, float]:
     )
 
 
+def _ordered_items(items: List[Dict]) -> List[Dict]:
+    def key(pair):
+        index, item = pair
+        try:
+            seq = int(item.get('seq'))
+        except (TypeError, ValueError):
+            seq = index + 1
+        return (seq if seq > 0 else index + 1), index
+
+    return [item for _index, item in sorted(enumerate(items), key=key)]
+
+
 def _true_dim(item: Dict, axis: str) -> float:
     """箱子真实尺寸（旋转已烘焙）。⚠️ 不能用 length/width——那是 +2mm 间隙的
     占位尺寸（350→352），与接口示例的真实尺寸口径不符（分析文档 §4.2）。"""
@@ -249,14 +261,14 @@ def _true_dim(item: Dict, axis: str) -> float:
 def _build_layers(items: List[Dict]) -> Tuple[List[Dict], float]:
     """packed_items → (接口 2 layers 结构, total_height)。
 
-    - ``seq``：case 内按 ``(z, y, x)`` 升序连续编号 1..N——与算法既有码垛顺序
-      约定一致（自底向上、从角点扩散），WCS 按 seq 出库即可执行；
+    - ``seq``：严格沿用装箱报告中的统一执行顺序并连续编号 1..N；字段缺失时
+      才回退当前 ``packed_items`` 数组顺序。WCS、映射和机械臂使用同一编号；
     - ``layer_id``：按 z 起点分组升序编号 1..L。baseline 整层路径语义精确；
       GCP 柱式混高时为"按 z 的近似分层"。TODO(§8-4): 机械臂端若强依赖物理
       整层语义需企业确认；执行顺序以 seq 为准、无歧义。
     - ``total_height``：实际堆叠高度 max(z + 真实高)。
     """
-    ordered = sorted(items, key=_item_xyz)
+    ordered = _ordered_items(items)
     z_levels = sorted({_item_xyz(it)[0] for it in ordered})
     layer_of = {z: i + 1 for i, z in enumerate(z_levels)}
     total_height = 0.0
@@ -362,9 +374,10 @@ def report_to_plan_result(
     cases: List[Dict] = []
     plan_by_unique_id: Dict[str, Dict] = {}
     for box_index, (_orig, pallet) in enumerate(pallets_sorted, 1):
-        items = pallet.get('packed_items') or []
+        items = _ordered_items(list(pallet.get('packed_items') or []))
         if not items:
             continue  # 空托盘不出门（算法门禁本已禁止空盘，双保险）
+        pallet['packed_items'] = items
         layers, total_height = _build_layers(items)
         unique_id = uuid.uuid4().hex  # 32 字符唯一码
         cases.append({
@@ -380,6 +393,8 @@ def report_to_plan_result(
         for seq, it in enumerate(items, 1):
             # map 文件用：按当前 JSON 数组顺序编号，字段放在对象末尾
             it.pop('seq', None)
+            it.pop('original_packing_sequence', None)
+            it.pop('robot_packing_sequence', None)
             it['seq'] = seq
         plan_by_unique_id[unique_id] = pallet
     return WcsPlanResult(cases=cases, plan_by_unique_id=plan_by_unique_id)
