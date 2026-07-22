@@ -340,9 +340,10 @@ def _run(out_path, max_boxes, safe_compare=False, config_path=None):
     return report
 
 
-if __name__ == '__main__':
+def main(argv=None):
+    """可供 app_launcher / 冻结 exe 直接调用。"""
     out_path, max_boxes, profile, safe_compare, config_path = _parse_cli(
-        sys.argv[1:]
+        sys.argv[1:] if argv is None else argv
     )
     if profile:
         import cProfile
@@ -355,5 +356,8 @@ if __name__ == '__main__':
         stats.print_stats(30)
     else:
         report = _run(out_path, max_boxes, safe_compare, config_path)
-    if report is None:
-        sys.exit(1)
+    return 0 if report is not None else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

@@ -1,0 +1,42 @@
+# 局域网 WCS 接收端专用配置（仅本目录服务使用，与 packing_config.yaml 的接口1/2 分离）。
+# 完整对外地址 = advertise_base_url + 下方 path。
+# 对方 Swagger 参考: http://192.168.0.191:8092/swagger/index.html
+# 我方 Swagger:     {advertise_base_url}/swagger/index.html
+
+server:
+  # TODO(监听地址): 必须 0.0.0.0 才能让同一局域网访问；127.0.0.1 仅本机。
+  host: "0.0.0.0"
+  # TODO(端口): 联调/现场改端口；Windows 防火墙需放行该端口入站。
+  port: 8093
+
+# TODO(本机对外根地址): 协议+本机局域网 IPv4+端口，发给对方联调用。
+#   当前本机 IPv4=192.168.0.8；换网段时只改这一行。
+advertise_base_url: http://172.20.10.12:8093
+
+# TODO(接口 path): 与对方约定一致；一般不用改。
+paths:
+  # TODO(接口3 path): 拼箱物料信息下发（对方 → 我）。
+  sendcasetask_path: /adaptor/api/wcs/sendcasetask
+  # TODO(接口4 path): 物料到达（对方 → 我）。
+  boxarrive_path: /adaptor/api/wcs/boxarrive
+  # TODO(接口6 path): 托盘到达（对方 → 我）。
+  palletarrive_path: /adaptor/api/wcs/palletarrive
+  # TODO(接口7 path): 系统状态（对方 → 我）。注意是 /api/status（无 adaptor 前缀）。
+  status_path: /api/status
+  # TODO(Swagger 文档 path): 仿对方 /swagger/index.html，浏览器打开可看接口。
+  swagger_path: /swagger/index.html
+
+# TODO(日志): 相对 local_wcs_receiver/；save_requests=true 时每次请求落盘。
+log_dir: logs
+save_requests: true
+
+# TODO(/api/status 设备状态): 0=就绪, 1=执行中, 99=异常（联调时可改）。
+device_status: 0
+
+# TODO(校验严格度): false=缺字段仍回 code=0（联调友好）；true=缺必填回非 0。
+strict_validation: false
+
+# TODO(业务对接-P1): true 时按 box_unique_id 查本地 wcs_plan_map；P0 先关。
+lookup_plan_map: false
+# TODO(plan map 搜索): lookup_plan_map=true 时生效。
+# plan_map_glob: ../packing-workspace/output/wcs_plan_map_*.json

@@ -1,0 +1,7 @@
+﻿# local
+
+# Portable delivery bundle (includes embedded Python; do not commit)
+PackingPortable/
+
+# PyInstaller release output
+release/
