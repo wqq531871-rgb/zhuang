@@ -101,6 +101,7 @@ def test_effective_url_switches_with_use_real_api():
         api_fallback_url="https://mock.example",
         stock_path="/adaptor/api/wcs/reqstockinfo",
         plan_path="/adaptor/api/wcs/sendpalletplanresult",
+        internal_base_url="http://192.168.0.202:8094",
         internal_path="/adaptor/api/wcs/internal",
         download_interval=10,
         input_dir=Path("."),
@@ -108,6 +109,7 @@ def test_effective_url_switches_with_use_real_api():
         output_dir=Path("."),
     )
     assert real.effective_api_base_url == "http://10.205.46.191:8092"
+    assert real.internal_url() == "http://192.168.0.202:8094/adaptor/api/wcs/internal"
 
     mock = DataSourceConfig(
         mode="api",
@@ -116,6 +118,7 @@ def test_effective_url_switches_with_use_real_api():
         api_fallback_url="https://mock.example",
         stock_path="/adaptor/api/wcs/reqstockinfo",
         plan_path="/adaptor/api/wcs/sendpalletplanresult",
+        internal_base_url="http://192.168.0.202:8094",
         internal_path="/adaptor/api/wcs/internal",
         download_interval=10,
         input_dir=Path("."),

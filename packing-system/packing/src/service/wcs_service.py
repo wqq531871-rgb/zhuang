@@ -46,6 +46,10 @@ from src.config import (
     ConfigLoader,
 )
 from src.main.report_persister import NullReportPersister
+from src.main.output_split import (
+    ensure_success_fail_dirs,
+    split_report_by_status,
+)
 from src.service.stock_db import (
     WcsStockRepository,
     load_database_config,
@@ -99,6 +103,7 @@ class DataSourceConfig:
     api_fallback_url: str
     stock_path: str
     plan_path: str
+    internal_base_url: str
     internal_path: str
     download_interval: int
     input_dir: Path
@@ -118,8 +123,12 @@ class DataSourceConfig:
     def plan_url(self) -> str:
         return f"{self.effective_api_base_url.rstrip('/')}{self.plan_path}"
 
+    def effective_internal_base_url(self) -> str:
+        """完整方案下传根地址：优先 internal_base_url（对方接收端），否则回退 WCS 根地址。"""
+        return (self.internal_base_url or self.effective_api_base_url).rstrip("/")
+
     def internal_url(self) -> str:
-        return f"{self.effective_api_base_url.rstrip('/')}{self.internal_path}"
+        return f"{self.effective_internal_base_url()}{self.internal_path}"
 
 
 @dataclass(frozen=True)
@@ -146,6 +155,7 @@ def load_data_source_config(config_path: Optional[Path] = None) -> DataSourceCon
         raise ValueError("data_source.api_base_url 未配置")
     stock_path = str(raw.get("stock_path") or "").strip()
     plan_path = str(raw.get("plan_path") or "").strip()
+    internal_base_url = str(raw.get("internal_base_url") or "").strip()
     internal_path = str(
         raw.get("internal_path") or "/adaptor/api/wcs/internal"
     ).strip()
@@ -164,6 +174,7 @@ def load_data_source_config(config_path: Optional[Path] = None) -> DataSourceCon
         api_fallback_url=str(raw.get("api_fallback_url") or "").strip(),
         stock_path=stock_path,
         plan_path=plan_path,
+        internal_base_url=internal_base_url,
         internal_path=internal_path,
         download_interval=max(1, int(raw.get("download_interval") or 200)),
         input_dir=input_path.resolve(),
@@ -223,14 +234,39 @@ def push_internal_plan(
     base_url: str,
     plan_payload: Dict,
     internal_path: str = "/adaptor/api/wcs/internal",
-    timeout: int = 120,
+    timeout: int = 300,
+    raw_json_path: Optional[Path] = None,
 ) -> Dict:
-    """POST 完整 packing_plan JSON 到对方 /adaptor/api/wcs/internal。"""
+    """POST 完整 packing_plan JSON 到对方 /adaptor/api/wcs/internal。
+
+    优先按文件原始字节发送（避免二次 json 序列化 / NaN 等问题）；
+    无文件时再退回 json=plan_payload。
+    """
     path = internal_path if internal_path.startswith("/") else f"/{internal_path}"
     url = f"{base_url.rstrip('/')}{path}"
-    resp = requests.post(url, json=plan_payload, timeout=timeout, verify=False)
+    headers = {"Content-Type": "application/json; charset=utf-8"}
+    if raw_json_path is not None and Path(raw_json_path).exists():
+        data = Path(raw_json_path).read_bytes()
+        print(f"[内部下传] raw file {raw_json_path} bytes={len(data)} → {url}")
+        resp = requests.post(
+            url, data=data, headers=headers, timeout=timeout, verify=False
+        )
+    else:
+        print(f"[内部下传] dict payload → {url}")
+        resp = requests.post(
+            url, json=plan_payload, headers=headers, timeout=timeout, verify=False
+        )
+    if resp.status_code == 422:
+        # 把对方返回的校验细节带出来，便于判断不是“太大”
+        raise RuntimeError(
+            f"完整方案下传 422（多为对方接口校验失败，不是文件太大）: "
+            f"url={url}, body={resp.text[:2000]}"
+        )
     resp.raise_for_status()
-    body = resp.json()
+    try:
+        body = resp.json()
+    except Exception:
+        body = {"code": 0, "msg": resp.text[:500], "data": {}}
     if isinstance(body, dict) and body.get("code") not in (None, 0):
         raise RuntimeError(
             f"完整方案下传返回错误: code={body.get('code')}, msg={body.get('msg')}"
@@ -459,52 +495,79 @@ class WcsPackingService:
         )
         print("[WCS-装] 本轮结束；等待下一次「新插入」再开算。")
 
-        report_path = self._ds.output_dir / f"packing_plan_{ts}.json"
-        _save_json(report_path, report)
-        print(f"[WCS-装] 装箱报告已保存：{report_path}")
+        success_dir, fail_dir = ensure_success_fail_dirs(self._ds.output_dir)
+        success_report, fail_report = split_report_by_status(report)
+
+        report_path = None
+        if success_report.get("pallets"):
+            report_path = success_dir / f"packing_plan_{ts}.json"
+            _save_json(report_path, success_report)
+            print(f"[WCS-装] 达标方案已保存：{report_path}")
+        else:
+            print("[WCS-装] 本轮无达标托盘，跳过 success 目录写入。")
+
+        if fail_report.get("pallets"):
+            fail_path = fail_dir / f"packing_plan_{ts}.json"
+            _save_json(fail_path, fail_report)
+            print(f"[WCS-装] 未达标方案已保存：{fail_path}")
+        else:
+            print("[WCS-装] 本轮无未达标托盘，跳过 fail 目录写入。")
+
+        if report_path is None:
+            # 仅失败时仍给 UI 一个可加载路径
+            if fail_report.get("pallets"):
+                report_path = fail_dir / f"packing_plan_{ts}.json"
+            else:
+                report_path = success_dir / f"packing_plan_{ts}.json"
+                _save_json(report_path, success_report)
 
         execution_outcome = None
-        try:
-            from src.postprocess.execution_planning_hook import (
-                run_execution_planning_for_plan,
-            )
+        plan = report_to_plan_result(success_report)
+        if success_report.get("pallets"):
+            try:
+                from src.postprocess.execution_planning_hook import (
+                    run_execution_planning_for_plan,
+                )
 
-            exec_config = self._config_path or DEFAULT_PACKING_CONFIG
-            execution_outcome = run_execution_planning_for_plan(
-                report_path,
-                exec_config,
-                log=print,
-            )
-        except Exception as exc:
-            print(f"[执行规划] 调用异常，统一回退原方案：{exc}")
+                exec_config = self._config_path or DEFAULT_PACKING_CONFIG
+                execution_outcome = run_execution_planning_for_plan(
+                    report_path,
+                    exec_config,
+                    log=print,
+                )
+            except Exception as exc:
+                print(f"[执行规划] 调用异常，统一回退原方案：{exc}")
 
-        try:
-            plan = select_wcs_plan_result(report, execution_outcome)
-        except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
-            print(f"[执行规划] 执行文件读取失败，统一回退原方案：{exc}")
-            execution_outcome = None
-            plan = report_to_plan_result(report)
+            try:
+                plan = select_wcs_plan_result(success_report, execution_outcome)
+            except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
+                print(f"[执行规划] 执行文件读取失败，统一回退原方案：{exc}")
+                execution_outcome = None
+                plan = report_to_plan_result(success_report)
 
         execution_used = bool(
             execution_outcome is not None
             and getattr(execution_outcome, "succeeded", False)
         )
         selected_label = "执行顺序方案" if execution_used else "原装箱方案"
-        plan_path = self._ds.output_dir / f"wcs_plan_{ts}.json"
-        _save_json(plan_path, plan.cases)
-        print(
-            f"[WCS-装] 接口 2 使用{selected_label}，发送体已保存："
-            f"{plan_path}（{len(plan.cases)} 个 case）"
-        )
+        if success_report.get("pallets"):
+            plan_path = success_dir / f"wcs_plan_{ts}.json"
+            _save_json(plan_path, plan.cases)
+            print(
+                f"[WCS-装] 接口 2 使用{selected_label}，发送体已保存："
+                f"{plan_path}（{len(plan.cases)} 个 case）"
+            )
 
-        map_path = self._ds.output_dir / f"wcs_plan_map_{ts}.json"
-        _save_json(
-            map_path,
-            {uid: pallet for uid, pallet in plan.plan_by_unique_id.items()},
-        )
-        print(f"[WCS-装] {selected_label}执行层映射已保存：{map_path}")
+            map_path = success_dir / f"wcs_plan_map_{ts}.json"
+            _save_json(
+                map_path,
+                {uid: pallet for uid, pallet in plan.plan_by_unique_id.items()},
+            )
+            print(f"[WCS-装] {selected_label}执行层映射已保存：{map_path}")
+        else:
+            print("[WCS-装] 无达标托盘，跳过 wcs_plan / wcs_plan_map 写入。")
 
-        if _PUSH_PLAN_TO_WCS:
+        if _PUSH_PLAN_TO_WCS and plan.cases:
             try:
                 push_body = push_plan_result(
                     self._ds.effective_api_base_url,
@@ -517,6 +580,8 @@ class WcsPackingService:
                 )
             except Exception as exc:
                 print(f"[WCS-装] 接口 2 推送失败：{exc}")
+        elif _PUSH_PLAN_TO_WCS:
+            print("[WCS-装] 无达标 case，跳过接口 2 推送。")
         else:
             print("[WCS-装] 已跳过接口 2 推送（仅本地保存）。")
 

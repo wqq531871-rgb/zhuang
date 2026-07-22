@@ -358,12 +358,26 @@ def _result_search_roots(project_dir: Path) -> List[Path]:
     project_dir = Path(project_dir).resolve()
     workspace_dir = workspace_dir_from_project(project_dir)
     roots = [
+        workspace_dir / "output" / "success",
+        workspace_dir / "output" / "fail",
+        workspace_dir / "output",
+        project_dir / "output" / "success",
+        project_dir / "output" / "fail",
         project_dir / "output",
         project_dir / "outputs",
-        workspace_dir / "output",
         workspace_dir / "runtime" / RUNTIME_NAME / "exports",
     ]
-    return [p for p in roots if p.exists()]
+    # de-dupe while preserving order
+    seen = set()
+    out: List[Path] = []
+    for p in roots:
+        key = str(p.resolve()) if p.exists() else str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+        if p.exists():
+            out.append(p)
+    return out
 
 
 def _guess_result_source(path: Path, project_dir: Path) -> str:
@@ -371,6 +385,12 @@ def _guess_result_source(path: Path, project_dir: Path) -> str:
     name = path.name.lower()
     if "ui_packing_plan" in name or "/exports/" in text:
         return "Excel"
+    if "/output/success/" in text or text.endswith("/output/success/" + name):
+        return "达标"
+    if "/success/" in text:
+        return "达标"
+    if "/output/fail/" in text or "/fail/" in text:
+        return "未达标"
     if "/output/" in text or name.startswith("packing_plan_"):
         return "输出"
     return "手动"
@@ -437,19 +457,16 @@ def list_result_json_files(project_dir: Path, limit: int = _HISTORY_LIMIT) -> Li
             for path in root.glob(pattern):
                 if not path.is_file():
                     continue
-                if "_execution_wcs" in path.stem:
-                    continue
-                if not path.stem.endswith("_execution"):
-                    execution_path = path.with_name(path.stem + "_execution.json")
-                    if (
-                        execution_path.is_file()
-                        and execution_path.stat().st_mtime >= path.stat().st_mtime
-                        and _is_valid_packing_json(execution_path)
-                    ):
-                        path = execution_path
                 key = str(path.resolve())
                 if key in seen:
                     continue
+                name = path.name.lower()
+                # 有 *_execution.json 时隐藏同目录同戳的基础 packing_plan，避免重复
+                if "_execution" not in name and name.endswith(".json"):
+                    stem = path.stem
+                    execution_path = path.with_name(f"{stem}_execution.json")
+                    if execution_path.exists() and _is_valid_packing_json(execution_path):
+                        continue
                 if not _is_valid_packing_json(path):
                     continue
                 seen.add(key)
@@ -640,8 +657,8 @@ class UiPackingWorker(QtCore.QThread):
                 result_path = latest
 
         if result_path is not None:
-            effective_path = self._run_execution_planning(result_path)
-            self.finished_json.emit(str(effective_path))
+            self._run_execution_planning(result_path)
+            self.finished_json.emit(str(result_path))
             return
 
         if self.out_path.exists():
@@ -655,8 +672,8 @@ class UiPackingWorker(QtCore.QThread):
                 "请查看底部日志中的后端错误信息。"
             )
 
-    def _run_execution_planning(self, plan_path: Path) -> Path:
-        """Return execution JSON on success, otherwise the original JSON."""
+    def _run_execution_planning(self, plan_path: Path) -> None:
+        """一键装箱成功后自动跑执行顺序规划（受 execution_sequence.enabled 控制）。"""
         try:
             packing_root = self.project_dir / "packing"
             packing_root_s = str(packing_root.resolve())
@@ -666,16 +683,14 @@ class UiPackingWorker(QtCore.QThread):
                 run_execution_planning_for_plan,
             )
 
-            outcome = run_execution_planning_for_plan(
+            run_execution_planning_for_plan(
                 plan_path,
                 self.config_path,
                 project_root=self.project_dir,
                 log=self._emit_log,
             )
-            return outcome.report_path
         except Exception as exc:
-            self._emit_log(f"[执行规划] 调用异常，自动使用原方案：{exc}")
-            return Path(plan_path).resolve()
+            self._emit_log(f"[执行规划] 调用异常（不影响本轮装箱结果）：{exc}")
 
     def _run_api_mode(self, run_script: Path) -> None:
         wcs_script = self.project_dir / DEFAULT_WCS_RUN_SCRIPT_REL
@@ -1093,18 +1108,6 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             )
             return
 
-        confirm = QtWidgets.QMessageBox.question(
-            self,
-            "确认下传完整方案",
-            f"确认将该 JSON 整份 POST 到对方接口？\n\n"
-            f"文件：{plan_path.name}\n"
-            f"路径：/adaptor/api/wcs/internal",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No,
-        )
-        if confirm != QtWidgets.QMessageBox.Yes:
-            return
-
         try:
             self._ensure_packing_import_path()
             from src.service.wcs_service import (
@@ -1117,14 +1120,34 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
             ds = load_data_source_config(config_path)
             url = ds.internal_url()
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(self, "下传失败", f"读取配置/方案失败：{exc}")
+            return
+
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "确认下传完整方案",
+            f"确认将该 JSON 整份 POST 到对方接收端？\n\n"
+            f"文件：{plan_path.name}\n"
+            f"目标：{url}\n\n"
+            f"（目标来自 packing_config.yaml → internal_base_url）",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+
+        try:
             self._write_log(f"[UI-完整方案] {plan_path.name} → {url}")
             body = push_internal_plan(
-                ds.effective_api_base_url,
+                ds.effective_internal_base_url(),
                 payload,
                 ds.internal_path,
+                raw_json_path=plan_path,
             )
             msg = (
                 f"完整方案下传成功。\n文件：{plan_path.name}\n"
+                f"目标：{url}\n"
                 f"接口返回 code={body.get('code')}, msg={body.get('msg')}"
             )
             self._write_log(f"[UI-完整方案] {msg.replace(chr(10), ' ')}")
@@ -1184,7 +1207,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             url = ds.plan_url()
 
             # 本地留存本次单盘下传体，便于核对
-            out_dir = workspace_dir_from_project(self.project_dir) / "output"
+            out_dir = workspace_dir_from_project(self.project_dir) / "output" / "success"
             out_dir.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_name = re.sub(r"[^A-Za-z0-9_.-]+", "_", pallet_id)
@@ -1354,26 +1377,15 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         if not path:
             return
         try:
-            selected_path = Path(path)
-            if not selected_path.stem.endswith("_execution"):
-                execution_path = selected_path.with_name(
-                    selected_path.stem + "_execution.json"
-                )
-                if (
-                    execution_path.is_file()
-                    and execution_path.stat().st_mtime >= selected_path.stat().st_mtime
-                    and _is_valid_packing_json(execution_path)
-                ):
-                    selected_path = execution_path
-            self.load_json_file(selected_path)
+            self.load_json_file(Path(path))
             self.show_final_result()
-            self._current_result_path = selected_path.resolve()
+            self._current_result_path = Path(path).resolve()
             self._live_result_path = self._current_result_path
             self.refresh_result_history(select_current=True)
             if hasattr(self, "file_info"):
-                self.file_info.setText(f"当前结果：{selected_path.name}")
+                self.file_info.setText(f"当前结果：{Path(path).name}")
             if hasattr(self, "step_result"):
-                self.step_result.set_state("done", f"手动加载：{selected_path.name}")
+                self.step_result.set_state("done", f"手动加载：{Path(path).name}")
             self.workspace_tabs.setCurrentIndex(0)
         except Exception as exc:
             self.on_backend_failed(f"加载 JSON 失败：{exc}")

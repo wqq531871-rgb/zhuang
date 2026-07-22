@@ -58,9 +58,9 @@ execution_sequence:
   # 几何比较容差，用于判断接触、重合和同一高度。
   coordinate_tolerance_mm: 0.000001
   # 箱体垂直下放路径的 XY 额外安全包络。
-  box_xy_clearance_mm: 2.0
+  box_xy_clearance_mm: 0.0
   # 吸盘垂直下放路径的 XY 额外安全包络。
-  suction_xy_clearance_mm: 2.0
+  suction_xy_clearance_mm: 0.0
   # 吸盘下降至目标箱顶时要求保留的 Z 安全余量。
   suction_z_clearance_mm: 0.0
   # true 时每个箱子必须包含完整 suction_rect_* 字段。
@@ -104,14 +104,19 @@ data_source:
   #   false=用 api_fallback_url（Postman）。仅改本配置，无界面开关。
   use_real_api: true
   # TODO(现场接口根地址): 真实 WCS「协议+IP/域名+端口」，到现场改成正式地址。
-  api_base_url: http://192.168.0.191:8092
+  api_base_url: http://10.222.10.1:8092
   # TODO(备用 Mock 地址): use_real_api=false 时使用；换成你的 Postman Mock 根地址。
   api_fallback_url: https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io
   # TODO(接口1 path): 库存拉取路径，拼在根地址后。
   stock_path: /api/wcs/reqstockinfo
   # TODO(接口2 path): 规划结果推送路径，拼在根地址后（注意：/api/wcs/...，不是 /adaptor/...）。
   plan_path: /api/wcs/sendpalletplanresult
-  # TODO(完整方案下传 path): 整份 packing_plan_*.json POST 到对方；完整 URL = 根地址 + 本 path。
+  # TODO(完整方案下传-对方根地址): 对方跑 peer_internal_receiver 的电脑局域网 IPv4+端口。
+  #   不要写成 WCS 的 192.168.0.191:8092；完整方案发给对方接收端。
+  #   完整 URL = internal_base_url + internal_path
+  #   例: http://192.168.0.202:8094/adaptor/api/wcs/internal
+  internal_base_url: http://192.168.0.202:8094
+  # TODO(完整方案下传 path): 与对方 peer_internal_receiver 配置里 internal_path 保持一致。
   internal_path: /adaptor/api/wcs/internal
   # TODO(拉取间隔): 接口1 轮询间隔（秒）。UI「拉取间隔」可改，写入本次临时配置后生效。
   download_interval: 200

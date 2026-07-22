@@ -11,7 +11,7 @@ server:
 
 # TODO(本机对外根地址): 协议+本机局域网 IPv4+端口，发给对方联调用。
 #   当前本机 IPv4=192.168.0.8；换网段时只改这一行。
-advertise_base_url: http://192.168.0.8:8093
+advertise_base_url: http://172.20.10.12:8093
 
 # TODO(接口 path): 与对方约定一致；一般不用改。
 paths:

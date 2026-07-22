@@ -90,8 +90,12 @@ def test_report_persister_writes_pallet_excel_summary():
 
         persister.persist(report, 1.23)
 
-        excel_path = Path(tmpdir) / "packing_plan_summary_20260522_120000.xlsx"
+        excel_path = (
+            Path(tmpdir) / "success" / "packing_plan_summary_20260522_120000.xlsx"
+        )
+        json_path = Path(tmpdir) / "success" / "packing_plan_20260522_120000.json"
         assert excel_path.exists()
+        assert json_path.exists()
         df = pd.read_excel(excel_path)
         assert list(df.columns) == [
             "托盘ID",

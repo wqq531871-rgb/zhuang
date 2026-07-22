@@ -1,30 +1,24 @@
 Peer-side receiver for full packing_plan JSON
 =============================================
 
-This folder is for the OTHER party (or local mock of them).
+对方电脑运行；我方 POST 整份 packing_plan 到对方。
 
-They receive POST /adaptor/api/wcs/internal with the full packing_plan JSON
-and save it under:
+关键配置（搜 TODO）:
+  config/receiver_config.yaml
+    host: 0.0.0.0                 # 本机监听，不是 IP
+    advertise_base_url: http://192.168.0.202:8094   # 对方真实 IPv4
+    port / save_dir / internal_path
 
-  D:\research_code\xiafa\
+我方对齐:
+  packing-system/config/packing_config.yaml
+    internal_base_url: http://192.168.0.202:8094
+    internal_path: /adaptor/api/wcs/internal
 
-Install:
-  pip install fastapi uvicorn pyyaml
+完整 URL:
+  http://192.168.0.202:8094/adaptor/api/wcs/internal
 
-Run:
+启动:
+  pip install -r requirements.txt
   python run_receiver.py
 
-Config (edit TODOs):
-  config/receiver_config.yaml
-    host / port / save_dir / internal_path
-
-Swagger:
-  http://127.0.0.1:8094/swagger/index.html
-
-Packing side (your UI) posts to:
-  {data_source.api_base_url}{data_source.internal_path}
-  e.g. http://192.168.0.191:8092/adaptor/api/wcs/internal
-
-For local self-test, temporarily set packing_config.yaml:
-  api_base_url: http://127.0.0.1:8094
-  (or point to the peer LAN IP running this receiver)
+详见: 给对方的运行说明.txt

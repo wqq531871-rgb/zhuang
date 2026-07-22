@@ -76,6 +76,11 @@ try:
         sequence_mode_key,
     )
     from dashboard_state import successful_pallet_count
+    from result_sequence_update import (
+        apply_seq_values,
+        find_pallet_in_plan,
+        rewrite_result_triplet_for_pallet,
+    )
 except Exception as exc:
     raise RuntimeError(
         "Cannot import stability_business_dashboard_json.py. "
@@ -160,8 +165,12 @@ def find_latest_json(project_dir: Path) -> Optional[Path]:
     workspace_dir = workspace_dir_from_project(project_dir)
     candidates: List[Path] = []
     search_roots = [
+        workspace_dir / "output" / "success",
+        workspace_dir / "output" / "fail",
         workspace_dir / "output",
         workspace_dir / "runtime" / RUNTIME_NAME / "exports",
+        project_dir / "output" / "success",
+        project_dir / "output" / "fail",
         project_dir / "output",
         project_dir / "packing" / "output",
     ]
@@ -170,6 +179,8 @@ def find_latest_json(project_dir: Path) -> Optional[Path]:
         if not root.exists():
             continue
         for pattern in patterns:
+            candidates.extend([p for p in root.glob(pattern) if p.is_file()])
+            # legacy nested dumps
             candidates.extend([p for p in root.rglob(pattern) if p.is_file()])
 
     ordered_candidates = sorted(
@@ -1488,13 +1499,43 @@ class IndustrialPackingWorkbench(BaseDashboard):
         layout = QtWidgets.QVBoxLayout(tab)
         layout.setContentsMargins(12, 12, 12, 12)
         layout.setSpacing(8)
-        hint = QtWidgets.QLabel("默认显示关键字段。点击某一行后，右侧会显示箱子详细信息并在 3D 视图中高亮。")
+        hint = QtWidgets.QLabel(
+            "按装箱顺序（执行序）排列。选中一行后可用上移/下移调整顺序，"
+            "点「更新」会按当前顺序写回 output 下同一次计算的三个 JSON。"
+        )
         hint.setObjectName("HintLabel")
+        hint.setWordWrap(True)
         layout.addWidget(hint)
+
+        order_bar = QtWidgets.QFrame()
+        order_bar.setObjectName("ParamBox")
+        order_layout = QtWidgets.QHBoxLayout(order_bar)
+        order_layout.setContentsMargins(10, 6, 10, 6)
+        order_layout.setSpacing(8)
+        self.btn_box_move_up = QtWidgets.QPushButton("上移")
+        self.btn_box_move_up.setObjectName("GhostButton")
+        self.btn_box_move_up.setToolTip("将选中箱子在装箱顺序中上移一位")
+        self.btn_box_move_up.clicked.connect(lambda: self._move_selected_box(-1))
+        order_layout.addWidget(self.btn_box_move_up)
+        self.btn_box_move_down = QtWidgets.QPushButton("下移")
+        self.btn_box_move_down.setObjectName("GhostButton")
+        self.btn_box_move_down.setToolTip("将选中箱子在装箱顺序中下移一位")
+        self.btn_box_move_down.clicked.connect(lambda: self._move_selected_box(1))
+        order_layout.addWidget(self.btn_box_move_down)
+        self.btn_box_order_update = QtWidgets.QPushButton("更新")
+        self.btn_box_order_update.setObjectName("PrimaryButton")
+        self.btn_box_order_update.setToolTip(
+            "按当前箱子列表顺序更新 packing_plan / wcs_plan / wcs_plan_map 三个本地 JSON"
+        )
+        self.btn_box_order_update.clicked.connect(self._update_result_jsons_from_box_order)
+        order_layout.addWidget(self.btn_box_order_update)
+        order_layout.addStretch(1)
+        layout.addWidget(order_bar)
+
         self.box_table = QtWidgets.QTableWidget()
-        self.box_table.setColumnCount(19)
+        self.box_table.setColumnCount(18)
         self.box_table.setHorizontalHeaderLabels([
-            "原序", "机器序", "箱号", "类型", "长×宽×高(mm)", "重量(kg)", "X", "Y", "Z", "层号",
+            "执行序", "箱号", "类型", "长×宽×高(mm)", "重量(kg)", "X", "Y", "Z", "层号",
             "支撑率", "支撑面积", "承压利用", "吸附箱角", "吸盘角", "吸盘规格", "吸附矩形", "MPM", "风险",
         ])
         self.box_table.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
@@ -2329,6 +2370,157 @@ class IndustrialPackingWorkbench(BaseDashboard):
             self._apply_zoom_options()
         if getattr(self, "df_eval", None) is not None:
             self.fill_box_table()
+
+    def _ordered_box_df_indices(self) -> List[int]:
+        if self.df_eval is None or len(self.df_eval) == 0:
+            return []
+        return [
+            int(idx)
+            for idx in self.df_eval.sort_values(["seq", "z", "y", "x"]).index.tolist()
+        ]
+
+    def _sync_box_order_to_pallet(self) -> List[str]:
+        if self.current_pallet is None or self.df_eval is None:
+            raise ValueError("当前没有可调整顺序的托盘。")
+        ordered_ids: List[str] = []
+        for df_idx in self._ordered_box_df_indices():
+            row = self.df_eval.loc[df_idx]
+            box_id = safe_str(row.get("box_id"), "")
+            ordered_ids.append(box_id)
+            seq = len(ordered_ids)
+            self.df_eval.at[df_idx, "seq"] = seq
+            if getattr(self, "df_raw", None) is not None and df_idx in self.df_raw.index:
+                self.df_raw.at[df_idx, "seq"] = seq
+
+        # 只改 seq；同时写到 plan_data 里的对应托盘，避免引用不一致导致落盘失败
+        target = self.current_pallet
+        if isinstance(getattr(self, "plan_data", None), dict):
+            target = find_pallet_in_plan(self.plan_data, self.current_pallet) or self.current_pallet
+        applied = apply_seq_values(target, ordered_ids)
+        if target is not self.current_pallet:
+            apply_seq_values(self.current_pallet, ordered_ids)
+        if len(applied) != len([x for x in ordered_ids if x]):
+            missing = [x for x in ordered_ids if x and x not in applied]
+            raise ValueError(f"部分箱子无法写入 seq：{missing[:5]}")
+        return ordered_ids
+
+    def _move_selected_box(self, direction: int) -> None:
+        if self.df_eval is None or self.current_pallet is None:
+            QtWidgets.QMessageBox.information(self, "调整顺序", "请先加载装箱结果并选择托盘。")
+            return
+        if self.selected_row_index is None or self.selected_row_index not in self.df_eval.index:
+            QtWidgets.QMessageBox.information(self, "调整顺序", "请先在箱子列表中选中一个箱子。")
+            return
+        ordered = self._ordered_box_df_indices()
+        try:
+            pos = ordered.index(int(self.selected_row_index))
+        except ValueError:
+            QtWidgets.QMessageBox.warning(self, "调整顺序", "无法定位当前选中的箱子。")
+            return
+        new_pos = pos + int(direction)
+        if new_pos < 0 or new_pos >= len(ordered):
+            return
+        ordered[pos], ordered[new_pos] = ordered[new_pos], ordered[pos]
+        for seq, df_idx in enumerate(ordered, start=1):
+            self.df_eval.at[df_idx, "seq"] = seq
+            if getattr(self, "df_raw", None) is not None and df_idx in self.df_raw.index:
+                self.df_raw.at[df_idx, "seq"] = seq
+        keep_idx = int(self.selected_row_index)
+        self._sync_box_order_to_pallet()
+        self.prepare_animation_order()
+        self.fill_box_table()
+        self._select_box_row_by_df_index(keep_idx, switch_to_table=False)
+        # 放大视图若开着，同步到同一托盘对象，避免播放仍用旧 seq
+        if getattr(self, "zoom_pallet", None) is not None:
+            self.zoom_pallet = self.current_pallet
+            if hasattr(self, "zoom_canvas"):
+                self.zoom_canvas.set_pallet(self.current_pallet)
+            self._apply_zoom_options()
+        self.refresh_3d_scene()
+        if hasattr(self, "_write_log"):
+            self._write_log(
+                f"[UI] 已调整装箱顺序：箱 {safe_str(self.df_eval.loc[keep_idx].get('box_id'), keep_idx)} "
+                f"→ 执行序 {int(self.df_eval.loc[keep_idx].get('seq'))}"
+            )
+
+    def _resolve_packing_plan_path_for_update(self) -> Optional[Path]:
+        candidates = [
+            getattr(self, "current_path", None),
+            getattr(self, "_current_result_path", None),
+            getattr(self, "_live_result_path", None),
+        ]
+        for raw in candidates:
+            if not raw:
+                continue
+            path = Path(raw)
+            name = path.name.lower()
+            if path.exists() and (
+                name.startswith("packing_plan_") or name.startswith("ui_packing_plan_")
+            ):
+                return path.resolve()
+        return None
+
+    def _ensure_packing_adapter_import(self):
+        packing_root = Path(self.project_dir).resolve() / "packing"
+        root_s = str(packing_root)
+        if root_s not in sys.path:
+            sys.path.insert(0, root_s)
+        from src.adapter.wcs_adapter import _build_layers
+
+        return _build_layers
+
+    def _update_result_jsons_from_box_order(self) -> None:
+        if self.plan_data is None or self.current_pallet is None or self.df_eval is None:
+            QtWidgets.QMessageBox.information(self, "更新结果", "请先加载装箱结果。")
+            return
+        plan_path = self._resolve_packing_plan_path_for_update()
+        if plan_path is None:
+            QtWidgets.QMessageBox.warning(
+                self,
+                "更新结果",
+                "找不到当前结果对应的 packing_plan_*.json，无法写回 output。",
+            )
+            return
+        try:
+            ordered_ids = self._sync_box_order_to_pallet()
+            build_layers = self._ensure_packing_adapter_import()
+            plan_path, wcs_path, map_path, applied = rewrite_result_triplet_for_pallet(
+                plan_path,
+                self.plan_data,
+                self.current_pallet,
+                ordered_ids,
+                build_layers=build_layers,
+            )
+
+            if hasattr(self, "zoom_box") and self.zoom_box.isVisible():
+                self._exit_pallet_zoom()
+
+            # 与计算完成一致：重新加载刚写回的文件并直接显示最终态
+            if hasattr(self, "_current_result_path"):
+                self._current_result_path = None
+            self.load_json_file(plan_path)
+            self.show_final_result()
+            self.current_path = plan_path
+            if hasattr(self, "_current_result_path"):
+                self._current_result_path = plan_path.resolve()
+            if hasattr(self, "_live_result_path"):
+                self._live_result_path = plan_path.resolve()
+
+            sample = ", ".join(f"{bid}:{seq}" for bid, seq in list(applied.items())[:5])
+            if hasattr(self, "_write_log"):
+                self._write_log(
+                    f"[UI] 已按 seq 更新并重新加载：{plan_path.name} / {wcs_path.name} / "
+                    f"{map_path.name}；示例 {sample}"
+                )
+            QtWidgets.QMessageBox.information(
+                self,
+                "更新完成",
+                f"已只更新箱子 seq，并重新加载：\n{plan_path.name}",
+            )
+        except Exception as exc:
+            QtWidgets.QMessageBox.critical(self, "更新失败", f"写回结果 JSON 失败：{exc}")
+            if hasattr(self, "_write_log"):
+                self._write_log(f"[UI] 更新结果 JSON 失败：{exc}")
 
     def _populate_overview_cards(self) -> None:
         if not hasattr(self, "overview_cards"):
