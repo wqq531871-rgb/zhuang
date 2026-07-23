@@ -3,5 +3,8 @@
 # Portable delivery bundle (includes embedded Python; do not commit)
 PackingPortable/
 
-# PyInstaller release output
+# PyInstaller release / build artifacts (too large for GitHub)
 release/
+packing-system/packaging/build_work/
+packing-system/packaging/*.log
+packing-system/packaging/_detached_build.ps1

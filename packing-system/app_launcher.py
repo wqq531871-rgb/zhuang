@@ -79,6 +79,7 @@ def ensure_runtime_env() -> Path:
         "input/raw",
         "output/success",
         "output/fail",
+        "output/success_case",
         "runtime/packing-realtime/logs",
         "runtime/packing-realtime/temp",
         "runtime/packing-realtime/exports",
