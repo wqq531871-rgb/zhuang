@@ -1,7 +1,10 @@
-"""Unit tests for wcs_success_box row building (no MySQL required)."""
+"""Unit tests for wcs_success_box row building / WCS case assembly (no MySQL)."""
 
 from src.adapter.wcs_adapter import WcsPlanResult
-from src.service.success_box_db import build_success_box_rows
+from src.service.success_box_db import (
+    build_success_box_rows,
+    build_wcs_case_from_box_rows,
+)
 
 
 def test_build_success_box_rows_joins_stack_height_and_filters_failed():
@@ -12,6 +15,7 @@ def test_build_success_box_rows_joins_stack_height_and_filters_failed():
                 "mpm_status": "SUCCESS",
                 "sales_order_no": "SO1",
                 "pallet_type": "MH423C",
+                "case_group": 0,
                 "packed_items": [
                     {
                         "id": "b1",
@@ -53,13 +57,13 @@ def test_build_success_box_rows_joins_stack_height_and_filters_failed():
             },
         ]
     }
-    # map 侧通常已 pop stack_height_before；仍带 seq / product_code / position
     plan_by_unique_id = {
         "uid_ok": {
             "pallet_id": "P1",
             "mpm_status": "SUCCESS",
             "sales_order_no": "SO1",
             "pallet_type": "MH423C",
+            "case_group": 0,
             "packed_items": [
                 {
                     "id": "b1",
@@ -107,13 +111,13 @@ def test_build_success_box_rows_joins_stack_height_and_filters_failed():
     assert r1[1] == 1
     assert r1[2:5] == (100.0, 50.0, 40.0)
     assert r1[5:8] == (1.0, 2.0, 0.0)
-    assert r1[8] == 12.5  # from execution_report
-    assert r1[9] == 1  # state
-    assert r1[10:13] == ("P1", "SO1", "MH423C")
-    assert r1[13] == 9001
+    assert r1[8] == 12.5
+    assert r1[9] == 1
+    assert r1[10:14] == ("P1", "SO1", "MH423C", "0")
+    assert r1[14] == "9001"
     assert r2[1] == 2
     assert r2[8] == 40.0
-    assert r2[13] == 9002
+    assert r2[14] == "9002"
 
 
 def test_build_success_box_rows_treats_zero_product_code_as_null():
@@ -121,6 +125,7 @@ def test_build_success_box_rows_treats_zero_product_code_as_null():
         "pallets": [
             {
                 "mpm_status": "SUCCESS",
+                "case_group": "3",
                 "packed_items": [
                     {
                         "id": "a",
@@ -139,6 +144,7 @@ def test_build_success_box_rows_treats_zero_product_code_as_null():
     plan = {
         "u1": {
             "mpm_status": "SUCCESS",
+            "case_group": "3",
             "packed_items": [
                 {
                     "id": "a",
@@ -156,7 +162,48 @@ def test_build_success_box_rows_treats_zero_product_code_as_null():
         execution_report, WcsPlanResult(plan_by_unique_id=plan)
     )
     assert len(rows) == 1
-    assert rows[0][13] is None  # 入库时再补随机内部码
+    assert rows[0][13] == "3"
+    assert rows[0][14] is None
+
+
+def test_build_wcs_case_from_box_rows_layers_and_height():
+    rows = [
+        {
+            "seq": 1,
+            "raw_length": 700,
+            "raw_width": 530,
+            "raw_height": 360,
+            "pos_x": 0,
+            "pos_y": 0,
+            "pos_z": 0,
+            "order_id": "SO1",
+            "case_type": "MH423C",
+            "case_group": "0",
+            "product_code": "111",
+        },
+        {
+            "seq": 2,
+            "raw_length": 700,
+            "raw_width": 530,
+            "raw_height": 360,
+            "pos_x": 0,
+            "pos_y": 0,
+            "pos_z": 360,
+            "order_id": "SO1",
+            "case_type": "MH423C",
+            "case_group": "0",
+            "product_code": "222",
+        },
+    ]
+    case = build_wcs_case_from_box_rows("uid-a", rows, box_index=1)
+    assert case["box_unique_id"] == "uid-a"
+    assert case["box_index"] == 1
+    assert case["total_height"] == 720.0
+    assert case["case_group"] == "0"
+    assert len(case["layers"]) == 2
+    assert case["layers"][0]["cartons"][0]["seq"] == 1
+    assert case["layers"][1]["cartons"][0]["layer_id"] == 2
+    assert case["layers"][1]["cartons"][0]["product_code"] == 222
 
 
 def test_new_internal_product_code_unique_in_batch():
@@ -170,5 +217,6 @@ def test_new_internal_product_code_unique_in_batch():
     codes = [_new_internal_product_code(reserved) for _ in range(200)]
     assert len(codes) == len(set(codes))
     assert all(
-        _INTERNAL_PRODUCT_CODE_MIN <= c <= _INTERNAL_PRODUCT_CODE_MAX for c in codes
+        _INTERNAL_PRODUCT_CODE_MIN <= int(c) <= _INTERNAL_PRODUCT_CODE_MAX
+        for c in codes
     )

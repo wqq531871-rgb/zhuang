@@ -1,0 +1,4 @@
+[LOG] 后端日志文件：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\logs\backend_20260723_225933.log
+[LOG] 接口模式：每 200 秒拉取并计算，直到手动停止。
+[CMD] D:\ProgramData\anaconda3\python.exe E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\packing\run_wcs_service.py --config E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260723_225933.yaml --run-mode continuous
+[UI] 接口装箱服务已停止。

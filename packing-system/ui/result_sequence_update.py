@@ -71,7 +71,7 @@ def load_execution_wcs_case_for_pallet(
     *,
     box_index: int = 1,
 ) -> Dict[str, Any]:
-    """从执行规划产物 ``*_execution_wcs.json`` / map 取出该托盘的接口2 case。
+    """从执行规划产物 ``*_execution_wcs.json`` / map 取出该托盘的 WCS case。
 
     使用已生成的 ``box_unique_id`` 与执行顺序 layers，不再从旧 packing_plan 重算。
     """
@@ -113,7 +113,7 @@ def load_execution_wcs_case_for_pallet(
 
 
 def load_execution_wcs_cases(plan_path: Path) -> List[Dict[str, Any]]:
-    """读取整份 ``*_execution_wcs.json``（接口2数组）。"""
+    """读取整份 ``*_execution_wcs.json``（WCS 下传数组）。"""
     exec_path = resolve_execution_report_path(plan_path)
     if not exec_path.stem.lower().endswith("_execution"):
         raise ValueError(
@@ -128,6 +128,96 @@ def load_execution_wcs_cases(plan_path: Path) -> List[Dict[str, Any]]:
     return [c for c in cases if isinstance(c, dict)]
 
 
+def resolve_wcs_bundle_paths(plan_path: Path) -> Tuple[Path, Path, Path]:
+    """定位下传用的 (报告, wcs数组, map)。优先 execution 三件套，否则回退 base。"""
+    preferred = resolve_execution_report_path(plan_path)
+    candidates: List[Path] = [preferred]
+    if preferred.stem.lower().endswith("_execution"):
+        candidates.append(
+            preferred.with_name(preferred.stem[: -len("_execution")] + ".json")
+        )
+    original = Path(plan_path).resolve()
+    candidates.append(original)
+
+    seen = set()
+    for candidate in candidates:
+        try:
+            key = str(candidate.resolve())
+        except OSError:
+            key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            report, wcs_path, map_path = result_triplet_paths(candidate)
+        except ValueError:
+            continue
+        if wcs_path.exists() and map_path.exists():
+            return report, wcs_path, map_path
+    raise ValueError(
+        f"找不到与结果配套的 WCS 文件（期望与 {preferred.name} 同目录的 "
+        f"*_execution_wcs.json / *_map.json，或 wcs_plan_*.json）"
+    )
+
+
+def build_wcs_cases_for_pallet_ids(
+    plan_path: Path,
+    pallet_ids: Sequence[str],
+) -> Tuple[List[Dict[str, Any]], Path]:
+    """按勾选顺序构造完整达标托盘 case 数组；复用文件内 box_unique_id，重编 box_index=1..N。
+
+    每个 case 含该盘 layers 下全部箱子，不做部分箱截取。
+    """
+    ids = [str(pid or "").strip() for pid in pallet_ids if str(pid or "").strip()]
+    if not ids:
+        raise ValueError("请至少选择一个达标托盘")
+
+    report_path, wcs_path, map_path = resolve_wcs_bundle_paths(plan_path)
+    wcs_map = _load_json(map_path, {})
+    cases = _load_json(wcs_path, [])
+    if not isinstance(wcs_map, dict) or not isinstance(cases, list):
+        raise ValueError("WCS 文件格式无效（期望 map=对象、cases=数组）")
+
+    cases_by_uid = {
+        str(case.get("box_unique_id") or ""): case
+        for case in cases
+        if isinstance(case, dict) and case.get("box_unique_id")
+    }
+
+    built: List[Dict[str, Any]] = []
+    for box_index, pallet_id in enumerate(ids, start=1):
+        uid = None
+        mapped = None
+        for unique_id, pallet in wcs_map.items():
+            if not isinstance(pallet, dict):
+                continue
+            if str(pallet.get("pallet_id") or "").strip() != pallet_id:
+                continue
+            uid = str(unique_id)
+            mapped = pallet
+            break
+        if uid is None or mapped is None:
+            raise ValueError(f"映射中找不到托盘：{pallet_id}")
+        status = str(mapped.get("mpm_status") or "").strip().upper()
+        if status != "SUCCESS":
+            raise ValueError(f"托盘 {pallet_id} 不是达标盘（{status or 'UNKNOWN'}），不能下传")
+        case = cases_by_uid.get(uid)
+        if case is None:
+            raise ValueError(f"WCS 数组中缺少托盘 {pallet_id}（box_unique_id={uid}）")
+        layers = case.get("layers")
+        if not isinstance(layers, list) or not layers:
+            raise ValueError(f"托盘 {pallet_id} 的 layers 为空，拒绝下传不完整盘")
+        carton_n = sum(
+            len(layer.get("cartons") or [])
+            for layer in layers
+            if isinstance(layer, dict)
+        )
+        if carton_n <= 0:
+            raise ValueError(f"托盘 {pallet_id} 没有任何箱子，拒绝下传")
+        out = dict(case)
+        out["box_index"] = int(box_index)
+        built.append(out)
+    return built, report_path
 
 def apply_seq_values(
     pallet: Dict[str, Any],

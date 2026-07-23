@@ -205,3 +205,73 @@ def test_load_execution_wcs_case_for_pallet_reads_execution_files(tmp_path):
     assert case["box_unique_id"] == "uid-exec"
     assert case["box_index"] == 1
     assert case["layers"][0]["cartons"][0]["seq"] == 1
+
+
+def test_build_wcs_cases_for_pallet_ids_multi_and_renumbers(tmp_path):
+    from result_sequence_update import build_wcs_cases_for_pallet_ids
+
+    success = tmp_path / "success"
+    success.mkdir()
+    stem = "ui_packing_plan_20260721_170000"
+    execution = success / f"{stem}_execution.json"
+    wcs = success / f"{stem}_execution_wcs.json"
+    wcs_map = success / f"{stem}_execution_wcs_map.json"
+
+    p1 = {
+        "pallet_id": "P1",
+        "sales_order_no": "SO1",
+        "pallet_type": "MH423C",
+        "mpm_status": "SUCCESS",
+        "packed_items": [_sample_item("A", 1), _sample_item("B", 2)],
+    }
+    p2 = {
+        "pallet_id": "P2",
+        "sales_order_no": "SO2",
+        "pallet_type": "MH423C",
+        "mpm_status": "SUCCESS",
+        "packed_items": [_sample_item("C", 1)],
+    }
+    execution.write_text(json.dumps({"pallets": [p1, p2]}), encoding="utf-8")
+    wcs.write_text(
+        json.dumps(
+            [
+                {
+                    "box_index": 9,
+                    "box_unique_id": "uid-1",
+                    "total_height": 20,
+                    "order_id": "SO1",
+                    "case_group": "0",
+                    "case_type": "MH423C",
+                    "layers": [
+                        {
+                            "cartons": [
+                                {"seq": 1, "product_code": 1, "layer_id": 1},
+                                {"seq": 2, "product_code": 2, "layer_id": 1},
+                            ]
+                        }
+                    ],
+                },
+                {
+                    "box_index": 8,
+                    "box_unique_id": "uid-2",
+                    "total_height": 10,
+                    "order_id": "SO2",
+                    "case_group": "0",
+                    "case_type": "MH423C",
+                    "layers": [
+                        {"cartons": [{"seq": 1, "product_code": 3, "layer_id": 1}]}
+                    ],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    wcs_map.write_text(
+        json.dumps({"uid-1": p1, "uid-2": p2}), encoding="utf-8"
+    )
+
+    cases, src = build_wcs_cases_for_pallet_ids(execution, ["P2", "P1"])
+    assert src == execution
+    assert [c["box_index"] for c in cases] == [1, 2]
+    assert [c["box_unique_id"] for c in cases] == ["uid-2", "uid-1"]
+    assert len(cases[1]["layers"][0]["cartons"]) == 2

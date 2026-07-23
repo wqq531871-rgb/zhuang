@@ -125,15 +125,15 @@ data_source:
   mode: api
   # TODO(真实接口开关/后端调试): true=用 api_base_url，失败则整服务停止；
   #   false=用 api_fallback_url（Postman）。仅改本配置，无界面开关。
-  use_real_api: true
+  use_real_api: false
   # TODO(现场接口根地址): 真实 WCS「协议+IP/域名+端口」，到现场改成正式地址。
   api_base_url: http://10.222.10.1:8092
   # TODO(备用 Mock 地址): use_real_api=false 时使用；换成你的 Postman Mock 根地址。
   api_fallback_url: https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io
   # TODO(接口1 path): 库存拉取路径，拼在根地址后。
-  stock_path: /api/wcs/reqstockinfo
+  stock_path: adapter/api/wcs/reqstockinfo
   # TODO(接口2 path): 规划结果推送路径，拼在根地址后（注意：/api/wcs/...，不是 /adaptor/...）。
-  plan_path: /api/wcs/sendpalletplanresult
+  plan_path: adapter/api/wcs/sendpalletplanresult
   # TODO(完整方案下传-对方根地址): 对方跑 peer_internal_receiver 的电脑局域网 IPv4+端口。
   #   不要写成 WCS 的 192.168.0.191:8092；完整方案发给对方接收端。
   #   完整 URL = internal_base_url + internal_path

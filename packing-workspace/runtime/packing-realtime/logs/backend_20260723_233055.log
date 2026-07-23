@@ -1,0 +1,28 @@
+[LOG] 后端日志文件：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\logs\backend_20260723_233055.log
+[LOG] 接口模式：每 200 秒拉取并计算，直到手动停止。
+[CMD] D:\ProgramData\anaconda3\python.exe E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\packing\run_wcs_service.py --config E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260723_233055.yaml --run-mode continuous
+[WCS] 已加载 BMS 参考表：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+============================================================
+WCS 接口装箱服务（DB 模式）
+  接口模式：Postman 备用（use_real_api=False）
+  接口地址：https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io
+  接口1：https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io/adapter/api/wcs/reqstockinfo
+  接口2：https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io/adapter/api/wcs/sendpalletplanresult
+  拉取间隔：200 秒（仅拉取）
+  原始 JSON：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\input\raw
+  数据库：localhost:3306/zhuangdb 表 wcs_stock_box
+  BMS 参考：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+  输出目录：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output
+  触发：仅「新插入」开算；达标回写 up_to_standard=1
+  约束配置：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260723_233055.yaml
+  按 Ctrl+C 或由 UI 停止按钮结束进程
+============================================================
+============================================================
+[WCS-拉] 20260723_233100：拉取接口 1 …
+[WCS-装] 等待数据库新插入（有新 product_code 才开算）…
+[WCS-拉] 原始响应已保存：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\input\raw\20260723_233100.json
+[WCS-拉] 库存品类数：32（均为 MH423C）
+[WCS-DB] product_code 已存在、跳过 22 条
+[WCS-拉] 落库完成：候选 32 条，新插入 0 条（新行 up_to_standard=0）。
+[WCS-拉] 无新插入 → 不触发装箱。
+[UI] 接口装箱服务已停止。
