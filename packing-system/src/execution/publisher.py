@@ -174,6 +174,13 @@ def publish_execution_bundle(
         )
     except Exception as exc:  # noqa: BLE001 — 入库失败不回滚文件
         print("[WCS-DB] wcs_success_box 后置写入异常：%s" % exc)
+    # 同期写入旋转目标姿态（接口4判转用）
+    try:
+        from src.service.box_orientation_db import persist_box_orientations
+
+        persist_box_orientations(wcs_result, config_path=config_path)
+    except Exception as exc:  # noqa: BLE001
+        print("[WCS-DB] wcs_box_orientation 后置写入异常：%s" % exc)
     return ExecutionBundlePaths(
         execution=execution_path,
         wcs_cases=wcs_path,

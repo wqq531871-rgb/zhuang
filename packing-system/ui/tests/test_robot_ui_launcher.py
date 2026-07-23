@@ -26,6 +26,7 @@ def test_launcher_starts_robot_with_script_and_working_directory(tmp_path, monke
     process = launch_robot_ui(
         directory=tmp_path,
         python_executable=Path("C:/Python/python.exe"),
+        check_deps=False,
         popen_factory=lambda *args, **kwargs: (
             calls.append((args, kwargs)) or FakeProcess()
         ),
@@ -39,6 +40,26 @@ def test_launcher_starts_robot_with_script_and_working_directory(tmp_path, monke
     assert kwargs["env"]["QT_API"] == "pyside6"
 
 
+def test_launcher_passes_plan_and_command_file(tmp_path):
+    script = tmp_path / "main.py"
+    script.write_text("# test", encoding="utf-8")
+    calls = []
+    plan = tmp_path / "plan.json"
+    cmd = tmp_path / "cmd.json"
+    launch_robot_ui(
+        directory=tmp_path,
+        check_deps=False,
+        plan_path=plan,
+        command_file=cmd,
+        popen_factory=lambda *args, **kwargs: (
+            calls.append((args, kwargs)) or FakeProcess()
+        ),
+    )
+    argv = calls[0][0][0]
+    assert "--plan" in argv and str(plan) in argv
+    assert "--command-file" in argv and str(cmd) in argv
+
+
 def test_launcher_rejects_missing_robot(tmp_path):
     with pytest.raises(FileNotFoundError, match="机器人仿真程序不存在"):
-        launch_robot_ui(directory=tmp_path)
+        launch_robot_ui(directory=tmp_path, check_deps=False)

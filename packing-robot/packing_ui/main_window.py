@@ -34,6 +34,7 @@ from .data import (
     load_plan_file,
 )
 from .integration import CameraBoxData, parse_camera_payload
+from .live_command import default_command_path, read_live_command
 from .playback import PlaybackController, PlaybackPanel
 from .plc_launcher import launch_plc_ui
 from .state_repository import MySqlConfig, ProductState
@@ -50,6 +51,8 @@ class PackingMainWindow(QMainWindow):
         state_worker_factory: Callable[
             [MySqlConfig, list[ProductState]], StateSyncWorker
         ] = StateSyncWorker,
+        command_file: Path | str | None = None,
+        initial_plan: Path | str | None = None,
     ) -> None:
         super().__init__()
         self.setWindowTitle("机器人装箱三维仿真系统")
@@ -68,6 +71,9 @@ class PackingMainWindow(QMainWindow):
         self._state_sync_thread: QThread | None = None
         self._state_sync_worker: StateSyncWorker | None = None
         self._close_after_state_sync = False
+        self._command_file = Path(command_file) if command_file else default_command_path()
+        self._last_command_id = ""
+        self._loaded_plan_path: Path | None = None
 
         self.playback_controller = PlaybackController(self)
         self.playback_panel = PlaybackPanel(self.playback_controller)
@@ -83,7 +89,14 @@ class PackingMainWindow(QMainWindow):
         self._apply_style()
         self.statusBar().showMessage("请选择装箱算法 JSON 文件")
 
-        if autoload:
+        self._command_timer = QTimer(self)
+        self._command_timer.setInterval(500)
+        self._command_timer.timeout.connect(self._poll_live_command)
+        self._command_timer.start()
+
+        if initial_plan:
+            self.load_path(initial_plan)
+        elif autoload:
             samples = sorted(Path.cwd().glob("wcs_plan_map_*.json"))
             if samples:
                 self.load_path(samples[0])
@@ -260,6 +273,7 @@ class PackingMainWindow(QMainWindow):
         except ValueError as exc:
             QMessageBox.critical(self, "文件错误", str(exc))
             return
+        self._loaded_plan_path = Path(path).resolve()
         self._rebuild_types()
         total_items = sum(len(plan.items) for plan in self.all_plans)
         self.statusBar().showMessage(
@@ -600,15 +614,116 @@ class PackingMainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802
         self.playback_controller.pause()
+        if hasattr(self, "_command_timer"):
+            self._command_timer.stop()
         if self._state_sync_thread is not None and self._state_sync_thread.isRunning():
             self._close_after_state_sync = True
             event.ignore()
             return
         super().closeEvent(event)
 
+    def _poll_live_command(self) -> None:
+        """读取仪表盘写入的现场码垛指令，按箱播放仿真。"""
+        cmd = read_live_command(self._command_file)
+        if not cmd:
+            return
+        cmd_id = str(cmd.get("id") or "").strip()
+        if not cmd_id or cmd_id == self._last_command_id:
+            return
+        if str(cmd.get("action") or "") != "play_box":
+            return
+        self._last_command_id = cmd_id
+        try:
+            self.apply_live_play_box(cmd)
+        except Exception as exc:  # noqa: BLE001 — 现场指令失败只提示
+            self.statusBar().showMessage(f"现场码垛指令失败：{exc}")
 
-def run() -> int:
+    def select_plan_by_unique_id(self, box_unique_id: str) -> bool:
+        uid = str(box_unique_id or "").strip()
+        if not uid:
+            return False
+        for plan in self.all_plans:
+            if plan.source_key == uid:
+                type_index = self.type_combo.findText(plan.pallet_type)
+                if type_index >= 0:
+                    self.type_combo.setCurrentIndex(type_index)
+                for i in range(self.pallet_combo.count()):
+                    data = self.pallet_combo.itemData(i)
+                    if isinstance(data, PalletPlan) and data.source_key == uid:
+                        self.pallet_combo.setCurrentIndex(i)
+                        return True
+        return False
+
+    def apply_live_play_box(self, cmd: dict[str, Any]) -> None:
+        """加载方案（如需）→ 选托盘 → 设相机姿态 → 播放该 seq 一箱。"""
+        plan_path = cmd.get("plan_path")
+        if plan_path:
+            path = Path(str(plan_path))
+            if path.is_file() and (
+                self._loaded_plan_path is None
+                or path.resolve() != self._loaded_plan_path
+            ):
+                self.load_path(path)
+
+        uid = str(cmd.get("box_unique_id") or "").strip()
+        if uid and not self.select_plan_by_unique_id(uid):
+            raise ValueError(f"方案中找不到托盘：{uid}")
+        if self.current_plan is None:
+            raise ValueError("尚未加载托盘方案")
+
+        seq = int(cmd.get("seq") or 0)
+        item_id = str(cmd.get("item_id") or "").strip()
+        index = -1
+        for i, item in enumerate(self.current_plan.items):
+            if seq > 0 and int(item.sequence) == seq:
+                index = i
+                item_id = item.id
+                break
+            if item_id and item.id == item_id:
+                index = i
+                break
+        if index < 0:
+            raise ValueError(f"找不到箱子 seq={seq} item_id={item_id}")
+
+        cam_deg = cmd.get("camera_orientation_deg")
+        if cam_deg is None:
+            from .data import target_orientation
+
+            target = target_orientation(self.current_plan.items[index])
+            state = int(cmd.get("state") or 1)
+            # state=1 不转 → 相机=目标；state=2 转 → 相机取另一角
+            cam_deg = target if state == 1 else (90 if int(target) == 0 else 0)
+        cam_deg = int(cam_deg)
+        if cam_deg not in (0, 90):
+            cam_deg = 0
+
+        key = self._orientation_key(item_id)
+        self._camera_by_item[key] = CameraBoxData(
+            box_id=item_id,
+            orientation_deg=cam_deg,
+        )
+        self._orientation_by_item[key] = cam_deg
+        # 现场路径：仪表盘已写 state，这里只做可视化，不同步数据库
+        self._rebuild_actions(selected_index=index)
+        self.box_list.setCurrentRow(index)
+        self.playback_controller.play_one_step(index)
+        self.statusBar().showMessage(
+            f"现场码垛：正在码放第 {seq or index + 1} 箱（{item_id}）"
+        )
+        self.raise_()
+        self.activateWindow()
+
+
+def run(
+    *,
+    plan_path: str | Path | None = None,
+    command_file: str | Path | None = None,
+) -> int:
     app = QApplication.instance() or QApplication([])
-    window = PackingMainWindow()
+    window = PackingMainWindow(
+        autoload=plan_path is None,
+        initial_plan=plan_path,
+        command_file=command_file,
+    )
     window.show()
     return app.exec()

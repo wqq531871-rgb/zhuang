@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import yaml
 
@@ -26,6 +26,10 @@ class ReceiverSettings:
     lookup_plan_map: bool
     plan_map_glob: str
     config_path: Path
+    # 接口4：到达后查 wcs_box_orientation 并判旋转
+    rotation_judge_enabled: bool
+    packing_config_path: Path
+    mock_camera_orientation_deg: Optional[int]
 
 
 def _as_path(value: Any, default: str) -> str:
@@ -33,6 +37,18 @@ def _as_path(value: Any, default: str) -> str:
     if not text.startswith("/"):
         text = "/" + text
     return text
+
+
+def _optional_orientation(value: Any) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        deg = int(value)
+    except (TypeError, ValueError):
+        return None
+    if deg not in (0, 90):
+        return None
+    return deg
 
 
 def load_settings(config_path: Path) -> ReceiverSettings:
@@ -43,8 +59,10 @@ def load_settings(config_path: Path) -> ReceiverSettings:
         raw: Dict[str, Any] = yaml.safe_load(f) or {}
 
     base_dir = config_path.parent.parent  # local_wcs_receiver/
+    packing_system_root = base_dir.parent
     server = dict(raw.get("server") or {})
     paths = dict(raw.get("paths") or {})
+    rotation = dict(raw.get("rotation_judge") or {})
 
     # 兼容旧扁平字段 host/port
     host = str(server.get("host") or raw.get("host") or "0.0.0.0")
@@ -57,6 +75,16 @@ def load_settings(config_path: Path) -> ReceiverSettings:
     advertise = str(
         raw.get("advertise_base_url") or f"http://127.0.0.1:{port}"
     ).rstrip("/")
+
+    packing_cfg = Path(
+        str(
+            rotation.get("packing_config")
+            or raw.get("packing_config")
+            or (packing_system_root / "config" / "packing_config.yaml")
+        )
+    )
+    if not packing_cfg.is_absolute():
+        packing_cfg = (base_dir / packing_cfg).resolve()
 
     return ReceiverSettings(
         host=host,
@@ -80,4 +108,9 @@ def load_settings(config_path: Path) -> ReceiverSettings:
         lookup_plan_map=bool(raw.get("lookup_plan_map", False)),
         plan_map_glob=str(raw.get("plan_map_glob") or ""),
         config_path=config_path,
+        rotation_judge_enabled=bool(rotation.get("enabled", True)),
+        packing_config_path=packing_cfg,
+        mock_camera_orientation_deg=_optional_orientation(
+            rotation.get("mock_camera_orientation_deg")
+        ),
     )

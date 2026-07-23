@@ -946,15 +946,6 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.btn_load_result.clicked.connect(self.load_json_dialog)
         layout.addWidget(self.btn_load_result)
 
-        self.btn_open_robot = QtWidgets.QPushButton("打开机器人仿真")
-        self.btn_open_robot.setObjectName("GhostButton")
-        self.btn_open_robot.setToolTip(
-            "以独立进程打开 packing-robot 三维仿真界面（PySide6）。\n"
-            "已运行时重复点击不会启动第二个实例。"
-        )
-        self.btn_open_robot.clicked.connect(self.open_robot_ui)
-        layout.addWidget(self.btn_open_robot)
-
         self.cmb_result_history = QtWidgets.QComboBox()
         self.cmb_result_history.setObjectName("GhostCombo")
         self.cmb_result_history.setMinimumWidth(300)
@@ -1005,8 +996,344 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
 
         layout.insertWidget(insert_at + 1, push_box)
 
+        self.step_live_stack = StepCard("▣", "现场码垛", "确认码放后发出指令，并在三维窗口演示码一箱")
+        layout.insertWidget(insert_at + 2, self.step_live_stack)
+
+        live_box = QtWidgets.QFrame()
+        live_box.setObjectName("ParamBox")
+        live_form = QtWidgets.QFormLayout(live_box)
+        live_form.setContentsMargins(12, 10, 12, 10)
+        live_form.setSpacing(6)
+
+        self.lbl_live_order = QtWidgets.QLabel("订单：—")
+        self.lbl_live_order.setObjectName("SmallInfo")
+        self.lbl_live_order.setWordWrap(True)
+        live_form.addRow("", self.lbl_live_order)
+
+        self.lbl_live_box = QtWidgets.QLabel("进度：—")
+        self.lbl_live_box.setObjectName("SmallInfo")
+        self.lbl_live_box.setWordWrap(True)
+        live_form.addRow("", self.lbl_live_box)
+
+        self.lbl_live_rotation = QtWidgets.QLabel("是否旋转：—")
+        self.lbl_live_rotation.setObjectName("SmallInfo")
+        self.lbl_live_rotation.setWordWrap(True)
+        live_form.addRow("", self.lbl_live_rotation)
+
+        self.lbl_live_plc = QtWidgets.QLabel("状态：等待箱子到达…")
+        self.lbl_live_plc.setObjectName("SmallInfo")
+        self.lbl_live_plc.setWordWrap(True)
+        live_form.addRow("", self.lbl_live_plc)
+
+        self.lst_live_plc = QtWidgets.QListWidget()
+        self.lst_live_plc.setMinimumHeight(100)
+        self.lst_live_plc.setMaximumHeight(150)
+        self.lst_live_plc.setToolTip("待码放的箱子列表，选中后点「确认码放」")
+        self.lst_live_plc.currentItemChanged.connect(self._on_live_plc_selection_changed)
+        live_form.addRow("", self.lst_live_plc)
+
+        btn_row = QtWidgets.QHBoxLayout()
+        self.btn_live_refresh = QtWidgets.QPushButton("刷新")
+        self.btn_live_refresh.setObjectName("GhostButton")
+        self.btn_live_refresh.clicked.connect(self._refresh_live_stack_panel)
+        btn_row.addWidget(self.btn_live_refresh)
+
+        self.btn_open_robot = QtWidgets.QPushButton("打开三维演示")
+        self.btn_open_robot.setObjectName("GhostButton")
+        self.btn_open_robot.setToolTip("打开码垛三维窗口；确认码放时会自动演示当前箱")
+        self.btn_open_robot.clicked.connect(self.open_robot_ui)
+        btn_row.addWidget(self.btn_open_robot)
+
+        self.btn_live_send_plc = QtWidgets.QPushButton("确认码放")
+        self.btn_live_send_plc.setObjectName("PrimaryButton")
+        self.btn_live_send_plc.setToolTip("发出码放指令，并在三维窗口演示这一箱")
+        self.btn_live_send_plc.clicked.connect(self.send_selected_plc_command)
+        self.btn_live_send_plc.setEnabled(False)
+        btn_row.addWidget(self.btn_live_send_plc)
+        live_form.addRow("", btn_row)
+
+        layout.insertWidget(insert_at + 3, live_box)
+
+        self._live_plc_timer = QtCore.QTimer(self)
+        self._live_plc_timer.setInterval(2000)
+        self._live_plc_timer.timeout.connect(self._refresh_live_stack_panel)
+        self._live_plc_timer.start()
+        self._refresh_live_stack_panel()
+
         self._refresh_push_pallet_combo()
         return panel
+
+    def _live_plc_queue_id(self, item: Optional[QtWidgets.QListWidgetItem]) -> Optional[int]:
+        if item is None:
+            return None
+        raw = item.data(QtCore.Qt.UserRole)
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            return None
+
+    def _on_live_plc_selection_changed(
+        self,
+        current: Optional[QtWidgets.QListWidgetItem],
+        _previous: Optional[QtWidgets.QListWidgetItem] = None,
+    ) -> None:
+        qid = self._live_plc_queue_id(current)
+        status = ""
+        if current is not None:
+            status = str(current.data(QtCore.Qt.UserRole + 1) or "")
+        can_send = qid is not None and status == "pending"
+        if hasattr(self, "btn_live_send_plc"):
+            self.btn_live_send_plc.setEnabled(can_send)
+
+    @staticmethod
+    def _live_status_label(status: str) -> str:
+        return {
+            "pending": "待码放",
+            "sent": "已发出",
+            "failed": "失败",
+        }.get(str(status or ""), "未知")
+
+    def _refresh_live_stack_panel(self) -> None:
+        """轮询码垛队列，刷新现场监视面板（文案面向现场操作）。"""
+        if not hasattr(self, "lst_live_plc"):
+            return
+        prev_id = self._live_plc_queue_id(self.lst_live_plc.currentItem())
+        rows = []
+        err = None
+        try:
+            self._ensure_packing_import_path()
+            from src.service.plc_queue_db import get_plc_queue_repo
+
+            config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
+            repo = get_plc_queue_repo(config_path=config_path)
+            rows = repo.list_recent(40)
+        except Exception as exc:
+            err = str(exc)
+
+        self.lst_live_plc.blockSignals(True)
+        self.lst_live_plc.clear()
+        pending_n = 0
+        latest = rows[0] if rows else None
+        restore_row = None
+        for row in rows:
+            status = str(row.get("status") or "")
+            if status == "pending":
+                pending_n += 1
+            seq = int(row.get("seq") or 0)
+            state = int(row.get("state") or 0)
+            rotate_txt = "需要旋转" if state == 2 else "不旋转"
+            order = ""
+            cmd = row.get("command") or {}
+            if isinstance(cmd, dict):
+                order = str(cmd.get("order_id") or "")
+            text = (
+                f"{self._live_status_label(status)} · "
+                f"第 {seq} 箱 · {rotate_txt}"
+                + (f" · 订单 {order}" if order else "")
+            )
+            item = QtWidgets.QListWidgetItem(text)
+            item.setData(QtCore.Qt.UserRole, int(row.get("id") or 0))
+            item.setData(QtCore.Qt.UserRole + 1, status)
+            item.setData(QtCore.Qt.UserRole + 2, row)
+            self.lst_live_plc.addItem(item)
+            if prev_id is not None and int(row.get("id") or 0) == prev_id:
+                restore_row = item
+        self.lst_live_plc.blockSignals(False)
+
+        if restore_row is not None:
+            self.lst_live_plc.setCurrentItem(restore_row)
+        elif self.lst_live_plc.count() > 0:
+            for i in range(self.lst_live_plc.count()):
+                it = self.lst_live_plc.item(i)
+                if str(it.data(QtCore.Qt.UserRole + 1) or "") == "pending":
+                    self.lst_live_plc.setCurrentItem(it)
+                    break
+            else:
+                self.lst_live_plc.setCurrentRow(0)
+        self._on_live_plc_selection_changed(self.lst_live_plc.currentItem())
+
+        if err:
+            self.lbl_live_order.setText("订单：—")
+            self.lbl_live_box.setText("进度：—")
+            self.lbl_live_rotation.setText("是否旋转：—")
+            self.lbl_live_plc.setText("状态：暂时读不到任务，请点刷新重试")
+            if hasattr(self, "step_live_stack"):
+                self.step_live_stack.set_state("error", "暂时不可用")
+            return
+
+        if latest is None:
+            self.lbl_live_order.setText("订单：—")
+            self.lbl_live_box.setText("进度：—")
+            self.lbl_live_rotation.setText("是否旋转：—")
+            self.lbl_live_plc.setText("状态：等待箱子到达…")
+            if hasattr(self, "step_live_stack"):
+                self.step_live_stack.set_state("idle", "等待箱子到达")
+            return
+
+        seq = int(latest.get("seq") or 0)
+        state = int(latest.get("state") or 0)
+        status = str(latest.get("status") or "")
+        cmd = latest.get("command") or {}
+        order_id = str((cmd or {}).get("order_id") or latest.get("order_id") or "—")
+        total = "?"
+        try:
+            self._ensure_packing_import_path()
+            from src.service.plc_queue_db import get_plc_queue_repo
+
+            config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
+            uid = str(latest.get("box_unique_id") or "")
+            total = get_plc_queue_repo(config_path=config_path).count_boxes_on_pallet(uid)
+        except Exception:
+            pass
+
+        self.lbl_live_order.setText(f"订单：{order_id}")
+        self.lbl_live_box.setText(f"进度：第 {seq} / {total} 箱")
+        self.lbl_live_rotation.setText(
+            "是否旋转：需要旋转 90°" if state == 2 else "是否旋转：不需要旋转"
+        )
+        if pending_n > 0:
+            self.lbl_live_plc.setText(f"状态：有 {pending_n} 箱待确认码放")
+        else:
+            self.lbl_live_plc.setText(
+                f"状态：{self._live_status_label(status)}（暂无待确认箱子）"
+            )
+        if hasattr(self, "step_live_stack"):
+            if pending_n > 0:
+                self.step_live_stack.set_state("active", f"待确认 {pending_n} 箱")
+            else:
+                self.step_live_stack.set_state("done", "暂无待码放箱子")
+
+    def _live_command_file(self) -> Path:
+        runtime = workspace_dir_from_project(self.project_dir) / "runtime"
+        runtime.mkdir(parents=True, exist_ok=True)
+        return runtime / "live_stack_command.json"
+
+    def _find_plan_map_for_uid(self, box_unique_id: str) -> Optional[Path]:
+        """在 workspace output 中查找包含该托盘的最新 plan map。"""
+        uid = str(box_unique_id or "").strip()
+        root = workspace_dir_from_project(self.project_dir) / "output"
+        if not root.is_dir():
+            return None
+        candidates: List[Path] = []
+        for pattern in ("**/wcs_plan_map_*.json", "**/*_execution_wcs_map.json"):
+            candidates.extend(root.glob(pattern))
+        candidates = sorted(
+            {p.resolve() for p in candidates if p.is_file()},
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if not uid:
+            return candidates[0] if candidates else None
+        for path in candidates:
+            try:
+                data = json.loads(path.read_text(encoding="utf-8-sig"))
+            except (OSError, ValueError, TypeError):
+                continue
+            if isinstance(data, dict) and uid in data:
+                return path
+        return candidates[0] if candidates else None
+
+    def _write_live_play_command(self, row: dict) -> Optional[Path]:
+        """写指令文件，供三维窗口播放这一箱。"""
+        uid = str(row.get("box_unique_id") or "")
+        seq = int(row.get("seq") or 0)
+        plan_path = self._find_plan_map_for_uid(uid)
+        payload = {
+            "id": datetime.now().strftime("%Y%m%d_%H%M%S_%f"),
+            "action": "play_box",
+            "box_unique_id": uid,
+            "seq": seq,
+            "item_id": row.get("item_id"),
+            "state": int(row.get("state") or 1),
+            "camera_orientation_deg": row.get("camera_orientation_deg"),
+            "target_orientation_deg": row.get("target_orientation_deg"),
+            "plan_path": str(plan_path) if plan_path else None,
+        }
+        cmd_path = self._live_command_file()
+        tmp = cmd_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(cmd_path)
+        return plan_path
+
+    def _ensure_robot_ui_for_live(self, plan_path: Optional[Path] = None) -> bool:
+        """确保三维演示窗口在跑；需要时带方案启动。"""
+        process = getattr(self, "_robot_ui_process", None)
+        if process is not None:
+            try:
+                if process.poll() is None:
+                    return True
+            except Exception:
+                self._robot_ui_process = None
+        try:
+            self._robot_ui_process = launch_robot_ui(
+                plan_path=plan_path,
+                command_file=self._live_command_file(),
+            )
+        except (OSError, FileNotFoundError, RuntimeError) as exc:
+            self._write_log(f"[现场码垛] 打开三维演示失败：{exc}")
+            QtWidgets.QMessageBox.warning(
+                self,
+                "三维演示",
+                f"码放指令已记录，但三维窗口未能打开：\n{exc}",
+            )
+            return False
+        pid = getattr(self._robot_ui_process, "pid", "?")
+        self._write_log(f"[现场码垛] 已打开三维演示（PID {pid}）")
+        return True
+
+    def send_selected_plc_command(self) -> None:
+        """确认码放：发出指令（桩）+ 三维窗口演示这一箱。"""
+        item = self.lst_live_plc.currentItem() if hasattr(self, "lst_live_plc") else None
+        qid = self._live_plc_queue_id(item)
+        if qid is None:
+            QtWidgets.QMessageBox.information(self, "现场码垛", "请先在列表里选中一箱。")
+            return
+        status = str(item.data(QtCore.Qt.UserRole + 1) or "") if item else ""
+        if status != "pending":
+            QtWidgets.QMessageBox.information(self, "现场码垛", "这一箱已经处理过了，请选「待码放」的箱子。")
+            return
+        row = item.data(QtCore.Qt.UserRole + 2) if item else {}
+        cmd = (row or {}).get("command") or {}
+        seq = row.get("seq")
+        order_id = (cmd or {}).get("order_id") or "—"
+        rotate = "需要旋转" if int(row.get("state") or 0) == 2 else "不旋转"
+        confirm = QtWidgets.QMessageBox.question(
+            self,
+            "确认码放",
+            (
+                f"订单：{order_id}\n"
+                f"箱子：第 {seq} 箱\n"
+                f"动作：{rotate}\n\n"
+                "确认后：发出码放指令，并在三维窗口演示这一箱。"
+            ),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if confirm != QtWidgets.QMessageBox.Yes:
+            return
+        try:
+            self._ensure_packing_import_path()
+            from src.service.plc_queue_db import stub_send_plc_command
+
+            config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
+            result = stub_send_plc_command(qid, config_path=config_path)
+            if not result.get("ok"):
+                raise RuntimeError(result.get("reason") or "send failed")
+            plan_path = self._write_live_play_command(row or {})
+            self._ensure_robot_ui_for_live(plan_path)
+            self._write_log(
+                f"[现场码垛] 确认码放 id={qid} "
+                f"box={row.get('box_unique_id')} seq={row.get('seq')}"
+            )
+            QtWidgets.QMessageBox.information(
+                self,
+                "现场码垛",
+                f"第 {seq} 箱已确认。\n三维窗口将演示这一箱的码放过程。",
+            )
+        except Exception as exc:
+            self._write_log(f"[现场码垛] 确认失败：{exc}")
+            QtWidgets.QMessageBox.critical(self, "现场码垛", f"确认失败：{exc}")
+        self._refresh_live_stack_panel()
 
     def _ensure_packing_import_path(self) -> Path:
         packing_root = Path(self.project_dir).resolve() / "packing"
@@ -1053,6 +1380,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
     def populate_after_load(self) -> None:
         super().populate_after_load()
         self._refresh_push_pallet_combo()
+        self._refresh_live_stack_panel()
 
     def open_wcs_push_dialog(self) -> None:
         """弹窗多选库中未下传达标托盘，确认后整盘下传到 WCS。"""
@@ -1275,26 +1603,36 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.on_result_history_changed(self.cmb_result_history.currentIndex())
 
     def open_robot_ui(self) -> None:
-        """Open packing-robot as a separate process (same pattern as robot→PLC)."""
+        """打开三维码垛演示窗口（挂在现场码垛下）。"""
         process = getattr(self, "_robot_ui_process", None)
         if process is not None:
             try:
                 if process.poll() is None:
-                    self._write_log("[UI] 机器人仿真界面已在运行，不重复启动。")
+                    self._write_log("[UI] 三维演示已在运行，不重复启动。")
                     QtWidgets.QMessageBox.information(
-                        self, "机器人仿真", "机器人仿真界面已经在运行。"
+                        self, "三维演示", "三维演示窗口已经在运行。"
                     )
                     return
             except Exception:
                 self._robot_ui_process = None
+        plan_path = None
+        item = self.lst_live_plc.currentItem() if hasattr(self, "lst_live_plc") else None
+        if item is not None:
+            row = item.data(QtCore.Qt.UserRole + 2) or {}
+            plan_path = self._find_plan_map_for_uid(str(row.get("box_unique_id") or ""))
+        if plan_path is None:
+            plan_path = self._find_plan_map_for_uid("")
         try:
-            self._robot_ui_process = launch_robot_ui()
-        except (OSError, FileNotFoundError) as exc:
-            self._write_log(f"[UI] 打开机器人仿真失败：{exc}")
-            QtWidgets.QMessageBox.critical(self, "无法打开机器人仿真", str(exc))
+            self._robot_ui_process = launch_robot_ui(
+                plan_path=plan_path,
+                command_file=self._live_command_file(),
+            )
+        except (OSError, FileNotFoundError, RuntimeError) as exc:
+            self._write_log(f"[UI] 打开三维演示失败：{exc}")
+            QtWidgets.QMessageBox.critical(self, "无法打开三维演示", str(exc))
             return
         pid = getattr(self._robot_ui_process, "pid", "?")
-        self._write_log(f"[UI] 已启动机器人仿真界面（PID {pid}）")
+        self._write_log(f"[UI] 已启动三维演示（PID {pid}）")
 
     def load_json_dialog(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(

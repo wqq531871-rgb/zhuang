@@ -271,6 +271,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "[WCS-DB] wcs_success_box 后置写入异常：%s" % exc,
                 file=sys.stderr,
             )
+        try:
+            from src.service.box_orientation_db import persist_box_orientations
+
+            persist_box_orientations(wcs_result, config_path=config_path)
+        except Exception as exc:  # noqa: BLE001
+            print(
+                "[WCS-DB] wcs_box_orientation 后置写入异常：%s" % exc,
+                file=sys.stderr,
+            )
 
     print(
         "execution plan written: pallets=%d boxes=%d reordered_pallets=%d path=%s"

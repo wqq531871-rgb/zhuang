@@ -20,6 +20,7 @@ class PlaybackController(QObject):
         self.fraction = 0.0
         self.speed = 1.0
         self._playing = False
+        self._stop_after_current_step = False
         self._timer = QTimer(self)
         self._timer.setInterval(33)
         self._timer.timeout.connect(self._tick)
@@ -78,10 +79,26 @@ class PlaybackController(QObject):
         self._timer.start()
         self.playingChanged.emit(True)
 
+    def play_one_step(self, index: int | None = None) -> None:
+        """播放某一箱的完整动作后自动暂停（现场码垛用）。"""
+        if not self.step_count:
+            return
+        if index is not None:
+            self.seek_step(index)
+        else:
+            self.pause()
+            self.phase_index = 0
+            self.fraction = 0.0
+            self._emit_frame()
+        self._stop_after_current_step = True
+        self.play()
+
     def pause(self) -> None:
         if not self._playing:
+            self._stop_after_current_step = False
             return
         self._playing = False
+        self._stop_after_current_step = False
         self._timer.stop()
         self.playingChanged.emit(False)
 
@@ -99,6 +116,12 @@ class PlaybackController(QObject):
             self.fraction -= 1.0
             if self.phase_index < len(PHASES) - 1:
                 self.phase_index += 1
+            elif self._stop_after_current_step:
+                # 本箱动作播完
+                self.fraction = 1.0
+                self.phase_index = len(PHASES) - 1
+                self.pause()
+                break
             elif self.current_step_index < self.step_count - 1:
                 self.current_step_index += 1
                 self.phase_index = 0

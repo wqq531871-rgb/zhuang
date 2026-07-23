@@ -11,7 +11,7 @@ server:
 
 # TODO(本机对外根地址): 协议+本机局域网 IPv4+端口，发给对方联调用。
 #   当前本机 IPv4=192.168.0.8；换网段时只改这一行。
-advertise_base_url: http://172.20.10.12:8093
+advertise_base_url: http://192.168.1.7:8093
 
 # TODO(接口 path): 与对方约定一致；一般不用改。
 paths:
@@ -40,3 +40,11 @@ strict_validation: false
 lookup_plan_map: false
 # TODO(plan map 搜索): lookup_plan_map=true 时生效。
 # plan_map_glob: ../packing-workspace/output/wcs_plan_map_*.json
+
+# TODO(接口4-旋转判断): 箱子到达后查 wcs_box_orientation，有相机角则更新 wcs_success_box.state。
+rotation_judge:
+  enabled: true
+  # 读 database 段的 packing 配置（相对 local_wcs_receiver/ 或绝对路径）
+  packing_config: ../config/packing_config.yaml
+  # 暂无真实相机时：填 0 或 90 做联调；null=只查目标角，不写 state（reason=waiting_camera）
+  mock_camera_orientation_deg: 0
