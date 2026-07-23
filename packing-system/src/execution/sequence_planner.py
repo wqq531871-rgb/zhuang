@@ -358,7 +358,7 @@ def _add_height_egress_edges(
         _approach_pallet_height(items, pallet_dims)
     geometry = [_physical_geometry(item) for item in items]
     support_tiers = _support_tiers(supports, deadline=deadline)
-    upper_rects = [_rect(item) for item in items]
+    box_rects = [_rect(item) for item in items]
     corridor_rects = [
         _suction_rect(item, 0.0, config.require_suction_pose)
         or _rect(item)
@@ -379,17 +379,30 @@ def _add_height_egress_edges(
             _lx, _ly, lower_z, _ll, _lw, lower_height = lower
             try:
                 blocked = local_egress_blocked(
-                    corridor_rect=corridor_rects[lower_idx],
+                    corridor_rect=box_rects[lower_idx],
                     lower_top=lower_z + lower_height,
-                    upper_rect=upper_rects[upper_idx],
+                    upper_rect=box_rects[upper_idx],
                     upper_z_min=upper_z,
                     upper_z_max=upper_top,
-                    offset_x=config.approach_offset_x_mm,
-                    offset_y=config.approach_offset_y_mm,
+                    offset_x=0.0,
+                    offset_y=0.0,
                     xy_clearance=config.side_neighbor_clearance_mm,
                     height_tolerance=config.side_height_tolerance_mm,
                     tolerance=config.coordinate_tolerance_mm,
                 )
+                if not blocked:
+                    blocked = local_egress_blocked(
+                        corridor_rect=corridor_rects[lower_idx],
+                        lower_top=lower_z + lower_height,
+                        upper_rect=box_rects[upper_idx],
+                        upper_z_min=upper_z,
+                        upper_z_max=upper_top,
+                        offset_x=config.approach_offset_x_mm,
+                        offset_y=config.approach_offset_y_mm,
+                        xy_clearance=config.side_neighbor_clearance_mm,
+                        height_tolerance=config.side_height_tolerance_mm,
+                        tolerance=config.coordinate_tolerance_mm,
+                    )
             except ValueError as exc:
                 raise ExecutionSequenceError(
                     "invalid local egress geometry for lower box %r "

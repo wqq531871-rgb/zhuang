@@ -75,7 +75,7 @@ execution_sequence:
   require_suction_pose: true
   # 放置目标箱时，允许同高或更高邻箱占用的最大侧面方向数（x-/x+/y-/y+）。
   max_occupied_directions: 2
-  # 判断侧面邻箱时允许的最大水平间隙。
+  # 判断侧面邻箱和局部低层前沿时允许的最大水平间隙；等于该值也纳入依赖。
   side_neighbor_clearance_mm: 5.0
   # 判断同高围挡时的顶面高度容差。
   side_height_tolerance_mm: 2.0

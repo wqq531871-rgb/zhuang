@@ -152,6 +152,34 @@ def test_local_egress_blocks_a_protruding_upper_box_in_the_lift_zone():
     )
 
 
+def test_local_egress_includes_the_configured_clearance_boundary():
+    assert approach_geometry_module.local_egress_blocked(
+        corridor_rect=(105, 205, 0, 100),
+        lower_top=100,
+        upper_rect=(0, 100, 0, 100),
+        upper_z_min=100,
+        upper_z_max=220,
+        offset_x=0,
+        offset_y=0,
+        xy_clearance=5,
+        height_tolerance=2,
+    )
+
+
+def test_local_egress_excludes_a_gap_beyond_configured_clearance():
+    assert not approach_geometry_module.local_egress_blocked(
+        corridor_rect=(105.01, 205.01, 0, 100),
+        lower_top=100,
+        upper_rect=(0, 100, 0, 100),
+        upper_z_min=100,
+        upper_z_max=220,
+        offset_x=0,
+        offset_y=0,
+        xy_clearance=5,
+        height_tolerance=2,
+    )
+
+
 def test_local_egress_allows_an_upper_box_at_the_same_surface_height():
     assert not approach_geometry_module.local_egress_blocked(
         corridor_rect=(100, 200, 100, 200),
@@ -181,10 +209,21 @@ def test_local_egress_allows_a_distant_protruding_upper_box():
 
 
 def test_local_egress_checks_the_directional_exit_sweep():
+    assert not approach_geometry_module.local_egress_blocked(
+        corridor_rect=(100, 200, 100, 200),
+        lower_top=100,
+        upper_rect=(210, 220, 210, 220),
+        upper_z_min=100,
+        upper_z_max=220,
+        offset_x=0,
+        offset_y=0,
+        xy_clearance=5,
+        height_tolerance=2,
+    )
     assert approach_geometry_module.local_egress_blocked(
         corridor_rect=(100, 200, 100, 200),
         lower_top=100,
-        upper_rect=(205, 220, 205, 220),
+        upper_rect=(210, 220, 210, 220),
         upper_z_min=100,
         upper_z_max=220,
         offset_x=35,
@@ -1254,6 +1293,69 @@ def test_public_planner_uses_one_directed_wave_for_bases_and_supported_boxes():
     ]
 
 
+def test_height_egress_finishes_a_clearance_adjacent_base_before_upper():
+    boxes = [
+        _box("adjacent_base", 105, 0, 0),
+        _box("origin_upper", 0, 0, 100),
+        _box("origin_base", 0, 0, 0),
+    ]
+
+    ordered = sequence_pallet_items(
+        _pallet(boxes),
+        ExecutionSequenceConfig(
+            approach_offset_x_mm=0.0,
+            approach_offset_y_mm=0.0,
+            approach_suction_xy_clearance_mm=0.0,
+            side_neighbor_clearance_mm=5.0,
+            preserve_open_direction=False,
+            max_occupied_directions=4,
+        ),
+    )
+
+    assert _ids(ordered) == [
+        "origin_base",
+        "adjacent_base",
+        "origin_upper",
+    ]
+
+
+def test_height_egress_uses_box_frontier_when_suction_is_inset():
+    boxes = [
+        _box(
+            "adjacent_base",
+            105,
+            0,
+            0,
+            cup_rect={
+                "x_min": 130,
+                "x_max": 180,
+                "y_min": 25,
+                "y_max": 75,
+            },
+        ),
+        _box("origin_upper", 0, 0, 100),
+        _box("origin_base", 0, 0, 0),
+    ]
+
+    ordered = sequence_pallet_items(
+        _pallet(boxes),
+        ExecutionSequenceConfig(
+            approach_offset_x_mm=0.0,
+            approach_offset_y_mm=0.0,
+            approach_suction_xy_clearance_mm=0.0,
+            side_neighbor_clearance_mm=5.0,
+            preserve_open_direction=False,
+            max_occupied_directions=4,
+        ),
+    )
+
+    assert _ids(ordered) == [
+        "origin_base",
+        "adjacent_base",
+        "origin_upper",
+    ]
+
+
 def test_height_egress_does_not_delay_an_equal_top_far_column():
     boxes = [
         _box("diagonal_base", 100, 100, 0, height=200),
@@ -1286,10 +1388,10 @@ def test_height_egress_does_not_delay_an_equal_top_far_column():
 def test_height_egress_adds_an_edge_for_directional_exit_only():
     lower = _box("lower", 0, 0, 0)
     upper_base = _box(
-        "upper_base", 105, 105, 0, length=15, width=15
+        "upper_base", 110, 110, 0, length=15, width=15
     )
     upper = _box(
-        "upper", 105, 105, 100, length=15, width=15, height=120
+        "upper", 110, 110, 100, length=15, width=15, height=120
     )
     items = [lower, upper_base, upper]
     edges, indegree, supports = sequence_planner_module._support_edges(

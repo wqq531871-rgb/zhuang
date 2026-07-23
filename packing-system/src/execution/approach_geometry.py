@@ -227,6 +227,27 @@ def _strict_axis_overlap(
     )
 
 
+def _inclusive_axis_overlap(
+    first_min: float,
+    first_max: float,
+    second_min: float,
+    second_max: float,
+    clearance: float,
+    tolerance: float,
+) -> bool:
+    clearance_lower = _checked_subtract(
+        _checked_subtract(second_min, clearance, "clearance lower bound"),
+        tolerance,
+        "tolerant clearance lower bound",
+    )
+    clearance_upper = _checked_add(
+        _checked_add(second_max, clearance, "clearance upper bound"),
+        tolerance,
+        "tolerant clearance upper bound",
+    )
+    return first_max >= clearance_lower and first_min <= clearance_upper
+
+
 def preposition_descent_blocked(
     path: MovingRectPath,
     blocker_rect: Iterable[float],
@@ -379,14 +400,14 @@ def local_egress_blocked(
     if upper_z_max <= height_limit:
         return False
 
-    local_hit = _strict_axis_overlap(
+    local_hit = _inclusive_axis_overlap(
         corridor_rect[0],
         corridor_rect[1],
         upper_rect[0],
         upper_rect[1],
         xy_clearance,
         tolerance,
-    ) and _strict_axis_overlap(
+    ) and _inclusive_axis_overlap(
         corridor_rect[2],
         corridor_rect[3],
         upper_rect[2],
