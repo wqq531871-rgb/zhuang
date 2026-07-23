@@ -43,6 +43,7 @@ get_success_box_repo = _impl.get_success_box_repo
 load_database_config = _impl.load_database_config
 load_database_config_from_yaml = _impl.load_database_config_from_yaml
 persist_success_boxes = _impl.persist_success_boxes
+persist_success_boxes_from_plan_file = _impl.persist_success_boxes_from_plan_file
 
 __all__ = [
     "IS_SEND_UNSENT",
@@ -55,4 +56,5 @@ __all__ = [
     "load_database_config",
     "load_database_config_from_yaml",
     "persist_success_boxes",
+    "persist_success_boxes_from_plan_file",
 ]

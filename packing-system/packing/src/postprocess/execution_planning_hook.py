@@ -195,6 +195,7 @@ def run_execution_planning_for_plan(
         )
     except OSError as exc:
         log(f"[执行规划] 启动失败：{exc}")
+        _persist_original_plan_to_db(plan_path, config_path, log)
         return fallback
 
     for stream in (completed.stdout, completed.stderr):
@@ -205,9 +206,11 @@ def run_execution_planning_for_plan(
 
     if completed.returncode != 0:
         log(f"[执行规划] 失败，退出码：{completed.returncode}；使用原方案。")
+        _persist_original_plan_to_db(plan_path, config_path, log)
         return fallback
     if not _complete_fresh_bundle(execution_paths, before):
         log("[执行规划] 未生成完整且有效的执行文件；使用原方案。")
+        _persist_original_plan_to_db(plan_path, config_path, log)
         return fallback
 
     log(f"[执行规划] 完成；统一使用：{execution_report}")
@@ -217,3 +220,35 @@ def run_execution_planning_for_plan(
         wcs_output,
         wcs_map_output,
     )
+
+
+def _persist_original_plan_to_db(
+    plan_path: Path,
+    config_path: Path,
+    log: Callable[[str], None],
+) -> None:
+    """执行规划失败时，把原装箱结果写入 wcs_success_box，保证仍可下传。"""
+    try:
+        # UI 以 packing/ 为 src 根；实现位于 packing-system/src
+        from src.service.success_box_db import persist_success_boxes_from_plan_file
+    except ImportError:
+        try:
+            system_root = packing_system_root_from_here()
+            root_s = str(system_root)
+            if root_s not in sys.path:
+                sys.path.insert(0, root_s)
+            from src.service.success_box_db import (  # type: ignore
+                persist_success_boxes_from_plan_file,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log(f"[WCS-DB] 回退入库不可用：{exc}")
+            return
+    try:
+        n = persist_success_boxes_from_plan_file(
+            plan_path, config_path=config_path
+        )
+        log(
+            f"[WCS-DB] 执行规划失败，已用原方案入库（影响行数 {n}）：{plan_path.name}"
+        )
+    except Exception as exc:  # noqa: BLE001
+        log(f"[WCS-DB] 原方案入库失败（不影响可视化）：{exc}")

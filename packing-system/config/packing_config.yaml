@@ -125,15 +125,15 @@ data_source:
   mode: api
   # TODO(真实接口开关/后端调试): true=用 api_base_url，失败则整服务停止；
   #   false=用 api_fallback_url（Postman）。仅改本配置，无界面开关。
-  use_real_api: false
+  use_real_api: true
   # TODO(现场接口根地址): 真实 WCS「协议+IP/域名+端口」，到现场改成正式地址。
   api_base_url: http://10.222.10.1:8092
   # TODO(备用 Mock 地址): use_real_api=false 时使用；换成你的 Postman Mock 根地址。
   api_fallback_url: https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io
   # TODO(接口1 path): 库存拉取路径，拼在根地址后。
-  stock_path: adapter/api/wcs/reqstockinfo
+  stock_path: api/wcs/reqstockinfo
   # TODO(接口2 path): 规划结果推送路径，拼在根地址后（注意：/api/wcs/...，不是 /adaptor/...）。
-  plan_path: adapter/api/wcs/sendpalletplanresult
+  plan_path: api/wcs/sendpalletplanresult
   # TODO(拉取间隔): 接口1 轮询间隔（秒）。UI「拉取间隔」可改，写入本次临时配置后生效。
   download_interval: 200
   input_dir: input

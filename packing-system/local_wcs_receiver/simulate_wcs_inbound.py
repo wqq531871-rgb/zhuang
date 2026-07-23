@@ -8,7 +8,7 @@
 
 用法（先启动 local_wcs_receiver）::
 
-  python simulate_wcs_inbound.py
+  python simulate_wcs_inbound.pysimulate_wcs_inbound
   python simulate_wcs_inbound.py --interval 60
   python simulate_wcs_inbound.py --box-unique-id <id>
   python simulate_wcs_inbound.py --dry-run
