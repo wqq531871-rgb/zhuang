@@ -61,6 +61,22 @@ def _ensure_packing_system_import() -> Path:
     return root
 
 
+def _record_selected_pallet(
+    settings: ReceiverSettings, body: Dict[str, Any]
+) -> Dict[str, Any]:
+    """接口3：记录 WCS 选定托盘，供三维整盘模拟。"""
+    _ensure_packing_system_import()
+    from src.service.live_stack_bridge import write_selected_pallet_session
+
+    session = write_selected_pallet_session(
+        box_unique_id=str(body.get("box_unique_id") or ""),
+        order_id=str(body.get("order_id") or ""),
+        robot_id=str(body.get("robot_id") or ""),
+        source="sendcasetask",
+    )
+    return {"session": {"ok": True, **session}}
+
+
 def _run_rotation_judge(
     settings: ReceiverSettings, body: Dict[str, Any]
 ) -> Dict[str, Any]:
@@ -96,13 +112,19 @@ def handle_sendcasetask(
 ) -> Dict[str, Any]:
     required = ["robot_id", "box_unique_id", "order_id"]
     missing = _missing_fields(body, required)
+    data: Dict[str, Any] = {}
     if missing and settings.strict_validation:
         resp = fail(1, f"missing fields: {', '.join(missing)}")
     else:
-        # TODO(P1): lookup_plan_map=true 时按 box_unique_id 查 wcs_plan_map 并填 data
         if missing:
             print(f"[WARN] sendcasetask 缺少字段 {missing}，strict_validation=false 仍回成功")
-        resp = ok({})
+        # 接口3：WCS 选定托盘 → 写现场会话，三维可整盘加载（不必等接口4）
+        try:
+            data = _record_selected_pallet(settings, body)
+        except Exception as exc:
+            print(f"[接口3-会话] 写入失败：{exc}")
+            data = {"session": {"ok": False, "error": str(exc)}}
+        resp = ok(data)
     log_request(
         log_dir=settings.log_dir,
         save_requests=settings.save_requests,

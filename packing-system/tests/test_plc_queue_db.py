@@ -28,3 +28,32 @@ def test_build_plc_command_from_box_row():
     assert cmd["dbw12_state"] == 2
     assert cmd["dbw16_seq"] == 3
     assert cmd["box_unique_id"] == "abc"
+
+
+def test_stub_send_rejects_out_of_order(monkeypatch):
+    from src.service import plc_queue_db as mod
+
+    class FakeRepo:
+        def get_by_id(self, queue_id):
+            return {
+                "id": queue_id,
+                "box_unique_id": "uid1",
+                "seq": 2,
+                "status": "pending",
+                "state": 1,
+                "command": {},
+            }
+
+        def next_required_seq(self, box_unique_id):
+            assert box_unique_id == "uid1"
+            return 1
+
+        def mark_sent_stub(self, queue_id, note=""):
+            raise AssertionError("不应发送乱序箱")
+
+    monkeypatch.setattr(mod, "load_database_config_from_yaml", lambda *a, **k: object())
+    monkeypatch.setattr(mod, "WcsPlcQueueRepository", lambda cfg: FakeRepo())
+    result = mod.stub_send_plc_command(99)
+    assert result["ok"] is False
+    assert result["reason"] == "out_of_order"
+    assert result["required_seq"] == 1

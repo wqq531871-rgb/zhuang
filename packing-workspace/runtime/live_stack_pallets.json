@@ -1,0 +1,12 @@
+[
+  {
+    "box_unique_id": "2140840e24e7445aaf404a3921d5c29c",
+    "order_id": "PAIN25450MN01S",
+    "robot_id": "001",
+    "plan_path": "E:\\Homework\\AA装箱\\A装箱和可视化\\zhuang\\packing-workspace\\output\\success\\wcs_plan_map_20260724_013331.json",
+    "source": "sendcasetask",
+    "updated_at": "2026-07-24 01:35:15",
+    "stack_status": "active",
+    "received_at": "2026-07-24 01:35:15"
+  }
+]

@@ -1,0 +1,90 @@
+[LOG] 后端日志文件：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\logs\backend_20260724_013320.log
+[LOG] 接口模式：每 200 秒拉取并计算，直到手动停止。
+[CMD] D:\ProgramData\anaconda3\python.exe E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\packing\run_wcs_service.py --config E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260724_013320.yaml --run-mode continuous
+[WCS] 已加载 BMS 参考表：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+============================================================
+WCS 接口装箱服务（DB 模式）
+  接口模式：Postman 备用（use_real_api=False）
+  接口地址：https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io
+  接口1：https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io/adapter/api/wcs/reqstockinfo
+  接口2：https://3c3758c8-755a-499e-b580-76afda706e5e.mock.pstmn.io/adapter/api/wcs/sendpalletplanresult
+  拉取间隔：200 秒（仅拉取）
+  原始 JSON：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\input\raw
+  数据库：localhost:3306/zhuangdb 表 wcs_stock_box
+  BMS 参考：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+  输出目录：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output
+  触发：仅「新插入」开算；达标回写 up_to_standard=1
+  约束配置：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260724_013320.yaml
+  按 Ctrl+C 或由 UI 停止按钮结束进程
+============================================================
+============================================================
+[WCS-拉] 20260724_013325：拉取接口 1 …
+[WCS-装] 等待数据库新插入（有新 product_code 才开算）…
+[WCS-拉] 原始响应已保存：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\input\raw\20260724_013325.json
+[WCS-拉] 库存品类数：32（均为 MH423C）
+[WCS-拉] 落库完成：候选 32 条，新插入 22 条（新行 up_to_standard=0）。
+[WCS-拉] 有新插入 → 唤醒装箱线程。
+[WCS] 已加载 BMS 参考表：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+============================================================
+[WCS-装] 20260724_013331：未达标行 22 条，开始装箱 …
+[WCS-装] 展开为 466 个箱子。
+数据预处理和箱子分组完成（按托盘类型+销售订单号）。
+----------------------------------------
+正在处理托盘类型：MH423C，销售订单号：PAIN25450MN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 6 实例，实装成功 6，失败回兜底 0；达标 6，直接采用配方方案（基线未跑，--safe 可审计对比）。
+  - 指数诊断：箱子 433 个，总指数 3296，目标 192，理论最多达标托盘 17 个，剩余指数 32。
+  - 几何诊断：典型整层堆叠单盘参考上限 192/192。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PAIN25450MN01S）处理完成：总托盘 21，指数达标 6，未达标 15，平均缺口 49.07，最大缺口 112.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/1/14，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=4.31s，main_topup=0.07s，retry=0.00s，failed_pool=0.95s，repack=19.41s，total=23.81s。
+正在处理托盘类型：MH423C，销售订单号：PAIN25450MZ06S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 23 个，总指数 297，目标 192，理论最多达标托盘 1 个，剩余指数 105。
+  - 几何诊断：典型整层堆叠单盘参考上限 121/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 121 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PAIN25450MZ06S）处理完成：总托盘 3，指数达标 0，未达标 3，平均缺口 93.00，最大缺口 164.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/3，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.05s，main_topup=0.00s，retry=0.00s，failed_pool=0.19s，repack=0.35s，total=0.41s。
+正在处理托盘类型：MH423C，销售订单号：PAIN25460MN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 10 个，总指数 82，目标 192，理论最多达标托盘 0 个，剩余指数 82。
+  - 几何诊断：典型整层堆叠单盘参考上限 42/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 42 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN25460MN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 110.00，最大缺口 110.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.05s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.05s。
+========================================
+统计汇总：总托盘 25，指数达标 6，未达标 19，未知 0，平均缺口 59.21，最大缺口 164.00，失败托盘互借修复成功 0
+KPI汇总：near/mid/deep=0/1/18，pair尝试=0，pair改进=0，pair效率=0.00%
+耗时汇总：packing=4.42s，main_topup=0.07s，retry=0.00s，repack=19.76s，end_to_end=24.27s
+========================================
+[WCS-装] SUCCESS 产品码 6 个，DB 更新达标 6 行；FAILED 盘 19 个保持未达标。
+[WCS-装] 本轮结束；等待下一次「新插入」再开算。
+[WCS-装] 达标方案已保存：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_20260724_013331.json
+[WCS-装] 未达标方案已保存：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\fail\packing_plan_20260724_013331.json
+[执行规划] 产物目录：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success（success）
+[执行规划] 开始：D:\ProgramData\anaconda3\python.exe E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\run_execution_planning.py E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_20260724_013331.json --config E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260724_013320.yaml --output E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_20260724_013331_execution.json --wcs-output E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_20260724_013331_execution_wcs.json --wcs-map-output E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_20260724_013331_execution_wcs_map.json
+[WCS-DB] wcs_success_box：本批候选 166 行，写入影响 166（含已存在跳过）。
+[WCS-DB] wcs_box_orientation：本批候选 166 行，写入影响 166（含已存在跳过）。
+execution plan written: pallets=6 boxes=166 reordered_pallets=6 path=E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_20260724_013331_execution.json
+WCS execution cases written: E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_20260724_013331_execution_wcs.json
+WCS execution plan map written: E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_20260724_013331_execution_wcs_map.json
+execution scan deviations pallet='MH423C-PAIN25450MN01S-4' count=8: expected='WCS-0011-YZX522-0000' selected='WCS-0012-YZX448-0004' box='WCS-0011-YZX522-0000' after='WCS-0012-YZX448-0004' reason=hard_dependency; expected='WCS-0011-YZX522-0002' selected='WCS-0012-YZX448-0012' box='WCS-0011-YZX522-0002' after='WCS-0012-YZX448-0012' reason=hard_dependency; expected='WCS-0011-YZX522-0001' selected='WCS-0012-YZX448-0014' box='WCS-0011-YZX522-0001' after='WCS-0012-YZX448-0014' reason=hard_dependency; expected='WCS-0011-YZX522-0003' selected='WCS-0012-YZX448-0011' box='WCS-0011-YZX522-0003' after='WCS-0012-YZX448-0011' reason=hard_dependency; expected='WCS-0011-YZX522-0004' selected='WCS-0012-YZX448-0020' box='WCS-0011-YZX522-0004' after='WCS-0012-YZX448-0020' reason=hard_dependency; expected='WCS-0011-YZX522-0005' selected='WCS-0012-YZX448-0022' box='WCS-0011-YZX522-0005' after='WCS-0012-YZX448-0022' reason=hard_dependency; expected='WCS-0011-YZX522-0006' selected='WCS-0012-YZX448-0024' box='WCS-0011-YZX522-0006' after='WCS-0012-YZX448-0024' reason=hard_dependency; expected='WCS-0011-YZX522-0007' selected='WCS-0011-YZX522-0014' box='WCS-0011-YZX522-0007' after='WCS-0011-YZX522-0014' reason=hard_dependency
+execution scan deviations pallet='MH423C-PAIN25450MN01S-5' count=6: expected='WCS-0004-ZX222-0024' selected='WCS-0000-YZX512-0001' box='WCS-0004-ZX222-0024' after='WCS-0000-YZX512-0001' reason=hard_dependency; expected='WCS-0004-ZX222-0026' selected='WCS-0000-YZX512-0004' box='WCS-0004-ZX222-0026' after='WCS-0000-YZX512-0004' reason=hard_dependency; expected='WCS-0004-ZX222-0025' selected='WCS-0000-YZX512-0003' box='WCS-0004-ZX222-0025' after='WCS-0000-YZX512-0003' reason=hard_dependency; expected='WCS-0004-ZX222-0027' selected='WCS-0000-YZX512-0007' box='WCS-0004-ZX222-0027' after='WCS-0000-YZX512-0007' reason=hard_dependency; expected='WCS-0004-ZX222-0030' selected='WCS-0005-ZX224-0024' box='WCS-0004-ZX222-0030' after='WCS-0005-ZX224-0024' reason=hard_dependency; expected='WCS-0004-ZX222-0031' selected='WCS-0005-ZX224-0025' box='WCS-0004-ZX222-0031' after='WCS-0005-ZX224-0025' reason=hard_dependency
+execution scan deviations pallet='MH423C-PAIN25450MN01S-6' count=7: expected='WCS-0011-YZX522-0016' selected='WCS-0006-DZX848-0001' box='WCS-0011-YZX522-0016' after='WCS-0006-DZX848-0001' reason=hard_dependency; expected='WCS-0011-YZX522-0018' selected='WCS-0012-YZX448-0041' box='WCS-0011-YZX522-0018' after='WCS-0012-YZX448-0041' reason=hard_dependency; expected='WCS-0012-YZX448-0034' selected='WCS-0012-YZX448-0048' box='WCS-0012-YZX448-0034' after='WCS-0012-YZX448-0048' reason=hard_dependency; expected='WCS-0011-YZX522-0017' selected='WCS-0012-YZX448-0050' box='WCS-0011-YZX522-0017' after='WCS-0012-YZX448-0050' reason=hard_dependency; expected='WCS-0011-YZX522-0019' selected='WCS-0011-YZX522-0025' box='WCS-0011-YZX522-0019' after='WCS-0011-YZX522-0025' reason=hard_dependency; expected='WCS-0011-YZX522-0021' selected='WCS-0011-YZX522-0027' box='WCS-0011-YZX522-0021' after='WCS-0011-YZX522-0027' reason=hard_dependency; expected='WCS-0011-YZX522-0023' selected='WCS-0012-YZX448-0055' box='WCS-0011-YZX522-0023' after='WCS-0012-YZX448-0055' reason=hard_dependency
+execution scan deviations pallet='MH423C-PAIN25450MN01S-4' count=8: expected='WCS-0011-YZX522-0000' selected='WCS-0012-YZX448-0004' box='WCS-0011-YZX522-0000' after='WCS-0012-YZX448-0004' reason=hard_dependency; expected='WCS-0011-YZX522-0002' selected='WCS-0012-YZX448-0012' box='WCS-0011-YZX522-0002' after='WCS-0012-YZX448-0012' reason=hard_dependency; expected='WCS-0011-YZX522-0001' selected='WCS-0012-YZX448-0014' box='WCS-0011-YZX522-0001' after='WCS-0012-YZX448-0014' reason=hard_dependency; expected='WCS-0011-YZX522-0003' selected='WCS-0012-YZX448-0011' box='WCS-0011-YZX522-0003' after='WCS-0012-YZX448-0011' reason=hard_dependency; expected='WCS-0011-YZX522-0004' selected='WCS-0012-YZX448-0020' box='WCS-0011-YZX522-0004' after='WCS-0012-YZX448-0020' reason=hard_dependency; expected='WCS-0011-YZX522-0005' selected='WCS-0012-YZX448-0022' box='WCS-0011-YZX522-0005' after='WCS-0012-YZX448-0022' reason=hard_dependency; expected='WCS-0011-YZX522-0006' selected='WCS-0012-YZX448-0024' box='WCS-0011-YZX522-0006' after='WCS-0012-YZX448-0024' reason=hard_dependency; expected='WCS-0011-YZX522-0007' selected='WCS-0011-YZX522-0014' box='WCS-0011-YZX522-0007' after='WCS-0011-YZX522-0014' reason=hard_dependency
+execution scan deviations pallet='MH423C-PAIN25450MN01S-5' count=6: expected='WCS-0004-ZX222-0024' selected='WCS-0000-YZX512-0001' box='WCS-0004-ZX222-0024' after='WCS-0000-YZX512-0001' reason=hard_dependency; expected='WCS-0004-ZX222-0026' selected='WCS-0000-YZX512-0004' box='WCS-0004-ZX222-0026' after='WCS-0000-YZX512-0004' reason=hard_dependency; expected='WCS-0004-ZX222-0025' selected='WCS-0000-YZX512-0003' box='WCS-0004-ZX222-0025' after='WCS-0000-YZX512-0003' reason=hard_dependency; expected='WCS-0004-ZX222-0027' selected='WCS-0000-YZX512-0007' box='WCS-0004-ZX222-0027' after='WCS-0000-YZX512-0007' reason=hard_dependency; expected='WCS-0004-ZX222-0030' selected='WCS-0005-ZX224-0024' box='WCS-0004-ZX222-0030' after='WCS-0005-ZX224-0024' reason=hard_dependency; expected='WCS-0004-ZX222-0031' selected='WCS-0005-ZX224-0025' box='WCS-0004-ZX222-0031' after='WCS-0005-ZX224-0025' reason=hard_dependency
+execution scan deviations pallet='MH423C-PAIN25450MN01S-6' count=7: expected='WCS-0011-YZX522-0016' selected='WCS-0006-DZX848-0001' box='WCS-0011-YZX522-0016' after='WCS-0006-DZX848-0001' reason=hard_dependency; expected='WCS-0011-YZX522-0018' selected='WCS-0012-YZX448-0041' box='WCS-0011-YZX522-0018' after='WCS-0012-YZX448-0041' reason=hard_dependency; expected='WCS-0012-YZX448-0034' selected='WCS-0012-YZX448-0048' box='WCS-0012-YZX448-0034' after='WCS-0012-YZX448-0048' reason=hard_dependency; expected='WCS-0011-YZX522-0017' selected='WCS-0012-YZX448-0050' box='WCS-0011-YZX522-0017' after='WCS-0012-YZX448-0050' reason=hard_dependency; expected='WCS-0011-YZX522-0019' selected='WCS-0011-YZX522-0025' box='WCS-0011-YZX522-0019' after='WCS-0011-YZX522-0025' reason=hard_dependency; expected='WCS-0011-YZX522-0021' selected='WCS-0011-YZX522-0027' box='WCS-0011-YZX522-0021' after='WCS-0011-YZX522-0027' reason=hard_dependency; expected='WCS-0011-YZX522-0023' selected='WCS-0012-YZX448-0055' box='WCS-0011-YZX522-0023' after='WCS-0012-YZX448-0055' reason=hard_dependency
+[执行规划] 完成；统一使用：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_20260724_013331_execution.json
+[WCS-装] 接口 2 使用执行顺序方案，发送体已保存：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\wcs_plan_20260724_013331.json（6 个 case）
+[WCS-装] 执行顺序方案执行层映射已保存：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\wcs_plan_map_20260724_013331.json
+[WCS-装] 已跳过接口 2 推送（仅本地保存）。
+[UI-RESULT] E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_20260724_013331_execution.json
+[WCS-装] 等待数据库新插入（有新 product_code 才开算）…
+[UI] 接口装箱服务已停止。

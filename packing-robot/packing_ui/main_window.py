@@ -34,7 +34,14 @@ from .data import (
     load_plan_file,
 )
 from .integration import CameraBoxData, parse_camera_payload
-from .live_command import default_command_path, read_live_command
+from .live_command import (
+    default_command_path,
+    default_history_path,
+    default_session_path,
+    ensure_history_seeded,
+    read_live_command,
+    read_live_session,
+)
 from .playback import PlaybackController, PlaybackPanel
 from .plc_launcher import launch_plc_ui
 from .state_repository import MySqlConfig, ProductState
@@ -72,8 +79,12 @@ class PackingMainWindow(QMainWindow):
         self._state_sync_worker: StateSyncWorker | None = None
         self._close_after_state_sync = False
         self._command_file = Path(command_file) if command_file else default_command_path()
+        self._session_file = default_session_path()
+        self._history_file = default_history_path()
         self._last_command_id = ""
         self._loaded_plan_path: Path | None = None
+        self._live_pallet_uid = ""
+        self._wcs_history: list[dict[str, Any]] = []
 
         self.playback_controller = PlaybackController(self)
         self.playback_panel = PlaybackPanel(self.playback_controller)
@@ -87,19 +98,31 @@ class PackingMainWindow(QMainWindow):
         splitter.setSizes([360, 1020, 330])
         self.setCentralWidget(splitter)
         self._apply_style()
-        self.statusBar().showMessage("请选择装箱算法 JSON 文件")
+        self.statusBar().showMessage("等待现场选定托盘（接口3），或手动导入方案 JSON")
 
         self._command_timer = QTimer(self)
         self._command_timer.setInterval(500)
         self._command_timer.timeout.connect(self._poll_live_command)
         self._command_timer.start()
 
-        if initial_plan:
-            self.load_path(initial_plan)
-        elif autoload:
-            samples = sorted(Path.cwd().glob("wcs_plan_map_*.json"))
-            if samples:
-                self.load_path(samples[0])
+        # 优先按接口3历史加载（含已完成托盘）；无历史再回退到会话/样例
+        try:
+            if self.apply_wcs_history():
+                pass
+            elif initial_plan:
+                self.load_path(initial_plan)
+            elif autoload:
+                samples = sorted(Path.cwd().glob("wcs_plan_map_*.json"))
+                if samples:
+                    self.load_path(samples[0])
+        except Exception as exc:  # noqa: BLE001
+            self.statusBar().showMessage(f"加载现场托盘失败：{exc}")
+            if initial_plan:
+                self.load_path(initial_plan)
+            elif autoload:
+                samples = sorted(Path.cwd().glob("wcs_plan_map_*.json"))
+                if samples:
+                    self.load_path(samples[0])
 
     def _build_left_panel(self) -> QWidget:
         panel = QWidget()
@@ -129,13 +152,13 @@ class PackingMainWindow(QMainWindow):
         form.setVerticalSpacing(10)
         form.addRow("指标状态", self.status_combo)
         form.addRow("托盘类型", self.type_combo)
-        form.addRow("托盘编号", self.pallet_combo)
+        form.addRow("托盘", self.pallet_combo)
         form.addRow("订单编号", self.order_label)
         form.addRow("所选箱传送带姿态", self.orientation_combo)
         form.addRow("传送带平面 Z", self.conveyor_z_spin)
-        selector_group = QGroupBox("托盘选择")
-        selector_group.setLayout(form)
-        outer.addWidget(selector_group)
+        self.selector_group = QGroupBox("托盘选择")
+        self.selector_group.setLayout(form)
+        outer.addWidget(self.selector_group)
 
         camera_form = QFormLayout()
         self.camera_status_label = QLabel("等待相机数据")
@@ -268,6 +291,9 @@ class PackingMainWindow(QMainWindow):
             self.load_path(path)
 
     def load_path(self, path: str | Path) -> None:
+        self._wcs_history = []
+        if hasattr(self, "selector_group"):
+            self.selector_group.setTitle("托盘选择")
         try:
             self.all_plans = load_plan_file(path)
         except ValueError as exc:
@@ -279,6 +305,14 @@ class PackingMainWindow(QMainWindow):
         self.statusBar().showMessage(
             f"已加载 {len(self.all_plans)} 个托盘方案、{total_items} 个箱子：{Path(path).name}"
         )
+
+    def _merge_plans_from_path(self, path: Path) -> None:
+        plans = load_plan_file(path)
+        by_key = {plan.source_key: plan for plan in self.all_plans}
+        for plan in plans:
+            by_key[plan.source_key] = plan
+        self.all_plans = list(by_key.values())
+        self._loaded_plan_path = path.resolve()
 
     def open_camera_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -321,6 +355,8 @@ class PackingMainWindow(QMainWindow):
         return len(camera_boxes)
 
     def _rebuild_types(self, _index: int | None = None) -> None:
+        if self._wcs_history:
+            return
         self.filtered_plans = filter_plans(self.all_plans, self.status_combo.currentData())
         grouped: dict[str, list[PalletPlan]] = defaultdict(list)
         for plan in self.filtered_plans:
@@ -336,6 +372,8 @@ class PackingMainWindow(QMainWindow):
         self._refresh_pallets(self.type_combo.currentText())
 
     def _refresh_pallets(self, pallet_type: str) -> None:
+        if self._wcs_history:
+            return
         blocker = QSignalBlocker(self.pallet_combo)
         self.pallet_combo.clear()
         for plan in self._plans_by_type.get(pallet_type, []):
@@ -623,24 +661,96 @@ class PackingMainWindow(QMainWindow):
         super().closeEvent(event)
 
     def _poll_live_command(self) -> None:
-        """读取仪表盘写入的现场码垛指令，按箱播放仿真。"""
+        """读取现场指令：load_pallet=整盘加载；play_box=播一箱。"""
         cmd = read_live_command(self._command_file)
         if not cmd:
             return
         cmd_id = str(cmd.get("id") or "").strip()
         if not cmd_id or cmd_id == self._last_command_id:
             return
-        if str(cmd.get("action") or "") != "play_box":
+        action = str(cmd.get("action") or "").strip()
+        if action not in {"load_pallet", "play_box"}:
             return
         self._last_command_id = cmd_id
         try:
-            self.apply_live_play_box(cmd)
+            if action == "load_pallet":
+                self.apply_live_load_pallet(cmd)
+            else:
+                self.apply_live_play_box(cmd)
         except Exception as exc:  # noqa: BLE001 — 现场指令失败只提示
             self.statusBar().showMessage(f"现场码垛指令失败：{exc}")
+
+    def apply_wcs_history(self, prefer_uid: str = "") -> bool:
+        """按接口3历史填充左侧托盘列表（含已完成）。返回是否加载成功。"""
+        history = ensure_history_seeded(self._history_file, self._session_file)
+        if not history:
+            return False
+        loaded_any = False
+        for entry in history:
+            plan_path = entry.get("plan_path")
+            if not plan_path:
+                continue
+            path = Path(str(plan_path))
+            if not path.is_file():
+                continue
+            try:
+                self._merge_plans_from_path(path)
+                loaded_any = True
+            except ValueError:
+                continue
+        if not loaded_any:
+            return False
+        self._fill_wcs_history_combo(history, prefer_uid=prefer_uid)
+        return self.current_plan is not None or self.pallet_combo.count() > 0
+
+    def _fill_wcs_history_combo(
+        self, history: list[dict[str, Any]], prefer_uid: str = ""
+    ) -> None:
+        self._wcs_history = list(history)
+        if hasattr(self, "selector_group"):
+            self.selector_group.setTitle("WCS 请求托盘（接口3）")
+        plans_by_uid = {plan.source_key: plan for plan in self.all_plans}
+        blocker = QSignalBlocker(self.pallet_combo)
+        self.pallet_combo.clear()
+        # 新的在前，便于看当前盘
+        select_index = 0
+        found_prefer = False
+        found_active = False
+        for entry in reversed(history):
+            uid = str(entry.get("box_unique_id") or "").strip()
+            plan = plans_by_uid.get(uid)
+            if plan is None:
+                continue
+            status = str(entry.get("stack_status") or "active")
+            tag = "进行中" if status == "active" else "已完成"
+            order = str(
+                entry.get("order_id") or plan.sales_order_no or uid[:8] or "—"
+            )
+            label = f"{order} · {tag}"
+            idx = self.pallet_combo.count()
+            self.pallet_combo.addItem(label, plan)
+            if prefer_uid and uid == prefer_uid:
+                select_index = idx
+                found_prefer = True
+            elif not found_prefer and not found_active and status == "active":
+                select_index = idx
+                found_active = True
+        del blocker
+        if self.pallet_combo.count() <= 0:
+            return
+        self.pallet_combo.setCurrentIndex(select_index)
+        self._select_current_plan()
 
     def select_plan_by_unique_id(self, box_unique_id: str) -> bool:
         uid = str(box_unique_id or "").strip()
         if not uid:
+            return False
+        if self._wcs_history:
+            for i in range(self.pallet_combo.count()):
+                data = self.pallet_combo.itemData(i)
+                if isinstance(data, PalletPlan) and data.source_key == uid:
+                    self.pallet_combo.setCurrentIndex(i)
+                    return True
             return False
         for plan in self.all_plans:
             if plan.source_key == uid:
@@ -653,6 +763,54 @@ class PackingMainWindow(QMainWindow):
                         self.pallet_combo.setCurrentIndex(i)
                         return True
         return False
+
+    def apply_live_load_pallet(self, cmd: dict[str, Any]) -> None:
+        """现场选定托盘后：刷新接口3历史并切到该盘，可直接播放。"""
+        prefer_uid = str(cmd.get("box_unique_id") or "").strip()
+        # 指令带来的 plan_path 先并入，再刷历史列表
+        plan_path = cmd.get("plan_path")
+        if plan_path:
+            path = Path(str(plan_path))
+            if path.is_file():
+                try:
+                    self._merge_plans_from_path(path)
+                except ValueError as exc:
+                    raise ValueError(str(exc)) from exc
+
+        if not self.apply_wcs_history(prefer_uid=prefer_uid):
+            # 无历史文件时退回单盘加载
+            if plan_path:
+                path = Path(str(plan_path))
+                if path.is_file():
+                    self.load_path(path)
+            all_idx = self.status_combo.findData("ALL")
+            if all_idx >= 0 and self.status_combo.currentData() != "ALL":
+                self.status_combo.setCurrentIndex(all_idx)
+            if prefer_uid and not self.select_plan_by_unique_id(prefer_uid):
+                raise ValueError(f"方案中找不到托盘：{prefer_uid}")
+
+        if prefer_uid and not self.select_plan_by_unique_id(prefer_uid):
+            raise ValueError(f"方案中找不到托盘：{prefer_uid}")
+        if self.current_plan is None:
+            raise ValueError("尚未加载托盘方案")
+
+        self._live_pallet_uid = prefer_uid or self.current_plan.source_key
+        order = str(cmd.get("order_id") or self.current_plan.sales_order_no or "")
+        n = len(self.current_plan.items)
+        hist_n = len(self._wcs_history) if self._wcs_history else 1
+        self.setWindowTitle(
+            f"现场码垛演示 — 订单 {order or '—'}（共 {n} 箱）"
+        )
+        self.playback_controller.reset()
+        self.box_list.setCurrentRow(0)
+        self.statusBar().showMessage(
+            f"已加载现场托盘：订单 {order or '—'}，共 {n} 箱；"
+            f"左侧共 {hist_n} 盘（接口3历史，含已完成）。"
+        )
+        if bool(cmd.get("auto_play")):
+            self.playback_controller.play()
+        self.raise_()
+        self.activateWindow()
 
     def apply_live_play_box(self, cmd: dict[str, Any]) -> None:
         """加载方案（如需）→ 选托盘 → 设相机姿态 → 播放该 seq 一箱。"""

@@ -230,6 +230,18 @@ class WcsPlcQueueRepository:
                 item["command"] = {}
             return item
 
+    def next_required_seq(self, box_unique_id: str) -> int:
+        """同一托盘下一条必须下传的 seq（已发送最大序号 + 1，至少为 1）。"""
+        uid = str(box_unique_id or "").strip()
+        with self._cursor() as (_conn, cur):
+            cur.execute(
+                "SELECT COALESCE(MAX(seq), 0) AS m FROM wcs_plc_queue "
+                "WHERE box_unique_id = %s AND status = %s",
+                (uid, STATUS_SENT),
+            )
+            row = cur.fetchone() or {}
+            return int(row.get("m") or 0) + 1
+
     def mark_sent_stub(self, queue_id: int, note: str = "stub_send") -> bool:
         """桩发送：不写 PLC，只标记 sent 并记说明。"""
         with self._cursor() as (_conn, cur):
@@ -323,7 +335,10 @@ def stub_send_plc_command(
     config_path: Optional[Path] = None,
     db_config: Optional[DatabaseConfig] = None,
 ) -> Dict[str, Any]:
-    """界面按钮：桩发送（标记 sent，真正 snap7 以后替换）。"""
+    """确认码放：下传已构造的码放数据并标记 sent（非 snap7 写硬件）。
+
+    强制同一托盘按 seq 升序：只能发「已发送最大序号 + 1」。
+    """
     cfg = db_config or load_database_config_from_yaml(config_path)
     repo = WcsPlcQueueRepository(cfg)
     item = repo.get_by_id(queue_id)
@@ -336,18 +351,32 @@ def stub_send_plc_command(
             "queue_id": queue_id,
             "status": item.get("status"),
         }
-    note = "stub_send: constructed only, no snap7 write"
+    uid = str(item.get("box_unique_id") or "")
+    seq = int(item.get("seq") or 0)
+    required = repo.next_required_seq(uid)
+    if seq != required:
+        return {
+            "ok": False,
+            "reason": "out_of_order",
+            "queue_id": queue_id,
+            "box_unique_id": uid,
+            "seq": seq,
+            "required_seq": required,
+            "message": f"必须按顺序下传：下一箱应为第 {required} 箱，不能先传第 {seq} 箱",
+        }
+    note = "plc_send: data handoff marked sent"
     ok = repo.mark_sent_stub(queue_id, note=note)
     cmd = item.get("command") or {}
     print(
-        f"[PLC-桩发送] id={queue_id} box={item.get('box_unique_id')} "
+        f"[PLC下传] id={queue_id} box={item.get('box_unique_id')} "
         f"seq={item.get('seq')} state={item.get('state')} "
         f"dbw12={cmd.get('dbw12_state')} → {'sent' if ok else 'fail'}"
     )
     return {
         "ok": ok,
-        "reason": "stub_sent" if ok else "update_failed",
+        "reason": "sent" if ok else "update_failed",
         "queue_id": queue_id,
         "command": cmd,
         "note": note,
+        "seq": seq,
     }
