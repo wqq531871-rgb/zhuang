@@ -1,0 +1,6 @@
+numpy>=2,<3
+mysql-connector-python>=8,<10
+PySide6>=6.9,<7
+pyvista>=0.48,<1
+pyvistaqt>=0.12,<1
+pytest>=8,<9

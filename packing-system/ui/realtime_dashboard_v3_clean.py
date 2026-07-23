@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""
+"""
 Industrial Packing Workbench V3 Clean
 
 核心目标：
@@ -15,6 +15,8 @@ Industrial Packing Workbench V3 Clean
 
 启动仪表盘时会自动后台拉起 local_wcs_receiver（局域网接口 3/4/7）；
 关闭窗口时自动停止。配置见 local_wcs_receiver/config/receiver_config.yaml。
+
+可通过顶栏「打开机器人仿真」以独立进程启动同级 packing-robot（PySide6）。
 
 数据目录默认：同级 packing-workspace/（可用 PACKING_WORKSPACE 覆盖）
 """
@@ -88,6 +90,7 @@ try:
         find_latest_json,
         workspace_dir_from_project,
     )
+    from robot_ui_launcher import launch_robot_ui
 except Exception as exc:  # pragma: no cover
     raise RuntimeError(
         "Cannot import realtime_dashboard_v2.py. Keep this file in ui/."
@@ -853,6 +856,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             configured_interval = 200
         self.download_interval = normalize_download_interval(configured_interval)
         self._local_wcs_receiver_proc: Optional[subprocess.Popen] = None
+        self._robot_ui_process: Optional[subprocess.Popen] = None
         super().__init__(project_dir)
         self.setWindowTitle("面向控序混码场景智能装箱规划系统 V3 - 一键装箱 + 结果分析")
         self._write_log("[UI] V3模式：主流程为 选择Excel → 一键装箱；高级算法操作已合并到“算法设置”。")
@@ -959,6 +963,15 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.btn_load_result.setToolTip("手动选择一个 JSON 装箱结果文件并加载显示。")
         self.btn_load_result.clicked.connect(self.load_json_dialog)
         layout.addWidget(self.btn_load_result)
+
+        self.btn_open_robot = QtWidgets.QPushButton("打开机器人仿真")
+        self.btn_open_robot.setObjectName("GhostButton")
+        self.btn_open_robot.setToolTip(
+            "以独立进程打开 packing-robot 三维仿真界面（PySide6）。\n"
+            "已运行时重复点击不会启动第二个实例。"
+        )
+        self.btn_open_robot.clicked.connect(self.open_robot_ui)
+        layout.addWidget(self.btn_open_robot)
 
         self.cmb_result_history = QtWidgets.QComboBox()
         self.cmb_result_history.setObjectName("GhostCombo")
@@ -1433,6 +1446,28 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             return
         self.refresh_result_history(select_path=latest, select_current=False)
         self.on_result_history_changed(self.cmb_result_history.currentIndex())
+
+    def open_robot_ui(self) -> None:
+        """Open packing-robot as a separate process (same pattern as robot→PLC)."""
+        process = getattr(self, "_robot_ui_process", None)
+        if process is not None:
+            try:
+                if process.poll() is None:
+                    self._write_log("[UI] 机器人仿真界面已在运行，不重复启动。")
+                    QtWidgets.QMessageBox.information(
+                        self, "机器人仿真", "机器人仿真界面已经在运行。"
+                    )
+                    return
+            except Exception:
+                self._robot_ui_process = None
+        try:
+            self._robot_ui_process = launch_robot_ui()
+        except (OSError, FileNotFoundError) as exc:
+            self._write_log(f"[UI] 打开机器人仿真失败：{exc}")
+            QtWidgets.QMessageBox.critical(self, "无法打开机器人仿真", str(exc))
+            return
+        pid = getattr(self._robot_ui_process, "pid", "?")
+        self._write_log(f"[UI] 已启动机器人仿真界面（PID {pid}）")
 
     def load_json_dialog(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(

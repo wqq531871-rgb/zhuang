@@ -8,3 +8,9 @@ release/
 packing-system/packaging/build_work/
 packing-system/packaging/*.log
 packing-system/packaging/_detached_build.ps1
+
+# packing-robot runtime / cache
+packing-robot/__pycache__/
+packing-robot/**/__pycache__/
+packing-robot/.pytest_cache/
+packing-robot/robot_actions_*.json
