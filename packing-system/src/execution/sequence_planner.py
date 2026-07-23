@@ -50,12 +50,7 @@ class ExecutionSequenceConfig:
     side_neighbor_clearance_mm: float = 5.0
     side_height_tolerance_mm: float = 2.0
     preserve_open_direction: bool = True
-    prefer_adjacent_occupied_sides: bool = True
     max_sequence_search_seconds_per_pallet: float = 1.0
-    adaptive_staircase_enabled: bool = False
-    staircase_height_difference_threshold_mm: float = 120.0
-    staircase_transition_ratio_threshold: float = 0.25
-    staircase_min_transition_edges: int = 4
     scan_column_tolerance_mm: float = 5.0
 
     def __post_init__(self) -> None:
@@ -73,12 +68,6 @@ class ExecutionSequenceConfig:
             "max_sequence_search_seconds_per_pallet": (
                 self.max_sequence_search_seconds_per_pallet
             ),
-            "staircase_height_difference_threshold_mm": (
-                self.staircase_height_difference_threshold_mm
-            ),
-            "staircase_transition_ratio_threshold": (
-                self.staircase_transition_ratio_threshold
-            ),
             "scan_column_tolerance_mm": self.scan_column_tolerance_mm,
         }
         for name, value in numeric_clearances.items():
@@ -93,13 +82,8 @@ class ExecutionSequenceConfig:
             if numeric < 0:
                 raise ValueError("%s must be non-negative" % name)
             object.__setattr__(self, name, numeric)
-        for name in (
-            "preserve_open_direction",
-            "prefer_adjacent_occupied_sides",
-            "adaptive_staircase_enabled",
-        ):
-            if not isinstance(getattr(self, name), bool):
-                raise ValueError("%s must be a boolean" % name)
+        if not isinstance(self.preserve_open_direction, bool):
+            raise ValueError("preserve_open_direction must be a boolean")
         if (
             isinstance(self.max_occupied_directions, bool)
             or not isinstance(self.max_occupied_directions, int)
@@ -109,18 +93,6 @@ class ExecutionSequenceConfig:
         if self.max_sequence_search_seconds_per_pallet <= 0:
             raise ValueError(
                 "max_sequence_search_seconds_per_pallet must be positive"
-            )
-        if not 0 <= self.staircase_transition_ratio_threshold <= 1:
-            raise ValueError(
-                "staircase_transition_ratio_threshold must be between 0 and 1"
-            )
-        if (
-            isinstance(self.staircase_min_transition_edges, bool)
-            or not isinstance(self.staircase_min_transition_edges, int)
-            or self.staircase_min_transition_edges <= 0
-        ):
-            raise ValueError(
-                "staircase_min_transition_edges must be a positive integer"
             )
 
 
@@ -605,66 +577,47 @@ def _origin_progress(
     return x_progress, y_progress
 
 
-def _scan_keys(
+def _coordinate_ranks(
     geometry: List[Tuple[float, float, float, float, float, float]],
     config: ExecutionSequenceConfig,
     pallet_dims: Dict[str, float],
-    band_keys: Optional[List[object]] = None,
     deadline: Optional[float] = None,
-) -> List[Tuple[int, float, int]]:
-    if band_keys is None:
-        band_keys = [None] * len(geometry)
-    if len(band_keys) != len(geometry):
-        raise ValueError("band_keys must match geometry length")
-    progress = [
-        _origin_progress(entry, config.origin, pallet_dims)
-        for entry in geometry
-    ]
-    column_by_index: Dict[int, int] = {}
-    indices_by_band: Dict[object, List[int]] = {}
-    for idx, band_key in enumerate(band_keys):
+) -> List[Tuple[int, int]]:
+    progress = []
+    for entry in geometry:
         _check_deadline(deadline)
-        indices_by_band.setdefault(band_key, []).append(idx)
-    for band_indices in indices_by_band.values():
-        _check_deadline(deadline)
-        column_rank = -1
-        column_anchor: Optional[float] = None
+        progress.append(_origin_progress(entry, config.origin, pallet_dims))
+
+    ranks_by_axis: List[List[int]] = []
+    for axis in (0, 1):
+        other_axis = 1 - axis
+        ranks = [0] * len(geometry)
+        rank = -1
+        cluster_anchor: Optional[float] = None
         for idx in sorted(
-            band_indices,
-            key=lambda value: (progress[value][0], progress[value][1], value),
+            range(len(geometry)),
+            key=lambda value: (
+                progress[value][axis],
+                progress[value][other_axis],
+                value,
+            ),
         ):
             _check_deadline(deadline)
-            x_progress, _y_progress = progress[idx]
+            coordinate = progress[idx][axis]
             if (
-                column_anchor is None
-                or x_progress - column_anchor
+                cluster_anchor is None
+                or coordinate - cluster_anchor
                 > config.scan_column_tolerance_mm
             ):
-                column_rank += 1
-                column_anchor = x_progress
-            column_by_index[idx] = column_rank
+                rank += 1
+                cluster_anchor = coordinate
+            ranks[idx] = rank
+        ranks_by_axis.append(ranks)
+
     return [
-        (column_by_index[idx], value[1], idx)
-        for idx, value in enumerate(progress)
+        (ranks_by_axis[0][idx], ranks_by_axis[1][idx])
+        for idx in range(len(geometry))
     ]
-
-
-def _geometric_layer_keys(
-    geometry: List[Tuple[float, float, float, float, float, float]],
-    tolerance: float,
-    deadline: Optional[float] = None,
-) -> List[int]:
-    layer_by_index: Dict[int, int] = {}
-    layer = -1
-    layer_anchor: Optional[float] = None
-    for idx in sorted(range(len(geometry)), key=lambda value: geometry[value][2]):
-        _check_deadline(deadline)
-        bottom = geometry[idx][2]
-        if layer_anchor is None or bottom - layer_anchor > tolerance:
-            layer += 1
-            layer_anchor = bottom
-        layer_by_index[idx] = layer
-    return [layer_by_index[idx] for idx in range(len(geometry))]
 
 
 def _side_directions_between(
@@ -747,39 +700,6 @@ def _occupied_from_blocker_map(
         for direction, indices in blockers[target_idx].items()
         if not indices.isdisjoint(present)
     }
-
-
-def _opposite_side_risk(directions: Set[str]) -> int:
-    return int({"x-", "x+"}.issubset(directions)) + int(
-        {"y-", "y+"}.issubset(directions)
-    )
-
-
-def _height_front_risk(
-    target_idx: int,
-    placed: Set[int],
-    geometry: List[Tuple[float, float, float, float, float, float]],
-    config: ExecutionSequenceConfig,
-    side_blockers: List[Dict[str, Set[int]]],
-    deadline: Optional[float] = None,
-) -> Tuple[float, float]:
-    target = geometry[target_idx]
-    target_top = target[2] + target[5]
-    deltas = []
-    neighbor_indices: Set[int] = set()
-    for indices in side_blockers[target_idx].values():
-        _check_deadline(deadline)
-        neighbor_indices.update(indices.intersection(placed))
-    for blocker_idx in neighbor_indices:
-        _check_deadline(deadline)
-        blocker = geometry[blocker_idx]
-        blocker_top = blocker[2] + blocker[5]
-        delta = abs(target_top - blocker_top)
-        if delta > config.side_height_tolerance_mm:
-            deltas.append(delta)
-    if not deltas:
-        return 0.0, 0.0
-    return max(deltas), sum(deltas)
 
 
 def _assert_open_direction_replay(
@@ -1032,307 +952,96 @@ def _stable_forward_order(
     return ordered
 
 
-def _stable_regular_order(
-    items: List[Dict],
-    edges: List[Set[int]],
-    config: ExecutionSequenceConfig,
-    pallet_dims: Dict[str, float],
-    geometry: List[Tuple[float, float, float, float, float, float]],
-    blockers: Optional[List[Dict[str, Set[int]]]],
-    deadline: float,
-    pallet_id=None,
-) -> Optional[List[int]]:
-    layers = _geometric_layer_keys(
-        geometry, config.coordinate_tolerance_mm, deadline=deadline
-    )
-    scan_keys = _scan_keys(
-        geometry,
-        config,
-        pallet_dims,
-        layers,
-        deadline=deadline,
-    )
-    forward_keys = []
-    for idx, scan_key in enumerate(scan_keys):
-        _check_deadline(deadline)
-        forward_keys.append((layers[idx],) + scan_key)
-    return _stable_forward_order(
-        items,
-        edges,
-        config,
-        forward_keys,
-        blockers,
-        deadline,
-        pallet_id,
-    )
-
-
-def _greedy_reverse_order(
-    items: List[Dict],
-    edges: List[Set[int]],
-    config: ExecutionSequenceConfig,
-    pallet_dims: Dict[str, float],
-    geometry: List[Tuple[float, float, float, float, float, float]],
-    blockers: List[Dict[str, Set[int]]],
-    side_blockers: List[Dict[str, Set[int]]],
-    deadline: float,
-) -> Optional[List[int]]:
-    """Compatibility wrapper for the former reverse-greedy helper."""
-
-    del side_blockers
-    return _stable_regular_order(
-        items,
-        edges,
-        config,
-        pallet_dims,
-        geometry,
-        blockers,
-        deadline,
-    )
-
-
-def _classify_staircase_wave(
-    geometry: List[Tuple[float, float, float, float, float, float]],
-    config: ExecutionSequenceConfig,
-    deadline: Optional[float] = None,
-) -> Tuple[bool, Optional[float], int, int, float]:
-    if not config.adaptive_staircase_enabled:
-        return False, None, 0, 0, 0.0
-
-    tolerance = config.coordinate_tolerance_mm
-    layers: List[List[Tuple[float, float, float, float, float, float]]] = []
-    for entry in sorted(geometry, key=lambda value: value[2]):
-        _check_deadline(deadline)
-        if not layers or abs(entry[2] - layers[-1][0][2]) > tolerance:
-            layers.append([entry])
-        else:
-            layers[-1].append(entry)
-
-    best_counts = (0, 0, 0.0)
-    for layer in layers:
-        _check_deadline(deadline)
-        adjacent_edges = 0
-        transition_edges = 0
-        for first_idx, first in enumerate(layer):
-            _check_deadline(deadline)
-            for second in layer[first_idx + 1:]:
-                _check_deadline(deadline)
-                if not _footprints_connected(
-                    _footprint(first), _footprint(second), config
-                ):
-                    continue
-                adjacent_edges += 1
-                top_difference = abs(
-                    (first[2] + first[5]) - (second[2] + second[5])
-                )
-                if (
-                    top_difference > tolerance
-                    and top_difference + tolerance
-                    >= config.staircase_height_difference_threshold_mm
-                ):
-                    transition_edges += 1
-        ratio = transition_edges / adjacent_edges if adjacent_edges else 0.0
-        if (ratio, transition_edges, adjacent_edges) > (
-            best_counts[2],
-            best_counts[1],
-            best_counts[0],
-        ):
-            best_counts = (adjacent_edges, transition_edges, ratio)
-        if (
-            transition_edges >= config.staircase_min_transition_edges
-            and adjacent_edges > 0
-            and ratio >= config.staircase_transition_ratio_threshold
-        ):
-            return True, layer[0][2], adjacent_edges, transition_edges, ratio
-    return False, None, best_counts[0], best_counts[1], best_counts[2]
-
-
-def _uses_staircase_wave(
-    geometry: List[Tuple[float, float, float, float, float, float]],
-    config: ExecutionSequenceConfig,
-    pallet_id=None,
-    deadline: Optional[float] = None,
-) -> bool:
-    use_staircase, trigger_layer, adjacent_count, transition_count, ratio = (
-        _classify_staircase_wave(geometry, config, deadline=deadline)
-    )
-    _LOGGER.info(
-        "execution sequence classification pallet=%r selected_mode=%s "
-        "trigger_layer=%r adjacent_count=%d transition_count=%d "
-        "transition_ratio=%.3f",
-        pallet_id,
-        "staircase" if use_staircase else "layerwise",
-        trigger_layer,
-        adjacent_count,
-        transition_count,
-        ratio,
-    )
-    return use_staircase
-
-
-def _footprint(
-    entry: Tuple[float, float, float, float, float, float],
-) -> Tuple[float, float, float, float]:
-    return entry[0], entry[1], entry[3], entry[4]
-
-
-def _footprints_connected(
-    first: Tuple[float, float, float, float],
-    second: Tuple[float, float, float, float],
-    config: ExecutionSequenceConfig,
-) -> bool:
-    fx, fy, fl, fw = first
-    sx, sy, sl, sw = second
-    tolerance = config.coordinate_tolerance_mm
-    clearance = config.side_neighbor_clearance_mm
-    x_overlap = _axis_overlap(fx, fx + fl, sx, sx + sl)
-    y_overlap = _axis_overlap(fy, fy + fw, sy, sy + sw)
-    if x_overlap > tolerance and y_overlap > tolerance:
-        return True
-    if y_overlap > tolerance:
-        left_gap = fx - (sx + sl)
-        right_gap = sx - (fx + fl)
-        if (
-            -tolerance <= left_gap <= clearance + tolerance
-            or -tolerance <= right_gap <= clearance + tolerance
-        ):
-            return True
-    if x_overlap > tolerance:
-        lower_gap = fy - (sy + sw)
-        upper_gap = sy - (fy + fw)
-        if (
-            -tolerance <= lower_gap <= clearance + tolerance
-            or -tolerance <= upper_gap <= clearance + tolerance
-        ):
-            return True
-    return False
-
-
-def _footprint_origin_key(
-    footprint: Tuple[float, float, float, float],
-    config: ExecutionSequenceConfig,
-    pallet_dims: Dict[str, float],
-) -> Tuple[float, float, float]:
-    x, y, length, width = footprint
-    center_x = x + length / 2.0
-    center_y = y + width / 2.0
-    dx = (
-        center_x
-        if config.origin.startswith("x_min")
-        else pallet_dims["length"] - center_x
-    )
-    dy = (
-        center_y
-        if config.origin.endswith("y_min")
-        else pallet_dims["width"] - center_y
-    )
-    return dx * dx + dy * dy, dy, dx
-
-
-def _staircase_shells(
-    geometry: List[Tuple[float, float, float, float, float, float]],
-    config: ExecutionSequenceConfig,
-    pallet_dims: Dict[str, float],
-    deadline: Optional[float] = None,
-) -> Dict[Tuple[float, float, float, float], int]:
-    footprints = list(dict.fromkeys(_footprint(entry) for entry in geometry))
-    neighbors = {footprint: set() for footprint in footprints}
-    for first_idx, first in enumerate(footprints):
-        _check_deadline(deadline)
-        for second in footprints[first_idx + 1:]:
-            _check_deadline(deadline)
-            if _footprints_connected(first, second, config):
-                neighbors[first].add(second)
-                neighbors[second].add(first)
-
-    base_footprints = {
-        _footprint(entry)
-        for entry in geometry
-        if entry[2] <= config.coordinate_tolerance_mm
-    }
-    unassigned = set(footprints)
-    shells: Dict[Tuple[float, float, float, float], int] = {}
-    component_offset = 0
-    while unassigned:
-        _check_deadline(deadline)
-        seed_pool = unassigned.intersection(base_footprints) or unassigned
-        seed = min(
-            seed_pool,
-            key=lambda value: (
-                _footprint_origin_key(value, config, pallet_dims) + value
-            ),
-        )
-        local_shell = {seed: 0}
-        queue = deque([seed])
-        unassigned.remove(seed)
-        while queue:
-            _check_deadline(deadline)
-            current = queue.popleft()
-            for neighbor in sorted(
-                neighbors[current],
-                key=lambda value: (
-                    _footprint_origin_key(value, config, pallet_dims) + value
-                ),
-            ):
-                _check_deadline(deadline)
-                if neighbor not in unassigned:
-                    continue
-                unassigned.remove(neighbor)
-                local_shell[neighbor] = local_shell[current] + 1
-                queue.append(neighbor)
-        for footprint, shell in local_shell.items():
-            shells[footprint] = component_offset + shell
-        component_offset += max(local_shell.values()) + 1
-    return shells
-
-
-def _staircase_forward_key(
-    target_idx: int,
-    geometry: List[Tuple[float, float, float, float, float, float]],
-    shells: Dict[Tuple[float, float, float, float], int],
-    support_tiers: List[int],
-    scan_keys: List[Tuple[int, float, int]],
-) -> Tuple[int, int, int, float, int]:
-    entry = geometry[target_idx]
-    shell = shells[_footprint(entry)]
-    support_tier = support_tiers[target_idx]
-    phase = shell + support_tier
-    column_rank, y_progress, stable_index = scan_keys[target_idx]
-    return (
-        phase,
-        support_tier,
-        column_rank,
-        y_progress,
-        stable_index,
-    )
-
-
 def _support_tiers(
     supports: List[Set[int]], deadline: Optional[float] = None
 ) -> List[int]:
-    tiers: List[Optional[int]] = [None] * len(supports)
+    item_count = len(supports)
+    dependents: List[List[int]] = [[] for _support in supports]
+    unresolved_support_counts = [0] * item_count
 
-    def resolve(idx: int) -> int:
+    for target_idx, direct_supports in enumerate(supports):
         _check_deadline(deadline)
-        existing = tiers[idx]
-        if existing is not None:
-            return existing
-        support_tiers = []
-        for support_idx in supports[idx]:
+        validated_supports = []
+        for support_idx in direct_supports:
             _check_deadline(deadline)
-            support_tiers.append(resolve(support_idx))
-        tier = 0 if not support_tiers else 1 + max(support_tiers)
-        tiers[idx] = tier
-        return tier
+            if (
+                isinstance(support_idx, bool)
+                or not isinstance(support_idx, int)
+                or not 0 <= support_idx < item_count
+            ):
+                raise ExecutionSequenceError(
+                    "support dependency index %r for box %d is out of range"
+                    % (support_idx, target_idx)
+                )
+            validated_supports.append(support_idx)
+        unresolved_support_counts[target_idx] = len(validated_supports)
+        for support_idx in sorted(validated_supports):
+            _check_deadline(deadline)
+            dependents[support_idx].append(target_idx)
 
-    result = []
-    for idx in range(len(supports)):
+    ready = deque()
+    for idx, unresolved_count in enumerate(unresolved_support_counts):
         _check_deadline(deadline)
-        result.append(resolve(idx))
-    return result
+        if unresolved_count == 0:
+            ready.append(idx)
+
+    tiers = [0] * item_count
+    resolved_count = 0
+    while ready:
+        _check_deadline(deadline)
+        support_idx = ready.popleft()
+        resolved_count += 1
+        for target_idx in dependents[support_idx]:
+            _check_deadline(deadline)
+            tiers[target_idx] = max(
+                tiers[target_idx], tiers[support_idx] + 1
+            )
+            unresolved_support_counts[target_idx] -= 1
+            if unresolved_support_counts[target_idx] == 0:
+                ready.append(target_idx)
+
+    _check_deadline(deadline)
+    if resolved_count != item_count:
+        raise ExecutionSequenceError(
+            "support dependency graph contains a cycle"
+        )
+    return tiers
 
 
-def _stable_staircase_order(
+def _directed_wave_keys(
+    geometry: List[Tuple[float, float, float, float, float, float]],
+    supports: List[Set[int]],
+    config: ExecutionSequenceConfig,
+    pallet_dims: Dict[str, float],
+    deadline: Optional[float] = None,
+) -> List[Tuple[int, int, int, int, int, int]]:
+    coordinate_ranks = _coordinate_ranks(
+        geometry,
+        config,
+        pallet_dims,
+        deadline=deadline,
+    )
+    support_tiers = _support_tiers(supports, deadline=deadline)
+    keys = []
+    for stable_index, (x_rank, y_rank) in enumerate(coordinate_ranks):
+        _check_deadline(deadline)
+        spatial_ring = max(x_rank, y_rank)
+        support_tier = support_tiers[stable_index]
+        wave = spatial_ring + support_tier
+        keys.append(
+            (
+                wave,
+                spatial_ring,
+                x_rank,
+                y_rank,
+                support_tier,
+                stable_index,
+            )
+        )
+    return keys
+
+
+def _stable_directed_wave_order(
     items: List[Dict],
     edges: List[Set[int]],
     supports: List[Set[int]],
@@ -1343,35 +1052,13 @@ def _stable_staircase_order(
     deadline: float,
     pallet_id=None,
 ) -> Optional[List[int]]:
-    shells = _staircase_shells(
-        geometry, config, pallet_dims, deadline=deadline
-    )
-    support_tiers = _support_tiers(supports, deadline=deadline)
-    band_keys = []
-    for idx, entry in enumerate(geometry):
-        _check_deadline(deadline)
-        band_keys.append(
-            (shells[_footprint(entry)] + support_tiers[idx], support_tiers[idx])
-        )
-    scan_keys = _scan_keys(
+    forward_keys = _directed_wave_keys(
         geometry,
+        supports,
         config,
         pallet_dims,
-        band_keys,
         deadline=deadline,
     )
-    forward_keys = []
-    for idx in range(len(items)):
-        _check_deadline(deadline)
-        forward_keys.append(
-            _staircase_forward_key(
-                idx,
-                geometry,
-                shells,
-                support_tiers,
-                scan_keys,
-            )
-        )
     return _stable_forward_order(
         items,
         edges,
@@ -1380,32 +1067,6 @@ def _stable_staircase_order(
         blockers,
         deadline,
         pallet_id,
-    )
-
-
-def _greedy_staircase_order(
-    items: List[Dict],
-    edges: List[Set[int]],
-    supports: List[Set[int]],
-    config: ExecutionSequenceConfig,
-    pallet_dims: Dict[str, float],
-    geometry: List[Tuple[float, float, float, float, float, float]],
-    blockers: List[Dict[str, Set[int]]],
-    vertical_blockers: List[Dict[str, Set[int]]],
-    deadline: float,
-) -> Optional[List[int]]:
-    """Compatibility wrapper for callers of the former reverse helper."""
-
-    del vertical_blockers
-    return _stable_staircase_order(
-        items,
-        edges,
-        supports,
-        config,
-        pallet_dims,
-        geometry,
-        blockers,
-        deadline,
     )
 
 
@@ -1456,41 +1117,23 @@ def sequence_pallet_items(
     geometry = [_physical_geometry(item) for item in source_items]
     blockers: Optional[List[Dict[str, Set[int]]]] = None
     try:
-        use_staircase = _uses_staircase_wave(
-            geometry,
-            cfg,
-            pallet.get("pallet_id"),
-            deadline=deadline,
-        )
         if cfg.preserve_open_direction:
             blockers = _direction_blocker_map(
                 geometry,
                 cfg,
                 deadline=deadline,
             )
-        if use_staircase:
-            ordered_indices = _stable_staircase_order(
-                source_items,
-                edges,
-                supports,
-                cfg,
-                dims,
-                geometry,
-                blockers,
-                deadline,
-                pallet.get("pallet_id"),
-            )
-        else:
-            ordered_indices = _stable_regular_order(
-                source_items,
-                edges,
-                cfg,
-                dims,
-                geometry,
-                blockers,
-                deadline,
-                pallet.get("pallet_id"),
-            )
+        ordered_indices = _stable_directed_wave_order(
+            source_items,
+            edges,
+            supports,
+            cfg,
+            dims,
+            geometry,
+            blockers,
+            deadline,
+            pallet.get("pallet_id"),
+        )
     except _ExecutionSequenceDeadlineExceeded:
         ordered_indices = None
     if ordered_indices is None:

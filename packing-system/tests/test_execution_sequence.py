@@ -227,7 +227,7 @@ def test_support_boxes_precede_the_box_they_support():
     assert _ids(ordered) == ["base", "top"]
 
 
-def test_layerwise_origin_scan_precedes_resulting_top_height():
+def test_directed_wave_origin_progress_precedes_resulting_top_height():
     tall_at_origin = _box("tall", 0, 0, 0, height=300)
     short_farther = _box("short", 200, 0, 0, height=100)
 
@@ -263,7 +263,7 @@ def test_equal_height_boxes_expand_outward_from_configured_origin(origin, expect
 
 
 @pytest.mark.parametrize("preserve_open_direction", [True, False])
-def test_regular_mode_scans_x_columns_then_y(preserve_open_direction):
+def test_directed_wave_scans_x_ranks_then_y(preserve_open_direction):
     boxes = [
         _box("c10", 140, 0, 0, length=101, width=41, height=61),
         _box("c01", 0, 160, 0, length=59, width=73, height=61),
@@ -274,7 +274,6 @@ def test_regular_mode_scans_x_columns_then_y(preserve_open_direction):
         _pallet(boxes),
         ExecutionSequenceConfig(
             preserve_open_direction=preserve_open_direction,
-            adaptive_staircase_enabled=False,
         ),
     )
 
@@ -292,7 +291,6 @@ def test_origin_scan_groups_nearby_x_coordinates_into_one_column():
         _pallet(boxes),
         ExecutionSequenceConfig(
             preserve_open_direction=True,
-            adaptive_staircase_enabled=False,
             scan_column_tolerance_mm=2.0,
         ),
     )
@@ -315,7 +313,6 @@ def test_default_scan_column_tolerance_groups_five_mm_layout_offset():
         _pallet(boxes),
         ExecutionSequenceConfig(
             preserve_open_direction=True,
-            adaptive_staircase_enabled=False,
         ),
     )
 
@@ -326,7 +323,7 @@ def test_default_scan_column_tolerance_groups_five_mm_layout_offset():
     ]
 
 
-def test_regular_scan_keeps_input_order_at_same_column_and_y():
+def test_directed_wave_keeps_input_order_at_same_coordinate_ranks():
     boxes = [
         _box("x4_first", 4.0, 0.0, 0, length=1.0, width=1.0),
         _box("x0_second", 0.0, 0.0, 0, length=1.0, width=1.0),
@@ -336,7 +333,6 @@ def test_regular_scan_keeps_input_order_at_same_column_and_y():
         _pallet(boxes),
         ExecutionSequenceConfig(
             preserve_open_direction=False,
-            adaptive_staircase_enabled=False,
             scan_column_tolerance_mm=5.0,
         ),
     )
@@ -344,7 +340,7 @@ def test_regular_scan_keeps_input_order_at_same_column_and_y():
     assert _ids(ordered) == ["x4_first", "x0_second"]
 
 
-def test_regular_scan_columns_are_anchored_per_geometric_layer():
+def test_directed_wave_coordinate_ranks_are_global_across_support_tiers():
     support = _box(
         "support",
         0,
@@ -375,7 +371,6 @@ def test_regular_scan_columns_are_anchored_per_geometric_layer():
         _pallet([same_column_y200, same_column_y0, support]),
         ExecutionSequenceConfig(
             preserve_open_direction=True,
-            adaptive_staircase_enabled=False,
             max_occupied_directions=4,
             scan_column_tolerance_mm=5.0,
         ),
@@ -383,8 +378,8 @@ def test_regular_scan_columns_are_anchored_per_geometric_layer():
 
     assert _ids(ordered) == [
         "support",
-        "same_column_y0",
         "same_column_y200",
+        "same_column_y0",
     ]
 
 
@@ -412,7 +407,7 @@ def test_hard_dependency_resumes_stable_forward_scan_without_open_reason(caplog)
     with caplog.at_level("WARNING", logger=sequence_planner_module.__name__):
         ordered = sequence_pallet_items(
             _pallet(boxes),
-            ExecutionSequenceConfig(adaptive_staircase_enabled=False),
+            ExecutionSequenceConfig(),
         )
 
     assert _ids(ordered) == ["B", "C", "A"]
@@ -484,7 +479,6 @@ def test_forward_scheduler_skips_locally_safe_candidate_when_residual_is_blocked
         ordered = sequence_pallet_items(
             _pallet([scan_first, support, supported]),
             ExecutionSequenceConfig(
-                adaptive_staircase_enabled=False,
                 max_occupied_directions=0,
             ),
         )
@@ -509,7 +503,6 @@ def test_open_direction_scan_deviation_is_logged_with_specific_reason(caplog):
             _pallet(boxes),
             ExecutionSequenceConfig(
                 preserve_open_direction=True,
-                adaptive_staircase_enabled=False,
                 max_occupied_directions=2,
             ),
         )
@@ -531,7 +524,6 @@ def test_disabling_open_direction_keeps_scan_order_without_the_gate():
         _pallet(boxes),
         ExecutionSequenceConfig(
             preserve_open_direction=False,
-            adaptive_staircase_enabled=False,
             max_occupied_directions=2,
         ),
     )
@@ -585,359 +577,246 @@ def test_lower_side_boxes_do_not_enclose_a_taller_box():
     assert placed_neighbors <= 2
 
 
-def _mixed_height_staircase_boxes():
-    return [
-        _box("far_tall", 200, 0, 0, height=200),
-        _box("outer_base", 100, 0, 0, height=100),
-        _box("origin_top", 0, 0, 100, height=100),
-        _box("origin_base", 0, 0, 0, height=100),
-    ]
-
-
-def test_disabled_adaptive_staircase_keeps_mixed_pallet_layerwise():
-    ordered = sequence_pallet_items(
-        _pallet(_mixed_height_staircase_boxes()),
-        ExecutionSequenceConfig(
-            adaptive_staircase_enabled=False,
-            staircase_height_difference_threshold_mm=100.0,
-        ),
-    )
-
-    assert _ids(ordered).index("outer_base") < _ids(ordered).index("origin_top")
-
-
-@pytest.mark.parametrize("preserve_open_direction", [True, False])
-def test_enabled_adaptive_staircase_lays_outer_foundation_before_raising(
-    preserve_open_direction,
-):
-    ordered = sequence_pallet_items(
-        _pallet(_mixed_height_staircase_boxes()),
-        ExecutionSequenceConfig(
-            preserve_open_direction=preserve_open_direction,
-            adaptive_staircase_enabled=True,
-            staircase_height_difference_threshold_mm=100.0,
-            staircase_transition_ratio_threshold=0.5,
-            staircase_min_transition_edges=1,
-        ),
-    )
-
-    assert _ids(ordered)[:3] == ["origin_base", "outer_base", "origin_top"]
-
-
-def test_enabled_adaptive_staircase_keeps_regular_pallet_layerwise():
-    boxes = [
-        _box("outer_base", 100, 0, 0, height=100),
-        _box("origin_top", 0, 0, 100, height=100),
-        _box("origin_base", 0, 0, 0, height=100),
-    ]
-
-    ordered = sequence_pallet_items(
-        _pallet(boxes),
-        ExecutionSequenceConfig(
-            adaptive_staircase_enabled=True,
-            staircase_height_difference_threshold_mm=100.0,
-        ),
-    )
-
-    assert _ids(ordered) == ["origin_base", "outer_base", "origin_top"]
-
-
-def test_height_difference_below_threshold_remains_layerwise():
-    boxes = _mixed_height_staircase_boxes()
-    boxes[0] = _box("far_tall", 200, 0, 0, height=150)
-
-    ordered = sequence_pallet_items(
-        _pallet(boxes),
-        ExecutionSequenceConfig(
-            adaptive_staircase_enabled=True,
-            staircase_height_difference_threshold_mm=100.0,
-        ),
-    )
-
-    assert _ids(ordered).index("outer_base") < _ids(ordered).index("origin_top")
-
-
-def test_adaptive_staircase_ignores_height_spread_between_flat_layers():
+def test_coordinate_ranks_cluster_each_axis_from_cluster_anchor():
     geometry = [
-        (0.0, 0.0, 0.0, 100.0, 100.0, 200.0),
-        (100.0, 0.0, 0.0, 100.0, 100.0, 200.0),
-        (0.0, 0.0, 200.0, 100.0, 100.0, 100.0),
-        (100.0, 0.0, 200.0, 100.0, 100.0, 100.0),
+        (0.0, 0.0, 0.0, 1.0, 1.0, 100.0),
+        (4.0, 4.0, 0.0, 1.0, 1.0, 100.0),
+        (9.0, 9.0, 0.0, 1.0, 1.0, 100.0),
     ]
 
-    assert sequence_planner_module._uses_staircase_wave(
+    ranks = sequence_planner_module._coordinate_ranks(
         geometry,
-        ExecutionSequenceConfig(
-            adaptive_staircase_enabled=True,
-            staircase_height_difference_threshold_mm=100.0,
-        ),
-    ) is False
+        ExecutionSequenceConfig(scan_column_tolerance_mm=5.0),
+        PALLET_DIMS,
+    )
+
+    assert ranks == [(0, 0), (0, 0), (1, 1)]
 
 
-def test_adaptive_staircase_requires_ratio_when_transition_count_is_met():
-    geometry = []
-    for x in range(3):
-        for y in range(3):
-            height = 200.0 if (x, y) == (0, 0) else 100.0
-            geometry.append(
-                (x * 100.0, y * 100.0, 0.0, 100.0, 100.0, height)
-            )
-
-    assert sequence_planner_module._uses_staircase_wave(
-        geometry,
-        ExecutionSequenceConfig(
-            adaptive_staircase_enabled=True,
-            staircase_height_difference_threshold_mm=100.0,
-            staircase_transition_ratio_threshold=0.25,
-            staircase_min_transition_edges=2,
-        ),
-    ) is False
-
-
-def test_adaptive_staircase_requires_count_when_transition_ratio_is_met():
+def test_directed_wave_keys_mix_spatial_rings_and_support_tiers():
     geometry = [
-        (0.0, 0.0, 0.0, 100.0, 100.0, 200.0),
+        (100.0, 100.0, 0.0, 100.0, 100.0, 100.0),
+        (0.0, 100.0, 0.0, 100.0, 100.0, 100.0),
         (100.0, 0.0, 0.0, 100.0, 100.0, 100.0),
+        (0.0, 0.0, 100.0, 100.0, 100.0, 100.0),
+        (0.0, 0.0, 0.0, 100.0, 100.0, 100.0),
+    ]
+    supports = [set(), set(), set(), {4}, set()]
+
+    keys = sequence_planner_module._directed_wave_keys(
+        geometry,
+        supports,
+        ExecutionSequenceConfig(),
+        PALLET_DIMS,
+    )
+
+    assert keys == [
+        (1, 1, 1, 1, 0, 0),
+        (1, 1, 0, 1, 0, 1),
+        (1, 1, 1, 0, 0, 2),
+        (1, 0, 0, 0, 1, 3),
+        (0, 0, 0, 0, 0, 4),
+    ]
+    assert sorted(range(len(keys)), key=keys.__getitem__) == [4, 3, 1, 2, 0]
+
+
+def test_support_tiers_handle_a_deep_reverse_indexed_chain_iteratively():
+    item_count = 1200
+    supports = [{idx + 1} for idx in range(item_count - 1)] + [set()]
+
+    tiers = sequence_planner_module._support_tiers(supports)
+
+    assert tiers[-1] == 0
+    assert tiers[0] == item_count - 1
+    assert all(
+        tiers[idx] == tiers[idx + 1] + 1
+        for idx in range(item_count - 1)
+    )
+
+
+@pytest.mark.parametrize(
+    "supports, message",
+    [
+        ([{1}], "support dependency index .* out of range"),
+        ([{1}, {0}], "support dependency graph contains a cycle"),
+    ],
+)
+def test_support_tiers_reject_malformed_dependency_graphs(supports, message):
+    with pytest.raises(ExecutionSequenceError, match=message):
+        sequence_planner_module._support_tiers(supports)
+
+
+def test_directed_wave_expands_shuffled_irregular_grid_by_square_rings():
+    coordinates = [
+        (215.0, 97.0),
+        (0.0, 211.0),
+        (103.0, 0.0),
+        (215.0, 211.0),
+        (0.0, 0.0),
+        (103.0, 211.0),
+        (0.0, 97.0),
+        (215.0, 0.0),
+        (103.0, 97.0),
+    ]
+    geometry = [
+        (x, y, 0.0, 40.0 + idx, 50.0 + idx, 100.0)
+        for idx, (x, y) in enumerate(coordinates)
     ]
 
-    assert sequence_planner_module._uses_staircase_wave(
+    keys = sequence_planner_module._directed_wave_keys(
         geometry,
-        ExecutionSequenceConfig(
-            adaptive_staircase_enabled=True,
-            staircase_height_difference_threshold_mm=100.0,
-            staircase_transition_ratio_threshold=1.0,
-            staircase_min_transition_edges=2,
+        [set() for _entry in geometry],
+        ExecutionSequenceConfig(scan_column_tolerance_mm=5.0),
+        PALLET_DIMS,
+    )
+
+    ordered_indices = sorted(range(9), key=keys.__getitem__)
+
+    assert [coordinates[idx] for idx in ordered_indices] == [
+        (0.0, 0.0),
+        (0.0, 97.0),
+        (103.0, 0.0),
+        (103.0, 97.0),
+        (0.0, 211.0),
+        (103.0, 211.0),
+        (215.0, 0.0),
+        (215.0, 97.0),
+        (215.0, 211.0),
+    ]
+
+
+@pytest.mark.parametrize(
+    "origin, expected",
+    [
+        (
+            "x_min_y_min",
+            [(0.0, 0.0), (0.0, 100.0), (100.0, 0.0), (100.0, 100.0)],
         ),
-    ) is False
+        (
+            "x_max_y_max",
+            [(100.0, 100.0), (100.0, 0.0), (0.0, 100.0), (0.0, 0.0)],
+        ),
+    ],
+)
+def test_directed_wave_reverses_progress_from_configured_origin(origin, expected):
+    coordinates = [
+        (100.0, 0.0),
+        (0.0, 100.0),
+        (0.0, 0.0),
+        (100.0, 100.0),
+    ]
+    geometry = [
+        (x, y, 0.0, 100.0, 100.0, 100.0)
+        for x, y in coordinates
+    ]
 
-
-def test_adaptive_staircase_detects_frequent_layer_height_transitions():
-    geometry = []
-    for x in range(3):
-        for y in range(3):
-            height = 200.0 if (x + y) % 2 == 0 else 100.0
-            geometry.append(
-                (x * 100.0, y * 100.0, 0.0, 100.0, 100.0, height)
-            )
-
-    assert sequence_planner_module._uses_staircase_wave(
+    keys = sequence_planner_module._directed_wave_keys(
         geometry,
-        ExecutionSequenceConfig(
-            adaptive_staircase_enabled=True,
-            staircase_height_difference_threshold_mm=100.0,
-        ),
-    ) is True
+        [set() for _entry in geometry],
+        ExecutionSequenceConfig(origin=origin),
+        PALLET_DIMS,
+    )
+
+    assert [
+        coordinates[idx]
+        for idx in sorted(range(len(geometry)), key=keys.__getitem__)
+    ] == expected
 
 
-def test_adaptive_classification_logs_mode_trigger_and_edge_counts(caplog):
+def test_coordinate_ranking_checks_deadline_through_progress_and_axis_loops(
+    monkeypatch,
+):
+    checks = []
+    monkeypatch.setattr(
+        sequence_planner_module,
+        "_check_deadline",
+        lambda deadline: checks.append(deadline),
+    )
+    geometry = [
+        (0.0, 0.0, 0.0, 100.0, 100.0, 100.0),
+        (100.0, 100.0, 0.0, 100.0, 100.0, 100.0),
+    ]
+
+    sequence_planner_module._coordinate_ranks(
+        geometry,
+        ExecutionSequenceConfig(),
+        PALLET_DIMS,
+        deadline=123.0,
+    )
+
+    assert len(checks) >= len(geometry) * 3
+    assert set(checks) == {123.0}
+
+
+def test_public_planner_uses_one_directed_wave_for_bases_and_supported_boxes():
     boxes = [
-        _box("tall", 0, 0, 0, height=200),
-        _box("short", 100, 0, 0, height=100),
+        _box("diagonal_base", 100, 100, 0),
+        _box("y_base", 0, 100, 0),
+        _box("x_base", 100, 0, 0),
+        _box("origin_upper", 0, 0, 100),
+        _box("origin_base", 0, 0, 0),
+    ]
+
+    ordered = sequence_pallet_items(
+        _pallet(boxes),
+        ExecutionSequenceConfig(
+            preserve_open_direction=False,
+            max_occupied_directions=4,
+        ),
+    )
+
+    assert _ids(ordered) == [
+        "origin_base",
+        "origin_upper",
+        "y_base",
+        "x_base",
+        "diagonal_base",
+    ]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "_classify_staircase_wave",
+        "_uses_staircase_wave",
+        "_staircase_shells",
+        "_stable_staircase_order",
+        "_greedy_staircase_order",
+        "_stable_regular_order",
+        "_greedy_reverse_order",
+    ],
+)
+def test_obsolete_ordering_helpers_are_absent(name):
+    assert not hasattr(sequence_planner_module, name)
+
+
+def test_public_planner_emits_no_mode_classification_log(caplog):
+    boxes = [
+        _box("origin", 0, 0, 0),
+        _box("far", 100, 100, 0),
     ]
 
     with caplog.at_level("INFO", logger=sequence_planner_module.__name__):
         sequence_pallet_items(
             _pallet(boxes),
-            ExecutionSequenceConfig(
-                preserve_open_direction=False,
-                adaptive_staircase_enabled=True,
-                staircase_height_difference_threshold_mm=100.0,
-                staircase_transition_ratio_threshold=1.0,
-                staircase_min_transition_edges=1,
-            ),
+            ExecutionSequenceConfig(preserve_open_direction=False),
         )
 
-    assert "classification pallet='P-1'" in caplog.text
-    assert "selected_mode=staircase" in caplog.text
-    assert "trigger_layer=0.0" in caplog.text
-    assert "adjacent_count=1" in caplog.text
-    assert "transition_count=1" in caplog.text
-    assert "transition_ratio=1.000" in caplog.text
+    assert "execution sequence classification" not in caplog.text
 
 
-def test_staircase_uses_configured_origin_corner():
-    ordered = sequence_pallet_items(
-        _pallet(_mixed_height_staircase_boxes()),
-        ExecutionSequenceConfig(
-            origin="x_max_y_min",
-            adaptive_staircase_enabled=True,
-            staircase_height_difference_threshold_mm=100.0,
-            staircase_transition_ratio_threshold=0.5,
-            staircase_min_transition_edges=1,
-        ),
-    )
-
-    assert _ids(ordered)[0] == "far_tall"
-
-
-def test_adaptive_staircase_counts_lower_boxes_when_preventing_pockets():
-    below = _box("below", 100, 200, 0, height=100)
-    left = _box("left", 0, 300, 0, height=100)
-    right = _box("right", 200, 100, 0, width=300, height=100)
-    center = _box("center", 100, 300, 0, height=200)
-
-    ordered = sequence_pallet_items(
-        _pallet([center, left, right, below]),
-        ExecutionSequenceConfig(
-            adaptive_staircase_enabled=True,
-            staircase_height_difference_threshold_mm=100.0,
-            staircase_transition_ratio_threshold=0.5,
-            staircase_min_transition_edges=1,
-            max_occupied_directions=2,
-            side_neighbor_clearance_mm=5.0,
-        ),
-    )
-
-    positions = {item["id"]: item["seq"] for item in ordered}
-    placed_neighbors = sum(
-        positions[box_id] < positions["center"]
-        for box_id in ("below", "left", "right")
-    )
-    assert placed_neighbors <= 2
-
-
-def test_staircase_places_equal_phase_diagonal_base_before_inner_upper():
-    boxes = [
-        _box("origin_upper", 0, 0, 240, height=120),
-        _box("diagonal_base", 100, 100, 0, height=240),
-        _box("y_base", 0, 100, 0, height=240),
-        _box("x_base", 100, 0, 0, height=240),
-        _box("origin_mid", 0, 0, 120, height=120),
-        _box("origin_base", 0, 0, 0, height=120),
-    ]
-
-    ordered = sequence_pallet_items(
-        _pallet(boxes),
-        ExecutionSequenceConfig(
-            adaptive_staircase_enabled=True,
-            staircase_height_difference_threshold_mm=120.0,
-            staircase_transition_ratio_threshold=0.5,
-            staircase_min_transition_edges=1,
-            max_occupied_directions=4,
-        ),
-    )
-
-    positions = {item["id"]: item["seq"] for item in ordered}
-    assert positions["diagonal_base"] < positions["origin_upper"]
-
-
-def test_staircase_scan_columns_are_anchored_per_phase_and_tier(monkeypatch):
-    geometry = [
-        (0.0, 0.0, 0.0, 1.0, 1.0, 100.0),
-        (4.0, 200.0, 0.0, 1.0, 1.0, 100.0),
-        (9.0, 0.0, 0.0, 1.0, 1.0, 100.0),
-    ]
-    shells = {
-        sequence_planner_module._footprint(geometry[0]): 0,
-        sequence_planner_module._footprint(geometry[1]): 1,
-        sequence_planner_module._footprint(geometry[2]): 1,
-    }
-    monkeypatch.setattr(
-        sequence_planner_module,
-        "_staircase_shells",
-        lambda *_args, **_kwargs: shells,
-    )
-    blockers = [
-        {"x-": set(), "x+": set(), "y-": set(), "y+": set()}
-        for _entry in geometry
-    ]
-
-    ordered_indices = sequence_planner_module._greedy_staircase_order(
-        [{"id": "other_phase"}, {"id": "y200"}, {"id": "y0"}],
-        [set(), set(), set()],
-        [set(), set(), set()],
-        ExecutionSequenceConfig(
-            max_occupied_directions=4,
-            scan_column_tolerance_mm=5.0,
-        ),
-        PALLET_DIMS,
-        geometry,
-        blockers,
-        blockers,
-        sequence_planner_module.time.monotonic() + 1.0,
-    )
-
-    assert ordered_indices == [0, 2, 1]
-
-
-def test_staircase_scan_keeps_input_order_at_same_column_and_y(monkeypatch):
-    geometry = [
-        (4.0, 0.0, 0.0, 1.0, 1.0, 100.0),
-        (0.0, 0.0, 0.0, 1.0, 1.0, 100.0),
-    ]
-    shells = {
-        sequence_planner_module._footprint(entry): 0
-        for entry in geometry
-    }
-    monkeypatch.setattr(
-        sequence_planner_module,
-        "_staircase_shells",
-        lambda *_args, **_kwargs: shells,
-    )
-    blockers = [
-        {"x-": set(), "x+": set(), "y-": set(), "y+": set()},
-        {"x-": set(), "x+": set(), "y-": set(), "y+": set()},
-    ]
-
-    ordered_indices = sequence_planner_module._greedy_staircase_order(
-        [{"id": "x4_first"}, {"id": "x0_second"}],
-        [set(), set()],
-        [set(), set()],
-        ExecutionSequenceConfig(
-            preserve_open_direction=False,
-            scan_column_tolerance_mm=5.0,
-        ),
-        PALLET_DIMS,
-        geometry,
-        blockers,
-        blockers,
-        sequence_planner_module.time.monotonic() + 1.0,
-    )
-
-    assert ordered_indices == [0, 1]
-
-
-def test_staircase_scan_precedes_lower_neighbor_risk_within_same_phase(
-    monkeypatch,
-):
-    geometry = [
-        (200.0, 0.0, 0.0, 100.0, 100.0, 200.0),
-        (0.0, 0.0, 0.0, 100.0, 100.0, 200.0),
-    ]
-    footprints = {
-        sequence_planner_module._footprint(entry): 0
-        for entry in geometry
-    }
-    monkeypatch.setattr(
-        sequence_planner_module,
-        "_staircase_shells",
-        lambda *_args, **_kwargs: footprints,
-    )
-    empty_blockers = [
-        {"x-": set(), "x+": set(), "y-": set(), "y+": set()},
-        {"x-": set(), "x+": set(), "y-": set(), "y+": set()},
-    ]
-    vertical_blockers = deepcopy(empty_blockers)
-    vertical_blockers[0] = {
-        "x-": {1},
-        "x+": {1},
-        "y-": {1},
-        "y+": set(),
+def test_removed_adaptive_config_fields_are_not_exposed():
+    obsolete_fields = {
+        "prefer_adjacent_occupied_sides",
+        "adaptive_staircase_enabled",
+        "staircase_height_difference_threshold_mm",
+        "staircase_transition_ratio_threshold",
+        "staircase_min_transition_edges",
     }
 
-    ordered_indices = sequence_planner_module._greedy_staircase_order(
-        [{"id": "riskier"}, {"id": "safer"}],
-        [set(), set()],
-        [set(), set()],
-        ExecutionSequenceConfig(),
-        PALLET_DIMS,
-        geometry,
-        empty_blockers,
-        vertical_blockers,
-        sequence_planner_module.time.monotonic() + 1.0,
+    assert obsolete_fields.isdisjoint(
+        ExecutionSequenceConfig.__dataclass_fields__
     )
-
-    assert ordered_indices == [1, 0]
 
 
 def test_open_direction_time_limit_is_reported_by_public_planner(monkeypatch):
@@ -980,70 +859,6 @@ def test_blocker_map_checks_deadline_inside_pair_scan(monkeypatch):
                 (100.0, 0.0, 0.0, 100.0, 100.0, 100.0),
             ],
             ExecutionSequenceConfig(),
-            deadline=1.0,
-        )
-
-
-def test_staircase_shells_check_deadline_inside_pair_scan(monkeypatch):
-    timestamps = iter((0.0, 0.0, 2.0))
-    monkeypatch.setattr(
-        sequence_planner_module.time,
-        "monotonic",
-        lambda: next(timestamps, 2.0),
-    )
-
-    with pytest.raises(
-        sequence_planner_module._ExecutionSequenceDeadlineExceeded
-    ):
-        sequence_planner_module._staircase_shells(
-            [
-                (0.0, 0.0, 0.0, 100.0, 100.0, 100.0),
-                (100.0, 0.0, 0.0, 100.0, 100.0, 100.0),
-                (200.0, 0.0, 0.0, 100.0, 100.0, 100.0),
-            ],
-            ExecutionSequenceConfig(),
-            PALLET_DIMS,
-            deadline=1.0,
-        )
-
-
-def test_staircase_candidate_scoring_checks_deadline(monkeypatch):
-    geometry = [
-        (100.0, 0.0, 0.0, 100.0, 100.0, 200.0),
-        (0.0, 0.0, 0.0, 100.0, 100.0, 200.0),
-    ]
-    shells = {
-        sequence_planner_module._footprint(entry): 0
-        for entry in geometry
-    }
-    monkeypatch.setattr(
-        sequence_planner_module,
-        "_staircase_shells",
-        lambda *_args, **_kwargs: shells,
-    )
-    timestamps = iter((0.0, 0.0, 0.0, 2.0))
-    monkeypatch.setattr(
-        sequence_planner_module.time,
-        "monotonic",
-        lambda: next(timestamps, 2.0),
-    )
-    blockers = [
-        {"x-": set(), "x+": set(), "y-": set(), "y+": set()},
-        {"x-": set(), "x+": set(), "y-": set(), "y+": set()},
-    ]
-
-    with pytest.raises(
-        sequence_planner_module._ExecutionSequenceDeadlineExceeded
-    ):
-        sequence_planner_module._greedy_staircase_order(
-                [{"id": "far"}, {"id": "near"}],
-                [set(), set()],
-                [set(), set()],
-                ExecutionSequenceConfig(),
-            PALLET_DIMS,
-            geometry,
-            blockers,
-            blockers,
             deadline=1.0,
         )
 
@@ -1181,14 +996,6 @@ def test_non_finite_execution_clearances_are_rejected(field, value):
         ("preserve_open_direction", "true", "boolean"),
         ("max_sequence_search_seconds_per_pallet", 0.0, "positive"),
         ("max_sequence_search_seconds_per_pallet", True, "finite number"),
-        ("adaptive_staircase_enabled", "true", "boolean"),
-        (
-            "staircase_height_difference_threshold_mm",
-            -1.0,
-            "non-negative",
-        ),
-        ("staircase_transition_ratio_threshold", 1.1, "between 0 and 1"),
-        ("staircase_min_transition_edges", 0, "positive integer"),
         ("scan_column_tolerance_mm", -1.0, "non-negative"),
     ],
 )
