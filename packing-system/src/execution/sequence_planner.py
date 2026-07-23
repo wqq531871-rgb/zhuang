@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from .approach_geometry import (
     MovingRectPath,
+    local_egress_blocked,
     moving_path_blocked,
     preposition_descent_blocked,
 )
@@ -51,16 +52,17 @@ class ExecutionSequenceConfig:
     box_xy_clearance_mm: float = 0.0
     suction_xy_clearance_mm: float = 0.0
     suction_z_clearance_mm: float = 0.0
-    approach_offset_x_mm: float = 35.0
-    approach_offset_y_mm: float = 35.0
-    approach_z_clearance_mm: float = 0.0
+    approach_offset_x_mm: float = 20.0
+    approach_offset_y_mm: float = 20.0
+    approach_z_clearance_mm: float = 20.0
     approach_box_xy_clearance_mm: float = 0.0
-    approach_suction_xy_clearance_mm: float = 2.0
+    approach_suction_xy_clearance_mm: float = 0.0
     require_suction_pose: bool = True
     max_occupied_directions: int = 2
     side_neighbor_clearance_mm: float = 5.0
     side_height_tolerance_mm: float = 2.0
     preserve_open_direction: bool = True
+    force_publish_on_gate_failure: bool = False
     max_sequence_search_seconds_per_pallet: float = 1.0
     scan_column_tolerance_mm: float = 5.0
 
@@ -104,6 +106,10 @@ class ExecutionSequenceConfig:
             object.__setattr__(self, name, numeric)
         if not isinstance(self.preserve_open_direction, bool):
             raise ValueError("preserve_open_direction must be a boolean")
+        if not isinstance(self.force_publish_on_gate_failure, bool):
+            raise ValueError(
+                "force_publish_on_gate_failure must be a boolean"
+            )
         if not isinstance(self.require_suction_pose, bool):
             raise ValueError("require_suction_pose must be a boolean")
         if (
@@ -333,6 +339,69 @@ def _add_clearance_edges(
             )
             if box_blocked or suction_blocked:
                 _add_edge(edges, indegree, target_idx, blocker_idx)
+
+
+def _add_height_egress_edges(
+    items: List[Dict],
+    config: ExecutionSequenceConfig,
+    edges: List[Set[int]],
+    indegree: List[int],
+    supports: List[Set[int]],
+    pallet_dims: Optional[Dict[str, float]] = None,
+    deadline: Optional[float] = None,
+) -> None:
+    """Delay a protruding upper box that occupies a lower box's exit."""
+
+    if not any(supports):
+        return
+    if pallet_dims is not None:
+        _approach_pallet_height(items, pallet_dims)
+    geometry = [_physical_geometry(item) for item in items]
+    support_tiers = _support_tiers(supports, deadline=deadline)
+    upper_rects = [_rect(item) for item in items]
+    corridor_rects = [
+        _suction_rect(item, 0.0, config.require_suction_pose)
+        or _rect(item)
+        for item in items
+    ]
+    for upper_idx, direct_supports in enumerate(supports):
+        _check_deadline(deadline)
+        if not direct_supports:
+            continue
+        _ux, _uy, upper_z, _ul, _uw, upper_height = geometry[upper_idx]
+        upper_top = upper_z + upper_height
+        for lower_idx, lower in enumerate(geometry):
+            _check_deadline(deadline)
+            if lower_idx == upper_idx:
+                continue
+            if support_tiers[lower_idx] >= support_tiers[upper_idx]:
+                continue
+            _lx, _ly, lower_z, _ll, _lw, lower_height = lower
+            try:
+                blocked = local_egress_blocked(
+                    corridor_rect=corridor_rects[lower_idx],
+                    lower_top=lower_z + lower_height,
+                    upper_rect=upper_rects[upper_idx],
+                    upper_z_min=upper_z,
+                    upper_z_max=upper_top,
+                    offset_x=config.approach_offset_x_mm,
+                    offset_y=config.approach_offset_y_mm,
+                    xy_clearance=config.side_neighbor_clearance_mm,
+                    height_tolerance=config.side_height_tolerance_mm,
+                    tolerance=config.coordinate_tolerance_mm,
+                )
+            except ValueError as exc:
+                raise ExecutionSequenceError(
+                    "invalid local egress geometry for lower box %r "
+                    "against upper box %r: %s"
+                    % (
+                        items[lower_idx].get("id"),
+                        items[upper_idx].get("id"),
+                        exc,
+                    )
+                ) from exc
+            if blocked:
+                _add_edge(edges, indegree, lower_idx, upper_idx)
 
 
 @dataclass(frozen=True)
@@ -792,6 +861,15 @@ def _assert_final_execution_layout(
     _validate_bounds(items, pallet_dims, config.coordinate_tolerance_mm)
     edges, indegree, supports = _support_edges(
         items, config.coordinate_tolerance_mm
+    )
+    _add_height_egress_edges(
+        items,
+        config,
+        edges,
+        indegree,
+        supports,
+        pallet_dims,
+        deadline=deadline,
     )
     _add_clearance_edges(items, config, edges, indegree)
     _add_approach_edges(
@@ -1381,8 +1459,20 @@ def sequence_pallet_items(
     edges, indegree, supports = _support_edges(
         source_items, cfg.coordinate_tolerance_mm
     )
-    _add_clearance_edges(source_items, cfg, edges, indegree)
     deadline = time.monotonic() + cfg.max_sequence_search_seconds_per_pallet
+    try:
+        _add_height_egress_edges(
+            source_items,
+            cfg,
+            edges,
+            indegree,
+            supports,
+            dims,
+            deadline=deadline,
+        )
+    except _ExecutionSequenceDeadlineExceeded:
+        _raise_no_execution_order(pallet, cfg)
+    _add_clearance_edges(source_items, cfg, edges, indegree)
     try:
         _add_approach_edges(
             source_items,

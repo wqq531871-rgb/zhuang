@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 import run_execution_planning
+from src.execution import approach_geometry as approach_geometry_module
 from src.execution.approach_geometry import (
     MovingRectPath,
     moving_path_blocked,
@@ -133,6 +134,62 @@ def test_approach_geometry_final_only_far_side_contact_is_safe():
     path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
 
     assert not moving_path_blocked(path, (-100, 0, 0, 100), 0, 100, 0)
+
+
+def test_local_egress_blocks_a_protruding_upper_box_in_the_lift_zone():
+    assert approach_geometry_module.local_egress_blocked(
+        corridor_rect=(100, 200, 100, 200),
+        lower_top=100,
+        upper_rect=(0, 96, 0, 96),
+        upper_z_min=100,
+        upper_z_max=220,
+        offset_x=35,
+        offset_y=35,
+        xy_clearance=5,
+        height_tolerance=2,
+    )
+
+
+def test_local_egress_allows_an_upper_box_at_the_same_surface_height():
+    assert not approach_geometry_module.local_egress_blocked(
+        corridor_rect=(100, 200, 100, 200),
+        lower_top=100,
+        upper_rect=(0, 96, 0, 96),
+        upper_z_min=0,
+        upper_z_max=102,
+        offset_x=35,
+        offset_y=35,
+        xy_clearance=5,
+        height_tolerance=2,
+    )
+
+
+def test_local_egress_allows_a_distant_protruding_upper_box():
+    assert not approach_geometry_module.local_egress_blocked(
+        corridor_rect=(100, 200, 100, 200),
+        lower_top=100,
+        upper_rect=(-500, -400, -500, -400),
+        upper_z_min=100,
+        upper_z_max=220,
+        offset_x=35,
+        offset_y=35,
+        xy_clearance=5,
+        height_tolerance=2,
+    )
+
+
+def test_local_egress_checks_the_directional_exit_sweep():
+    assert approach_geometry_module.local_egress_blocked(
+        corridor_rect=(100, 200, 100, 200),
+        lower_top=100,
+        upper_rect=(205, 220, 205, 220),
+        upper_z_min=100,
+        upper_z_max=220,
+        offset_x=35,
+        offset_y=35,
+        xy_clearance=5,
+        height_tolerance=2,
+    )
 
 
 def test_approach_geometry_path_rejects_nonfinite_translated_start():
@@ -312,7 +369,12 @@ def test_support_that_blocks_shifted_suction_preposition_creates_cycle():
     with pytest.raises(ExecutionSequenceError, match="cyclic") as exc_info:
         sequence_pallet_items(
             _pallet([support, target]),
-            ExecutionSequenceConfig(suction_z_clearance_mm=150.0),
+            ExecutionSequenceConfig(
+                suction_z_clearance_mm=150.0,
+                approach_offset_x_mm=35.0,
+                approach_offset_y_mm=35.0,
+                approach_suction_xy_clearance_mm=2.0,
+            ),
         )
 
     assert "support" in str(exc_info.value)
@@ -1074,11 +1136,69 @@ def test_public_planner_uses_one_directed_wave_for_bases_and_supported_boxes():
 
     assert _ids(ordered) == [
         "origin_base",
+        "y_base",
+        "x_base",
+        "diagonal_base",
+        "origin_upper",
+    ]
+
+
+def test_height_egress_does_not_delay_an_equal_top_far_column():
+    boxes = [
+        _box("diagonal_base", 100, 100, 0, height=200),
+        _box("y_base", 0, 100, 0, height=200),
+        _box("x_base", 100, 0, 0, height=200),
+        _box("origin_upper", 0, 0, 100),
+        _box("origin_base", 0, 0, 0),
+    ]
+
+    ordered = sequence_pallet_items(
+        _pallet(boxes),
+        ExecutionSequenceConfig(
+            approach_offset_x_mm=0.0,
+            approach_offset_y_mm=0.0,
+            approach_suction_xy_clearance_mm=0.0,
+            preserve_open_direction=False,
+            max_occupied_directions=4,
+        ),
+    )
+
+    assert _ids(ordered) == [
+        "origin_base",
         "origin_upper",
         "y_base",
         "x_base",
         "diagonal_base",
     ]
+
+
+def test_height_egress_adds_an_edge_for_directional_exit_only():
+    lower = _box("lower", 0, 0, 0)
+    upper_base = _box(
+        "upper_base", 105, 105, 0, length=15, width=15
+    )
+    upper = _box(
+        "upper", 105, 105, 100, length=15, width=15, height=120
+    )
+    items = [lower, upper_base, upper]
+    edges, indegree, supports = sequence_planner_module._support_edges(
+        items, 1e-6
+    )
+
+    sequence_planner_module._add_height_egress_edges(
+        items,
+        ExecutionSequenceConfig(
+            approach_offset_x_mm=20.0,
+            approach_offset_y_mm=20.0,
+            preserve_open_direction=False,
+        ),
+        edges,
+        indegree,
+        supports,
+        PALLET_DIMS,
+    )
+
+    assert 2 in edges[0]
 
 
 @pytest.mark.parametrize(
@@ -1129,11 +1249,11 @@ def test_removed_adaptive_config_fields_are_not_exposed():
 def test_approach_config_defaults_are_explicit():
     config = ExecutionSequenceConfig()
 
-    assert config.approach_offset_x_mm == 35.0
-    assert config.approach_offset_y_mm == 35.0
-    assert config.approach_z_clearance_mm == 0.0
+    assert config.approach_offset_x_mm == 20.0
+    assert config.approach_offset_y_mm == 20.0
+    assert config.approach_z_clearance_mm == 20.0
     assert config.approach_box_xy_clearance_mm == 0.0
-    assert config.approach_suction_xy_clearance_mm == 2.0
+    assert config.approach_suction_xy_clearance_mm == 0.0
 
 
 @pytest.mark.parametrize(

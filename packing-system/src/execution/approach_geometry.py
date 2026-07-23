@@ -342,8 +342,81 @@ def moving_path_blocked(
     return _segment_intersects_rect_interior(start, end, collision_rect)
 
 
+def local_egress_blocked(
+    corridor_rect: Iterable[float],
+    lower_top: float,
+    upper_rect: Iterable[float],
+    upper_z_min: float,
+    upper_z_max: float,
+    offset_x: float,
+    offset_y: float,
+    xy_clearance: float,
+    height_tolerance: float,
+    tolerance: float = 1e-6,
+) -> bool:
+    """Return whether a taller upper box blocks local lift or exit."""
+
+    corridor_rect = _validated_rect(corridor_rect, "corridor_rect")
+    lower_top = _finite_float(lower_top, "lower_top")
+    upper_rect = _validated_rect(upper_rect, "upper_rect")
+    upper_z_min = _finite_float(upper_z_min, "upper_z_min")
+    upper_z_max = _finite_float(upper_z_max, "upper_z_max")
+    if upper_z_max <= upper_z_min:
+        raise ValueError("upper_z_max must be greater than upper_z_min")
+    offset_x = _nonnegative_float(offset_x, "offset_x")
+    offset_y = _nonnegative_float(offset_y, "offset_y")
+    xy_clearance = _nonnegative_float(xy_clearance, "xy_clearance")
+    height_tolerance = _nonnegative_float(
+        height_tolerance, "height_tolerance"
+    )
+    tolerance = _nonnegative_float(tolerance, "tolerance")
+
+    height_limit = _checked_add(
+        _checked_add(lower_top, height_tolerance, "egress height limit"),
+        tolerance,
+        "tolerant egress height limit",
+    )
+    if upper_z_max <= height_limit:
+        return False
+
+    local_hit = _strict_axis_overlap(
+        corridor_rect[0],
+        corridor_rect[1],
+        upper_rect[0],
+        upper_rect[1],
+        xy_clearance,
+        tolerance,
+    ) and _strict_axis_overlap(
+        corridor_rect[2],
+        corridor_rect[3],
+        upper_rect[2],
+        upper_rect[3],
+        xy_clearance,
+        tolerance,
+    )
+    if local_hit:
+        return True
+
+    path = MovingRectPath(
+        final_rect=corridor_rect,
+        offset_x=offset_x,
+        offset_y=offset_y,
+        z_min=lower_top,
+        z_max=upper_z_max,
+    )
+    return moving_path_blocked(
+        path,
+        upper_rect,
+        upper_z_min,
+        upper_z_max,
+        xy_clearance,
+        tolerance,
+    )
+
+
 __all__ = [
     "MovingRectPath",
+    "local_egress_blocked",
     "moving_path_blocked",
     "preposition_descent_blocked",
     "segment_intersects_rect",
