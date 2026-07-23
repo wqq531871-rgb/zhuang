@@ -510,24 +510,6 @@ def list_result_json_files(project_dir: Path, limit: int = _HISTORY_LIMIT) -> Li
     return entries[:limit]
 
 
-def list_packing_plan_files(project_dir: Path, limit: int = _HISTORY_LIMIT) -> List[Path]:
-    """下传/选用的整份报告：优先 ``*_execution.json``（list_result 已隐藏同戳旧方案）。"""
-    entries = list_result_json_files(project_dir, limit=limit * 2)
-    out: List[Path] = []
-    for entry in entries:
-        name = entry.path.name.lower()
-        if "_execution_wcs" in name:
-            continue
-        if not (
-            name.startswith("packing_plan_") or name.startswith("ui_packing_plan_")
-        ):
-            continue
-        out.append(entry.path)
-        if len(out) >= limit:
-            break
-    return out
-
-
 def _make_out_path(project_dir: Path, prefix: str = "ui_packing_plan") -> Path:
     out_dir = _runtime_exports_dir(project_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1023,36 +1005,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
 
         layout.insertWidget(insert_at + 1, push_box)
 
-        self.step_push_plan = StepCard("↓", "下传完整方案", "选 *_execution.json，整份下传")
-        layout.insertWidget(insert_at + 2, self.step_push_plan)
-
-        plan_box = QtWidgets.QFrame()
-        plan_box.setObjectName("ParamBox")
-        plan_form = QtWidgets.QFormLayout(plan_box)
-        plan_form.setContentsMargins(12, 10, 12, 10)
-        plan_form.setSpacing(8)
-
-        self.cmb_push_plan = QtWidgets.QComboBox()
-        self.cmb_push_plan.setMinimumWidth(220)
-        self.cmb_push_plan.setToolTip("优先选 *_execution.json（执行顺序方案）")
-        plan_form.addRow("方案 JSON", self.cmb_push_plan)
-
-        self.btn_push_plan = QtWidgets.QPushButton("确定下传")
-        self.btn_push_plan.setObjectName("PrimaryButton")
-        self.btn_push_plan.setToolTip(
-            "将整份执行方案 JSON POST 到对方接收端"
-        )
-        self.btn_push_plan.clicked.connect(self.push_selected_plan_internal)
-        plan_form.addRow("", self.btn_push_plan)
-
-        self.lbl_push_plan_hint = QtWidgets.QLabel("暂无可下传的执行方案")
-        self.lbl_push_plan_hint.setObjectName("SmallInfo")
-        self.lbl_push_plan_hint.setWordWrap(True)
-        plan_form.addRow("", self.lbl_push_plan_hint)
-
-        layout.insertWidget(insert_at + 3, plan_box)
         self._refresh_push_pallet_combo()
-        self._refresh_push_plan_combo()
         return panel
 
     def _ensure_packing_import_path(self) -> Path:
@@ -1100,133 +1053,6 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
     def populate_after_load(self) -> None:
         super().populate_after_load()
         self._refresh_push_pallet_combo()
-        self._refresh_push_plan_combo()
-
-    def _resolve_current_plan_path(self) -> Optional[Path]:
-        for candidate in (
-            getattr(self, "_live_result_path", None),
-            getattr(self, "_current_result_path", None),
-            getattr(self, "generated_out_path", None),
-        ):
-            if candidate is None:
-                continue
-            path = Path(candidate)
-            if path.exists() and _is_valid_packing_json(path):
-                return path.resolve()
-        return None
-
-    def _refresh_push_plan_combo(self) -> None:
-        if not hasattr(self, "cmb_push_plan"):
-            return
-        combo = self.cmb_push_plan
-        prev = combo.currentData()
-        plans = list_packing_plan_files(self.project_dir)
-        current = self._resolve_current_plan_path()
-
-        combo.blockSignals(True)
-        combo.clear()
-        if current is not None:
-            combo.addItem(f"当前 · {current.name}", str(current))
-        for path in plans:
-            if current is not None and path.resolve() == current:
-                continue
-            combo.addItem(path.name, str(path))
-        combo.blockSignals(False)
-
-        if prev:
-            idx = combo.findData(prev)
-            if idx >= 0:
-                combo.setCurrentIndex(idx)
-        has_items = combo.count() > 0
-        combo.setEnabled(has_items)
-        if hasattr(self, "btn_push_plan"):
-            self.btn_push_plan.setEnabled(has_items)
-        if hasattr(self, "lbl_push_plan_hint"):
-            self.lbl_push_plan_hint.setText(
-                f"可选 {combo.count()} 个方案文件（优先 *_execution.json）"
-                if has_items
-                else "暂无可下传的执行方案"
-            )
-        if hasattr(self, "step_push_plan"):
-            self.step_push_plan.set_state(
-                "done" if has_items else "idle",
-                f"已找到 {combo.count()} 个方案" if has_items else "等待执行方案结果",
-            )
-
-    def push_selected_plan_internal(self) -> None:
-        """确认后，将整份执行方案 JSON POST 到 /adaptor/api/wcs/internal。"""
-        if not hasattr(self, "cmb_push_plan") or self.cmb_push_plan.count() == 0:
-            QtWidgets.QMessageBox.information(self, "下传完整方案", "没有可下传的方案文件。")
-            return
-        raw = self.cmb_push_plan.currentData()
-        if not raw:
-            QtWidgets.QMessageBox.warning(self, "下传完整方案", "请先选择方案 JSON。")
-            return
-        plan_path = Path(str(raw))
-        if not plan_path.exists():
-            QtWidgets.QMessageBox.warning(self, "下传完整方案", f"文件不存在：{plan_path}")
-            return
-        if not _is_valid_packing_json(plan_path):
-            QtWidgets.QMessageBox.warning(
-                self, "下传完整方案", f"不是有效装箱报告：{plan_path.name}"
-            )
-            return
-
-        try:
-            from result_sequence_update import resolve_execution_report_path
-
-            plan_path = resolve_execution_report_path(plan_path)
-            self._ensure_packing_import_path()
-            from src.service.wcs_service import (
-                load_data_source_config,
-                push_internal_plan,
-            )
-
-            with open(plan_path, "r", encoding="utf-8") as f:
-                payload = json.load(f)
-            config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
-            ds = load_data_source_config(config_path)
-            url = ds.internal_url()
-        except Exception as exc:
-            QtWidgets.QMessageBox.critical(self, "下传失败", f"读取配置/方案失败：{exc}")
-            return
-
-        confirm = QtWidgets.QMessageBox.question(
-            self,
-            "确认下传完整方案",
-            f"确认将该 JSON 整份 POST 到对方接收端？\n\n"
-            f"文件：{plan_path.name}\n"
-            f"目标：{url}\n\n"
-            f"（优先使用 *_execution.json；目标来自 packing_config.yaml → internal_base_url）",
-            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-            QtWidgets.QMessageBox.No,
-        )
-        if confirm != QtWidgets.QMessageBox.Yes:
-            return
-
-        try:
-            self._write_log(f"[UI-完整方案] {plan_path.name} → {url}")
-            body = push_internal_plan(
-                ds.effective_internal_base_url(),
-                payload,
-                ds.internal_path,
-                raw_json_path=plan_path,
-            )
-            msg = (
-                f"完整方案下传成功。\n文件：{plan_path.name}\n"
-                f"目标：{url}\n"
-                f"接口返回 code={body.get('code')}, msg={body.get('msg')}"
-            )
-            self._write_log(f"[UI-完整方案] {msg.replace(chr(10), ' ')}")
-            if hasattr(self, "step_push_plan"):
-                self.step_push_plan.set_state("done", f"已下传 {plan_path.name}")
-            QtWidgets.QMessageBox.information(self, "下传成功", msg)
-        except Exception as exc:
-            err = f"完整方案下传失败：{exc}"
-            self._write_log(f"[UI-完整方案] {err}")
-            if hasattr(self, "step_push_plan"):
-                self.step_push_plan.set_state("error", "下传失败，请查看日志")
-            QtWidgets.QMessageBox.critical(self, "下传失败", err)
 
     def open_wcs_push_dialog(self) -> None:
         """弹窗多选库中未下传达标托盘，确认后整盘下传到 WCS。"""
@@ -1407,7 +1233,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             combo.blockSignals(False)
         finally:
             self._history_refreshing = False
-            self._refresh_push_plan_combo()
+            self._refresh_push_pallet_combo()
 
     def on_result_history_changed(self, index: int) -> None:
         if self._history_refreshing or index < 0:

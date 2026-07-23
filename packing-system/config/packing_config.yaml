@@ -134,13 +134,6 @@ data_source:
   stock_path: adapter/api/wcs/reqstockinfo
   # TODO(接口2 path): 规划结果推送路径，拼在根地址后（注意：/api/wcs/...，不是 /adaptor/...）。
   plan_path: adapter/api/wcs/sendpalletplanresult
-  # TODO(完整方案下传-对方根地址): 对方跑 peer_internal_receiver 的电脑局域网 IPv4+端口。
-  #   不要写成 WCS 的 192.168.0.191:8092；完整方案发给对方接收端。
-  #   完整 URL = internal_base_url + internal_path
-  #   例: http://192.168.0.202:8094/adaptor/api/wcs/internal
-  internal_base_url: http://192.168.0.202:8094
-  # TODO(完整方案下传 path): 与对方 peer_internal_receiver 配置里 internal_path 保持一致。
-  internal_path: /adaptor/api/wcs/internal
   # TODO(拉取间隔): 接口1 轮询间隔（秒）。UI「拉取间隔」可改，写入本次临时配置后生效。
   download_interval: 200
   input_dir: input
