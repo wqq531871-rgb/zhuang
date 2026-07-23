@@ -236,6 +236,17 @@ def create_default_config_yaml(output_path: Path) -> None:
             'suction_xy_clearance_mm': 0.0,
             'suction_z_clearance_mm': 0.0,
             'require_suction_pose': True,
+            'max_occupied_directions': 2,
+            'side_neighbor_clearance_mm': 5.0,
+            'side_height_tolerance_mm': 2.0,
+            'preserve_open_direction': True,
+            'prefer_adjacent_occupied_sides': True,
+            'max_sequence_search_seconds_per_pallet': 1.0,
+            'adaptive_staircase_enabled': True,
+            'staircase_height_difference_threshold_mm': 120.0,
+            'staircase_transition_ratio_threshold': 0.25,
+            'staircase_min_transition_edges': 4,
+            'scan_column_tolerance_mm': 5.0,
         }
     }
 

@@ -198,6 +198,29 @@ def load_execution_planner_config(config_path=None):
             suction_xy_clearance_mm=settings.suction_xy_clearance_mm,
             suction_z_clearance_mm=settings.suction_z_clearance_mm,
             require_suction_pose=settings.require_suction_pose,
+            max_occupied_directions=settings.max_occupied_directions,
+            side_neighbor_clearance_mm=settings.side_neighbor_clearance_mm,
+            side_height_tolerance_mm=settings.side_height_tolerance_mm,
+            preserve_open_direction=settings.preserve_open_direction,
+            prefer_adjacent_occupied_sides=(
+                settings.prefer_adjacent_occupied_sides
+            ),
+            max_sequence_search_seconds_per_pallet=(
+                settings.max_sequence_search_seconds_per_pallet
+            ),
+            adaptive_staircase_enabled=(
+                settings.adaptive_staircase_enabled
+            ),
+            staircase_height_difference_threshold_mm=(
+                settings.staircase_height_difference_threshold_mm
+            ),
+            staircase_transition_ratio_threshold=(
+                settings.staircase_transition_ratio_threshold
+            ),
+            staircase_min_transition_edges=(
+                settings.staircase_min_transition_edges
+            ),
+            scan_column_tolerance_mm=settings.scan_column_tolerance_mm,
         )
     except (OSError, TypeError, ValueError, KeyError) as exc:
         raise SystemExit(f'错误：执行顺序规划配置加载失败（{exc}）。')

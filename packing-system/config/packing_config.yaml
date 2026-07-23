@@ -58,14 +58,38 @@ execution_sequence:
   # 几何比较容差，用于判断接触、重合和同一高度。
   coordinate_tolerance_mm: 0.000001
   # 箱体垂直下放路径的 XY 额外安全包络。
-  box_xy_clearance_mm: 2.0
+  box_xy_clearance_mm: 0.0
   # 吸盘垂直下放路径的 XY 额外安全包络。
   suction_xy_clearance_mm: 2.0
   # 吸盘下降至目标箱顶时要求保留的 Z 安全余量。
   suction_z_clearance_mm: 0.0
   # true 时每个箱子必须包含完整 suction_rect_* 字段。
   require_suction_pose: true
+  # 放置目标箱时，允许同高或更高邻箱占用的最大侧面方向数（x-/x+/y-/y+）。
+  max_occupied_directions: 2
+  # 判断侧面邻箱时允许的最大水平间隙。
+  side_neighbor_clearance_mm: 5.0
+  # 判断同高围挡和局部高度波前时的顶面高度容差。
+  side_height_tolerance_mm: 2.0
+  # true 时用残余反向可完成性检查保证执行时保留开放方向。
+  preserve_open_direction: true
+  # 兼容保留；稳定正向调度不把邻边形状加入排序键。
+  prefer_adjacent_occupied_sides: true
+  # 每个托盘防包围规划的最长时间。
+  max_sequence_search_seconds_per_pallet: 1.0
+  # true：仅同层高度起伏频繁的托盘使用原点阶梯波；false：全部逐层。
+  adaptive_staircase_enabled: false
+  # 同层相邻箱顶达到该高度差时，计为一次显著高度跳变。
+  staircase_height_difference_threshold_mm: 120.0
+  # 同层显著高度跳变边占全部相邻边的最低比例。
+  staircase_transition_ratio_threshold: 0.15
+  # 单层至少出现该数量的显著高度跳变边才启用阶梯波。
+  staircase_min_transition_edges: 2
+  # 同层 X 坐标相差不超过该值时视为同一扫描列。
+  scan_column_tolerance_mm: 5.0
 tolerances:
+  # TODO: 后续统一注入主装箱、GCP、重排和全部救援路径；当前部分路径仍使用代码内常量。
+  # 在统一注入完成前，修改本段数值不能保证所有装箱路径同步变化。
   xy_tolerance: 2.0
   z_tolerance: 0.0
 algorithm:

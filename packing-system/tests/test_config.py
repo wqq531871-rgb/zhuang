@@ -26,7 +26,7 @@ from src.config import (
     SmallBoxDetectionConfig,
     ExcelDataConfig,
 )
-from src.config.loader import ConfigLoader
+from src.config.loader import ConfigLoader, create_default_config_yaml
 
 
 def test_constants():
@@ -216,6 +216,17 @@ def test_execution_sequence_config():
             'suction_xy_clearance_mm': 12.0,
             'suction_z_clearance_mm': 5.0,
             'require_suction_pose': False,
+            'max_occupied_directions': 2,
+            'side_neighbor_clearance_mm': 6.0,
+            'side_height_tolerance_mm': 2.0,
+            'preserve_open_direction': True,
+            'prefer_adjacent_occupied_sides': True,
+            'max_sequence_search_seconds_per_pallet': 1.5,
+            'adaptive_staircase_enabled': True,
+            'staircase_height_difference_threshold_mm': 100.0,
+            'staircase_transition_ratio_threshold': 0.3,
+            'staircase_min_transition_edges': 5,
+            'scan_column_tolerance_mm': 1.5,
         }
     })
 
@@ -228,17 +239,64 @@ def test_execution_sequence_config():
     assert config.suction_xy_clearance_mm == 12.0
     assert config.suction_z_clearance_mm == 5.0
     assert config.require_suction_pose is False
+    assert config.max_occupied_directions == 2
+    assert config.side_neighbor_clearance_mm == 6.0
+    assert config.side_height_tolerance_mm == 2.0
+    assert config.preserve_open_direction is True
+    assert config.prefer_adjacent_occupied_sides is True
+    assert config.max_sequence_search_seconds_per_pallet == 1.5
+    assert config.adaptive_staircase_enabled is True
+    assert config.staircase_height_difference_threshold_mm == 100.0
+    assert config.staircase_transition_ratio_threshold == 0.3
+    assert config.staircase_min_transition_edges == 5
+    assert config.scan_column_tolerance_mm == 1.5
 
 
-def test_execution_sequence_config_rejects_string_boolean_switches():
+@pytest.mark.parametrize('field', ['enabled', 'adaptive_staircase_enabled'])
+def test_execution_sequence_config_rejects_string_boolean_switches(field):
     loader = ConfigLoader.from_dict({
         'execution_sequence': {
-            'enabled': 'false',
+            field: 'false',
         }
     })
 
-    with pytest.raises(ValueError, match='enabled must be a boolean'):
+    with pytest.raises(ValueError, match=field + ' must be a boolean'):
         loader.load_execution_sequence_config()
+
+
+def test_generated_default_config_matches_shipped_staircase_behavior(tmp_path):
+    generated_path = tmp_path / 'packing_config.yaml'
+    create_default_config_yaml(generated_path)
+
+    generated = ConfigLoader(
+        generated_path
+    ).load_execution_sequence_config()
+    shipped = ConfigLoader(
+        project_root / 'config' / 'packing_config.yaml'
+    ).load_execution_sequence_config()
+
+    assert generated.box_xy_clearance_mm == shipped.box_xy_clearance_mm == 0.0
+    assert generated.adaptive_staircase_enabled is True
+    assert (
+        generated.adaptive_staircase_enabled
+        == shipped.adaptive_staircase_enabled
+    )
+    assert (
+        generated.staircase_height_difference_threshold_mm
+        == shipped.staircase_height_difference_threshold_mm
+    )
+    assert (
+        generated.staircase_transition_ratio_threshold
+        == shipped.staircase_transition_ratio_threshold
+    )
+    assert (
+        generated.staircase_min_transition_edges
+        == shipped.staircase_min_transition_edges
+    )
+    assert (
+        generated.scan_column_tolerance_mm
+        == shipped.scan_column_tolerance_mm
+    )
 
 
 if __name__ == "__main__":

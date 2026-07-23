@@ -176,7 +176,7 @@ def test_report_persister_writes_execution_bundle_when_enabled(tmp_path):
     assert [item["id"] for item in original["pallets"][0]["packed_items"]] \
         == ["tall", "short"]
     assert [item["id"] for item in execution["pallets"][0]["packed_items"]] \
-        == ["short", "tall"]
+        == ["tall", "short"]
     cases = json.loads(wcs_path.read_text(encoding="utf-8"))
     cartons = [
         carton
@@ -184,10 +184,10 @@ def test_report_persister_writes_execution_bundle_when_enabled(tmp_path):
         for carton in layer["cartons"]
     ]
     assert [c["product_code"] for c in sorted(cartons, key=lambda c: c["seq"])] \
-        == [2, 1]
+        == [1, 2]
     persisted_map = json.loads(map_path.read_text(encoding="utf-8"))
     mapped = persisted_map[cases[0]["box_unique_id"]]
-    assert [item["id"] for item in mapped["packed_items"]] == ["short", "tall"]
+    assert [item["id"] for item in mapped["packed_items"]] == ["tall", "short"]
 
 
 def test_report_persister_keeps_original_when_execution_planning_fails(tmp_path):
@@ -226,7 +226,13 @@ def test_run_packing_loads_execution_planner_config(tmp_path, enabled, expected)
     config_path.write_text(
         "execution_sequence:\n"
         "  enabled: %s\n"
-        "  origin: x_max_y_min\n" % str(enabled).lower(),
+        "  origin: x_max_y_min\n"
+        "  adaptive_staircase_enabled: true\n"
+        "  staircase_height_difference_threshold_mm: 100\n"
+        "  staircase_transition_ratio_threshold: 0.3\n"
+        "  staircase_min_transition_edges: 5\n"
+        "  scan_column_tolerance_mm: 1.5\n"
+        % str(enabled).lower(),
         encoding="utf-8",
     )
 
@@ -237,6 +243,11 @@ def test_run_packing_loads_execution_planner_config(tmp_path, enabled, expected)
     else:
         assert isinstance(config, ExecutionSequenceConfig)
         assert config.origin == expected
+        assert config.adaptive_staircase_enabled is True
+        assert config.staircase_height_difference_threshold_mm == 100.0
+        assert config.staircase_transition_ratio_threshold == 0.3
+        assert config.staircase_min_transition_edges == 5
+        assert config.scan_column_tolerance_mm == 1.5
 
 
 def test_candidate_selection_preserves_success_potential():
