@@ -222,6 +222,7 @@ def test_execution_sequence_config():
             'preserve_open_direction': True,
             'force_publish_on_gate_failure': True,
             'max_sequence_search_seconds_per_pallet': 1.5,
+            'forced_sequence_search_seconds_per_pallet': 12.5,
             'scan_column_tolerance_mm': 1.5,
         }
     })
@@ -241,6 +242,7 @@ def test_execution_sequence_config():
     assert config.preserve_open_direction is True
     assert config.force_publish_on_gate_failure is True
     assert config.max_sequence_search_seconds_per_pallet == 1.5
+    assert config.forced_sequence_search_seconds_per_pallet == 12.5
     assert config.scan_column_tolerance_mm == 1.5
     assert config.approach_offset_x_mm == 20.0
     assert config.approach_offset_y_mm == 20.0
@@ -341,6 +343,8 @@ def test_generated_default_config_matches_shipped_approach_behavior(tmp_path):
         assert getattr(generated, field) == getattr(shipped, field) == expected
     assert generated.force_publish_on_gate_failure is True
     assert shipped.force_publish_on_gate_failure is True
+    assert generated.forced_sequence_search_seconds_per_pallet == 30.0
+    assert shipped.forced_sequence_search_seconds_per_pallet == 30.0
 
     removed_fields = {
         'adaptive_staircase_enabled',

@@ -64,6 +64,7 @@ class ExecutionSequenceConfig:
     preserve_open_direction: bool = True
     force_publish_on_gate_failure: bool = False
     max_sequence_search_seconds_per_pallet: float = 1.0
+    forced_sequence_search_seconds_per_pallet: float = 30.0
     scan_column_tolerance_mm: float = 5.0
 
     def __post_init__(self) -> None:
@@ -90,6 +91,9 @@ class ExecutionSequenceConfig:
             "max_sequence_search_seconds_per_pallet": (
                 self.max_sequence_search_seconds_per_pallet
             ),
+            "forced_sequence_search_seconds_per_pallet": (
+                self.forced_sequence_search_seconds_per_pallet
+            ),
             "scan_column_tolerance_mm": self.scan_column_tolerance_mm,
         }
         for name, value in numeric_clearances.items():
@@ -115,12 +119,16 @@ class ExecutionSequenceConfig:
         if (
             isinstance(self.max_occupied_directions, bool)
             or not isinstance(self.max_occupied_directions, int)
-            or not 0 <= self.max_occupied_directions <= 4
+            or not 0 <= self.max_occupied_directions <= 2
         ):
-            raise ValueError("max_occupied_directions must be an integer from 0 to 4")
+            raise ValueError("max_occupied_directions must be an integer from 0 to 2")
         if self.max_sequence_search_seconds_per_pallet <= 0:
             raise ValueError(
                 "max_sequence_search_seconds_per_pallet must be positive"
+            )
+        if self.forced_sequence_search_seconds_per_pallet <= 0:
+            raise ValueError(
+                "forced_sequence_search_seconds_per_pallet must be positive"
             )
 
 
@@ -1062,6 +1070,18 @@ def _occupied_from_blocker_map(
     }
 
 
+def _is_open_corner_pattern(
+    occupied: Set[str], config: ExecutionSequenceConfig
+) -> bool:
+    if len(occupied) > config.max_occupied_directions:
+        return False
+    if {"x-", "x+"}.issubset(occupied):
+        return False
+    if {"y-", "y+"}.issubset(occupied):
+        return False
+    return True
+
+
 def _assert_open_direction_replay(
     items: List[Dict],
     ordered_indices: List[int],
@@ -1073,12 +1093,12 @@ def _assert_open_direction_replay(
         occupied = _occupied_from_blocker_map(
             target_idx, placed, blockers
         )
-        if len(occupied) > config.max_occupied_directions:
+        if not _is_open_corner_pattern(occupied, config):
             raise ExecutionSequenceError(
-                "box %r is enclosed from %d directions: %s"
+                "box %r does not retain an open corner; occupied "
+                "directions=%s"
                 % (
                     items[target_idx].get("id"),
-                    len(occupied),
                     ",".join(sorted(occupied)),
                 )
             )
@@ -1134,7 +1154,6 @@ def _residual_can_complete(
     present = prefix.union(remaining)
     successor_count: Dict[int, int] = {}
     direction_counts: Dict[int, Dict[str, int]] = {}
-    occupied_count: Dict[int, int] = {}
     for idx in remaining:
         _check_deadline(deadline)
         successor_count[idx] = len(edges[idx].intersection(remaining))
@@ -1143,17 +1162,21 @@ def _residual_can_complete(
             _check_deadline(deadline)
             counts[direction] = len(blocker_indices.intersection(present))
         direction_counts[idx] = counts
-        occupied_count[idx] = sum(count > 0 for count in counts.values())
 
     eligible: List[Tuple[int, int]] = []
     queued: Set[int] = set()
 
     def enqueue_if_eligible(idx: int) -> None:
+        occupied = {
+            direction
+            for direction, count in direction_counts[idx].items()
+            if count > 0
+        }
         if (
             idx in remaining
             and idx not in queued
             and successor_count[idx] == 0
-            and occupied_count[idx] <= config.max_occupied_directions
+            and _is_open_corner_pattern(occupied, config)
         ):
             heapq.heappush(eligible, (-preference_rank[idx], idx))
             queued.add(idx)
@@ -1182,10 +1205,52 @@ def _residual_can_complete(
                 continue
             previous = direction_counts[target_idx][direction]
             direction_counts[target_idx][direction] = previous - 1
-            if previous == 1:
-                occupied_count[target_idx] -= 1
             enqueue_if_eligible(target_idx)
     return True
+
+
+def _dependency_inherited_forward_keys(
+    edges: List[Set[int]],
+    forward_keys: List[Tuple],
+    deadline: Optional[float],
+) -> List[Tuple]:
+    """Propagate each preferred descendant key back to its prerequisites."""
+
+    indegree = [0] * len(edges)
+    for targets in edges:
+        _check_deadline(deadline)
+        for target_idx in targets:
+            _check_deadline(deadline)
+            indegree[target_idx] += 1
+
+    ready = deque(
+        idx for idx, predecessor_count in enumerate(indegree)
+        if predecessor_count == 0
+    )
+    topological_order: List[int] = []
+    while ready:
+        _check_deadline(deadline)
+        source_idx = ready.popleft()
+        topological_order.append(source_idx)
+        for target_idx in edges[source_idx]:
+            _check_deadline(deadline)
+            indegree[target_idx] -= 1
+            if indegree[target_idx] == 0:
+                ready.append(target_idx)
+    if len(topological_order) != len(edges):
+        raise ExecutionSequenceError(
+            "cannot inherit scan priorities from a cyclic dependency graph"
+        )
+
+    inherited_keys = list(forward_keys)
+    for source_idx in reversed(topological_order):
+        _check_deadline(deadline)
+        for target_idx in edges[source_idx]:
+            _check_deadline(deadline)
+            inherited_keys[source_idx] = min(
+                inherited_keys[source_idx], inherited_keys[target_idx]
+            )
+    return inherited_keys
 
 
 def _stable_forward_order(
@@ -1203,8 +1268,12 @@ def _stable_forward_order(
         raise ValueError("forward_keys must match items length")
     _check_deadline(deadline)
     predecessors = _predecessor_map(edges, deadline)
+    inherited_keys = _dependency_inherited_forward_keys(
+        edges, forward_keys, deadline
+    )
     preference_order = sorted(
-        range(len(items)), key=lambda idx: forward_keys[idx]
+        range(len(items)),
+        key=lambda idx: (inherited_keys[idx], forward_keys[idx]),
     )
     preference_rank = [0] * len(items)
     for rank, idx in enumerate(preference_order):
@@ -1242,7 +1311,7 @@ def _stable_forward_order(
                 occupied = _occupied_from_blocker_map(
                     candidate_idx, placed, blockers
                 )
-                if len(occupied) > config.max_occupied_directions:
+                if not _is_open_corner_pattern(occupied, config):
                     if first_rejected is None:
                         first_rejected = (
                             candidate_idx,
@@ -1409,7 +1478,7 @@ def _stable_directed_wave_order(
     pallet_dims: Dict[str, float],
     geometry: List[Tuple[float, float, float, float, float, float]],
     blockers: Optional[List[Dict[str, Set[int]]]],
-    deadline: float,
+    deadline: Optional[float],
     pallet_id=None,
 ) -> Optional[List[int]]:
     forward_keys = _directed_wave_keys(
@@ -1525,6 +1594,14 @@ def _assert_forced_execution_layout(
         list(range(len(items))),
         edges,
     )
+    if config.preserve_open_direction:
+        geometry = [_physical_geometry(item) for item in items]
+        blockers = _direction_blocker_map(
+            geometry, config, deadline=deadline
+        )
+        _assert_open_direction_replay(
+            items, list(range(len(items))), config, blockers
+        )
 
 
 def _finalize_ordered_items(
@@ -1579,13 +1656,15 @@ def _force_sequence_pallet_items(
     edges, indegree, supports = _support_edges(
         source_items, config.coordinate_tolerance_mm
     )
+    forced_config = replace(config, preserve_open_direction=True)
     deadline = (
-        time.monotonic() + config.max_sequence_search_seconds_per_pallet
+        time.monotonic()
+        + forced_config.forced_sequence_search_seconds_per_pallet
     )
     try:
         _add_height_egress_edges(
             source_items,
-            config,
+            forced_config,
             edges,
             indegree,
             supports,
@@ -1596,7 +1675,11 @@ def _force_sequence_pallet_items(
             pallet, source_items, edges, indegree
         )
         geometry = [_physical_geometry(item) for item in source_items]
-        forced_config = replace(config, preserve_open_direction=False)
+        blockers = _direction_blocker_map(
+            geometry,
+            forced_config,
+            deadline=deadline,
+        )
         ordered_indices = _stable_directed_wave_order(
             source_items,
             edges,
@@ -1604,33 +1687,38 @@ def _force_sequence_pallet_items(
             forced_config,
             dims,
             geometry,
-            None,
+            blockers,
             deadline,
             pallet.get("pallet_id"),
         )
-    except _ExecutionSequenceDeadlineExceeded:
-        _raise_no_execution_order(pallet, replace(
-            config, preserve_open_direction=False
-        ))
-    if ordered_indices is None:
-        _raise_no_execution_order(
-            pallet, replace(config, preserve_open_direction=False)
+        if ordered_indices is None:
+            raise ExecutionSequenceError(
+                "pallet %r has no forced execution order preserving support, "
+                "height egress, and an open corner"
+                % pallet.get("pallet_id")
+            )
+        _assert_dependency_order(source_items, ordered_indices, edges)
+        _assert_open_direction_replay(
+            source_items, ordered_indices, forced_config, blockers
         )
-    _assert_dependency_order(source_items, ordered_indices, edges)
-    try:
         return _finalize_ordered_items(
             source_items,
             ordered_indices,
             pallet,
             dims,
-            config,
+            forced_config,
             deadline,
             validate_full_path=False,
         )
-    except _ExecutionSequenceDeadlineExceeded:
-        _raise_no_execution_order(
-            pallet, replace(config, preserve_open_direction=False)
-        )
+    except _ExecutionSequenceDeadlineExceeded as exc:
+        raise ExecutionSequenceError(
+            "pallet %r forced execution order exceeded %.3fs while "
+            "preserving support, height egress, and an open corner"
+            % (
+                pallet.get("pallet_id"),
+                forced_config.forced_sequence_search_seconds_per_pallet,
+            )
+        ) from exc
 
 
 def sequence_pallet_items(

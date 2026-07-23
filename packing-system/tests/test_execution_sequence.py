@@ -453,6 +453,82 @@ def test_force_publish_falls_back_to_support_safe_wave_after_gate_cycle(
     assert "cyclic execution dependencies" in caplog.text
 
 
+def test_public_force_publish_retains_the_local_height_egress_edge(caplog):
+    origin_base = _box("origin-base", 0, 0, 0, length=80, width=80)
+    adjacent_base = _box("adjacent-base", 105, 0, 0)
+    upper = _box(
+        "upper",
+        0,
+        0,
+        100,
+        cup_rect={"x_min": 30, "x_max": 50, "y_min": 30, "y_max": 50},
+    )
+    report = {"pallets": [_pallet([upper, origin_base, adjacent_base])]}
+    config = ExecutionSequenceConfig(
+        suction_z_clearance_mm=150.0,
+        approach_offset_x_mm=35.0,
+        approach_offset_y_mm=35.0,
+        approach_suction_xy_clearance_mm=2.0,
+        force_publish_on_gate_failure=True,
+    )
+
+    with caplog.at_level("WARNING", logger=sequence_planner_module.__name__):
+        result = plan_execution_report(report, config=config)
+
+    positions = {
+        item["id"]: item["seq"]
+        for item in result["pallets"][0]["packed_items"]
+    }
+    assert positions["origin-base"] < positions["upper"]
+    assert positions["adjacent-base"] < positions["upper"]
+    assert "forced execution order" in caplog.text
+
+
+def test_forced_wave_keeps_an_upper_target_out_of_a_three_sided_pocket():
+    target = _box("target", 0, 300, 100, width=200)
+    far_base = _box("far-base", 0, 100, 0, width=200, height=200)
+    side_base = _box("side-base", 100, 200, 0, width=200, height=200)
+    support = _box("support", 0, 300, 0, width=200)
+    pocket_wall = _box(
+        "pocket-wall", 0, 500, 0, width=200, height=200
+    )
+    prerequisite = _box(
+        "prerequisite", 100, 495, 0, width=200
+    )
+    items = [
+        target,
+        far_base,
+        side_base,
+        support,
+        pocket_wall,
+        prerequisite,
+    ]
+    config = ExecutionSequenceConfig(
+        preserve_open_direction=True,
+        force_publish_on_gate_failure=True,
+        max_occupied_directions=2,
+        side_neighbor_clearance_mm=5.0,
+    )
+
+    ordered = sequence_planner_module._force_sequence_pallet_items(
+        _pallet(items), config
+    )
+
+    positions = {item["id"]: item["seq"] for item in ordered}
+    assert positions["prerequisite"] < positions["target"]
+    assert positions["target"] < positions["pocket-wall"]
+
+    blockers = sequence_planner_module._direction_blocker_map(
+        [sequence_planner_module._physical_geometry(item) for item in items],
+        config,
+    )
+    index_by_id = {item["id"]: idx for idx, item in enumerate(items)}
+    ordered_indices = [index_by_id[item["id"]] for item in ordered]
+    sequence_planner_module._assert_open_direction_replay(
+        items, ordered_indices, config, blockers
+    )
+
+
 def test_force_publish_does_not_bypass_duplicate_box_ids():
     report = {
         "pallets": [_pallet([_box("same", 0, 0, 0), _box("same", 100, 0, 0)])]
@@ -875,7 +951,7 @@ def test_directed_wave_coordinate_ranks_are_global_across_support_tiers():
         _pallet([same_column_y200, same_column_y0, support]),
         ExecutionSequenceConfig(
             preserve_open_direction=True,
-            max_occupied_directions=4,
+            max_occupied_directions=2,
             scan_column_tolerance_mm=5.0,
         ),
     )
@@ -887,7 +963,7 @@ def test_directed_wave_coordinate_ranks_are_global_across_support_tiers():
     ]
 
 
-def test_hard_dependency_resumes_stable_forward_scan_without_open_reason(caplog):
+def test_hard_dependency_promotes_the_far_targets_prerequisite(caplog):
     scan_first = _box("A", 0, 0, 0, height=300)
     scan_middle = _box("B", 200, 0, 0, height=100)
     scan_last = _box(
@@ -914,10 +990,10 @@ def test_hard_dependency_resumes_stable_forward_scan_without_open_reason(caplog)
             ExecutionSequenceConfig(),
         )
 
-    assert _ids(ordered) == ["B", "C", "A"]
+    assert _ids(ordered) == ["C", "A", "B"]
     assert "execution scan deviation" in caplog.text
     assert "expected='A'" in caplog.text
-    assert "selected='B'" in caplog.text
+    assert "selected='C'" in caplog.text
     assert "reason=hard_dependency" in caplog.text
     assert "reason=open_direction" not in caplog.text
     deviation_warnings = [
@@ -927,7 +1003,6 @@ def test_hard_dependency_resumes_stable_forward_scan_without_open_reason(caplog)
     ]
     assert len(deviation_warnings) == 1
     assert "count=1" in deviation_warnings[0]
-    assert "selected='C'" not in deviation_warnings[0]
 
 
 def test_scan_deviations_use_one_warning_and_preview_at_most_eight(caplog):
@@ -970,6 +1045,27 @@ def test_scan_deviations_use_one_warning_and_preview_at_most_eight(caplog):
     assert "count=9" in deviation_warnings[0]
     assert "expected='A8'" in deviation_warnings[0]
     assert "expected='A9'" not in deviation_warnings[0]
+
+
+def test_hard_prerequisite_inherits_the_far_targets_scan_priority():
+    items = [
+        {"id": "far-target"},
+        {"id": "unrelated-near"},
+        {"id": "far-prerequisite"},
+    ]
+    edges = [set(), set(), {0}]
+
+    ordered_indices = sequence_planner_module._stable_forward_order(
+        items=items,
+        edges=edges,
+        config=ExecutionSequenceConfig(preserve_open_direction=False),
+        forward_keys=[(0,), (1,), (2,)],
+        blockers=None,
+        deadline=sequence_planner_module.time.monotonic() + 1.0,
+        pallet_id="P-inherited-priority",
+    )
+
+    assert ordered_indices == [2, 0, 1]
 
 
 def test_forward_scheduler_skips_locally_safe_candidate_when_residual_is_blocked(
@@ -1065,6 +1161,50 @@ def test_wavefront_does_not_fill_a_three_sided_pocket():
         for box_id in ("below", "left", "right")
     )
     assert placed_neighbors <= 2
+
+
+@pytest.mark.parametrize(
+    "occupied",
+    [
+        {"x-", "x+"},
+        {"y-", "y+"},
+        {"x-", "x+", "y-"},
+    ],
+    ids=("opposite-x", "opposite-y", "three-sided"),
+)
+def test_open_direction_replay_rejects_non_corner_patterns(occupied):
+    direction_map = {
+        "x-": {0} if "x-" in occupied else set(),
+        "x+": {0} if "x+" in occupied else set(),
+        "y-": {0} if "y-" in occupied else set(),
+        "y+": {0} if "y+" in occupied else set(),
+    }
+    blockers = [
+        {"x-": set(), "x+": set(), "y-": set(), "y+": set()},
+        direction_map,
+    ]
+
+    with pytest.raises(ExecutionSequenceError, match="open corner"):
+        sequence_planner_module._assert_open_direction_replay(
+            [{"id": "blocker"}, {"id": "target"}],
+            [0, 1],
+            ExecutionSequenceConfig(max_occupied_directions=2),
+            blockers,
+        )
+
+
+def test_open_direction_replay_accepts_two_adjacent_sides():
+    blockers = [
+        {"x-": set(), "x+": set(), "y-": set(), "y+": set()},
+        {"x-": {0}, "x+": set(), "y-": {0}, "y+": set()},
+    ]
+
+    sequence_planner_module._assert_open_direction_replay(
+        [{"id": "blocker"}, {"id": "target"}],
+        [0, 1],
+        ExecutionSequenceConfig(max_occupied_directions=2),
+        blockers,
+    )
 
 
 def test_lower_side_boxes_do_not_enclose_a_taller_box():
@@ -1280,7 +1420,7 @@ def test_public_planner_uses_one_directed_wave_for_bases_and_supported_boxes():
             approach_offset_y_mm=0.0,
             approach_suction_xy_clearance_mm=0.0,
             preserve_open_direction=False,
-            max_occupied_directions=4,
+            max_occupied_directions=2,
         ),
     )
 
@@ -1308,7 +1448,7 @@ def test_height_egress_finishes_a_clearance_adjacent_base_before_upper():
             approach_suction_xy_clearance_mm=0.0,
             side_neighbor_clearance_mm=5.0,
             preserve_open_direction=False,
-            max_occupied_directions=4,
+            max_occupied_directions=2,
         ),
     )
 
@@ -1345,7 +1485,7 @@ def test_height_egress_uses_box_frontier_when_suction_is_inset():
             approach_suction_xy_clearance_mm=0.0,
             side_neighbor_clearance_mm=5.0,
             preserve_open_direction=False,
-            max_occupied_directions=4,
+            max_occupied_directions=2,
         ),
     )
 
@@ -1372,7 +1512,7 @@ def test_height_egress_does_not_delay_an_equal_top_far_column():
             approach_offset_y_mm=0.0,
             approach_suction_xy_clearance_mm=0.0,
             preserve_open_direction=False,
-            max_occupied_directions=4,
+            max_occupied_directions=2,
         ),
     )
 
@@ -1562,6 +1702,51 @@ def test_approach_timeout_uses_existing_public_error(monkeypatch):
     assert observed_deadlines == [11.0]
 
 
+def test_force_publish_uses_its_independent_safety_deadline(monkeypatch):
+    observed_deadlines = []
+
+    def fail_normal_planning(_pallet, config=None):
+        raise ExecutionSequenceError("normal gate failed")
+
+    def timeout_during_forced_height_egress(
+        _items,
+        _config,
+        _edges,
+        _indegree,
+        _supports,
+        _pallet_dims=None,
+        deadline=None,
+    ):
+        observed_deadlines.append(deadline)
+        raise sequence_planner_module._ExecutionSequenceDeadlineExceeded
+
+    monkeypatch.setattr(sequence_planner_module.time, "monotonic", lambda: 10.0)
+    monkeypatch.setattr(
+        sequence_planner_module,
+        "sequence_pallet_items",
+        fail_normal_planning,
+    )
+    monkeypatch.setattr(
+        sequence_planner_module,
+        "_add_height_egress_edges",
+        timeout_during_forced_height_egress,
+    )
+
+    with pytest.raises(
+        ExecutionSequenceError,
+        match="forced execution order exceeded 2.500s",
+    ):
+        plan_execution_report(
+            {"pallets": [_pallet([_box("only", 0, 0, 0)])]},
+            ExecutionSequenceConfig(
+                force_publish_on_gate_failure=True,
+                forced_sequence_search_seconds_per_pallet=2.5,
+            ),
+        )
+
+    assert observed_deadlines == [12.5]
+
+
 def test_blocker_map_checks_deadline_inside_pair_scan(monkeypatch):
     timestamps = iter((0.0, 0.0, 2.0))
     monkeypatch.setattr(
@@ -1707,8 +1892,8 @@ def test_non_finite_execution_clearances_are_rejected(field, value):
 @pytest.mark.parametrize(
     "field, value, message",
     [
-        ("max_occupied_directions", 5, "integer from 0 to 4"),
-        ("max_occupied_directions", True, "integer from 0 to 4"),
+        ("max_occupied_directions", 3, "integer from 0 to 2"),
+        ("max_occupied_directions", True, "integer from 0 to 2"),
         ("side_neighbor_clearance_mm", -1.0, "non-negative"),
         ("side_neighbor_clearance_mm", True, "finite number"),
         ("side_height_tolerance_mm", float("inf"), "finite"),
@@ -1716,6 +1901,8 @@ def test_non_finite_execution_clearances_are_rejected(field, value):
         ("preserve_open_direction", "true", "boolean"),
         ("max_sequence_search_seconds_per_pallet", 0.0, "positive"),
         ("max_sequence_search_seconds_per_pallet", True, "finite number"),
+        ("forced_sequence_search_seconds_per_pallet", 0.0, "positive"),
+        ("forced_sequence_search_seconds_per_pallet", True, "finite number"),
         ("scan_column_tolerance_mm", -1.0, "non-negative"),
     ],
 )

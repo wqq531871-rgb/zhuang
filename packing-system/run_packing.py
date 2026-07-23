@@ -217,6 +217,9 @@ def load_execution_planner_config(config_path=None):
             max_sequence_search_seconds_per_pallet=(
                 settings.max_sequence_search_seconds_per_pallet
             ),
+            forced_sequence_search_seconds_per_pallet=(
+                settings.forced_sequence_search_seconds_per_pallet
+            ),
             scan_column_tolerance_mm=settings.scan_column_tolerance_mm,
         )
     except (OSError, TypeError, ValueError, KeyError) as exc:

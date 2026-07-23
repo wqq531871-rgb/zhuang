@@ -213,6 +213,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             max_sequence_search_seconds_per_pallet=(
                 settings.max_sequence_search_seconds_per_pallet
             ),
+            forced_sequence_search_seconds_per_pallet=(
+                settings.forced_sequence_search_seconds_per_pallet
+            ),
             scan_column_tolerance_mm=settings.scan_column_tolerance_mm,
         )
         execution_report = plan_execution_report(report, config=config)

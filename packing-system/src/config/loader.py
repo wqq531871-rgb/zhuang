@@ -247,6 +247,7 @@ def create_default_config_yaml(output_path: Path) -> None:
             'preserve_open_direction': True,
             'force_publish_on_gate_failure': True,
             'max_sequence_search_seconds_per_pallet': 1.0,
+            'forced_sequence_search_seconds_per_pallet': 30.0,
             'scan_column_tolerance_mm': 5.0,
         }
     }

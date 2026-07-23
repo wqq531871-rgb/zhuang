@@ -73,7 +73,7 @@ execution_sequence:
   approach_suction_xy_clearance_mm: 0.0
   # true 时每个箱子必须包含完整 suction_rect_* 字段。
   require_suction_pose: true
-  # 放置目标箱时，允许同高或更高邻箱占用的最大侧面方向数（x-/x+/y-/y+）。
+  # 放置目标箱时最多允许两条相邻侧面被占用；相对两侧及三/四侧包围始终禁止。
   max_occupied_directions: 2
   # 判断侧面邻箱和局部低层前沿时允许的最大水平间隙；等于该值也纳入依赖。
   side_neighbor_clearance_mm: 5.0
@@ -81,10 +81,12 @@ execution_sequence:
   side_height_tolerance_mm: 2.0
   # true 时用残余反向可完成性检查保证执行时保留开放方向。
   preserve_open_direction: true
-  # true 时完整门禁失败会保留支撑与局部退出走廊，强制生成 execution/WCS 三件套。
+  # true 时完整门禁失败仍保留支撑、局部退出走廊和开放角，强制生成 execution/WCS 三件套。
   force_publish_on_gate_failure: true
-  # 每个托盘防包围规划的最长时间。
+  # 每个托盘完整路径规划的最长时间。
   max_sequence_search_seconds_per_pallet: 1.0
+  # 完整门禁失败后，强制安全排序的独立最长时间；超时会拒绝发布，不会关闭安全规则。
+  forced_sequence_search_seconds_per_pallet: 30.0
   # X/Y 进度相差不超过该值时聚为同一空间等级，只影响软排序。
   scan_column_tolerance_mm: 5.0
 tolerances:

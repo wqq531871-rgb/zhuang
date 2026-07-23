@@ -188,8 +188,8 @@ python code/run_packing.py --config code/config/packing_config.yaml
 规划器默认先执行完整路径与开放方向门禁。`force_publish_on_gate_failure: true` 时，
 完整门禁失败会按托盘降级为受控强制顺序，仍保留箱子守恒、唯一连续 `seq`、托盘
 边界、配置要求的完整吸盘位置、直接支撑、高度感知局部走廊、垛型居中和
-`stack_height_before`，但绕过垂直/斜向路径及开放方向门禁，并写入 warning；设为
-`false` 时仍拒绝发布失败托盘。
+`stack_height_before`，并保留“最多两条相邻边”的开放角门禁；只绕过完整垂直/斜向
+路径门禁，并写入 warning。设为 `false` 时仍拒绝发布失败托盘。
 当前交付参数为 `approach_offset_x_mm: 20`、`approach_offset_y_mm: 20`、
 `approach_z_clearance_mm: 20`，正式生产前仍应按机械臂实测轨迹标定。
 发送 WCS 规划订单输出接口的文件是 `_execution_wcs.json`，map 文件必须留在机器人
