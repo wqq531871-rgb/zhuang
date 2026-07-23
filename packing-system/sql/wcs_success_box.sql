@@ -1,43 +1,49 @@
--- 达标托盘箱子明细表
--- 一行 = 一个箱子；同一托盘的多箱共用同一个 box_unique_id
--- 库名与 packing_config.yaml 中 database.database 保持一致（默认 zhuangdb）
---
--- is_send：'2'=未下传（默认），'1'=已下传
+/*
+ Navicat Premium Data Transfer
 
-CREATE DATABASE IF NOT EXISTS `zhuangdb`
-  DEFAULT CHARACTER SET utf8mb4
-  DEFAULT COLLATE utf8mb4_unicode_ci;
+ Source Server         : localhost
+ Source Server Type    : MySQL
+ Source Server Version : 80030
+ Source Host           : localhost:3306
+ Source Schema         : zhuangdb
 
-USE `zhuangdb`;
+ Target Server Type    : MySQL
+ Target Server Version : 80030
+ File Encoding         : 65001
 
+ Date: 24/07/2026 01:58:56
+*/
+
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS = 0;
+
+-- ----------------------------
+-- Table structure for wcs_success_box
+-- ----------------------------
 DROP TABLE IF EXISTS `wcs_success_box`;
+CREATE TABLE `wcs_success_box`  (
+  `id` bigint(0) UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键，自增',
+  `box_unique_id` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '托盘方案唯一ID（一盘多箱相同，对方按此查询）',
+  `seq` int(0) UNSIGNED NOT NULL COMMENT '盘内执行序号（从1开始）',
+  `raw_length` double NOT NULL COMMENT '箱子真实长度 mm',
+  `raw_width` double NOT NULL COMMENT '箱子真实宽度 mm',
+  `raw_height` double NOT NULL COMMENT '箱子真实高度 mm',
+  `pos_x` double NOT NULL COMMENT '放置坐标 x mm',
+  `pos_y` double NOT NULL COMMENT '放置坐标 y mm',
+  `pos_z` double NOT NULL COMMENT '放置坐标 z mm',
+  `stack_height_before` double NOT NULL DEFAULT 0 COMMENT '放置当前箱之前的垛型最高顶面 mm',
+  `state` tinyint(0) UNSIGNED NOT NULL COMMENT '朝向：1=不转，2=转（90°）',
+  `pallet_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '算法内部托盘编号（可选，便于人对账）',
+  `order_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '销售订单号 sales_order_no',
+  `case_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '托盘类型 pallet_type，如 MH423C',
+  `created_at` datetime(0) NOT NULL DEFAULT CURRENT_TIMESTAMP(0) COMMENT '写入时间',
+  `product_code` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '箱子唯一编号',
+  `is_send` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '是否下传\r\n1：已下传\r\n2：未下传',
+  `case_group` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL,
+  PRIMARY KEY (`id`) USING BTREE,
+  UNIQUE INDEX `uk_box_unique_seq`(`box_unique_id`, `seq`) USING BTREE,
+  INDEX `idx_box_unique_id`(`box_unique_id`) USING BTREE,
+  INDEX `idx_created_at`(`created_at`) USING BTREE
+) ENGINE = InnoDB CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '达标托盘箱子明细：每次计算结束后有达标盘则按箱插入' ROW_FORMAT = Dynamic;
 
-CREATE TABLE `wcs_success_box` (
-  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键，自增',
-  `box_unique_id` CHAR(32) NOT NULL COMMENT '托盘方案唯一ID（一盘多箱相同，对方按此查询）',
-  `seq` INT UNSIGNED NOT NULL COMMENT '盘内执行序号（从1开始）',
-  `raw_length` DOUBLE NOT NULL COMMENT '箱子真实长度 mm',
-  `raw_width` DOUBLE NOT NULL COMMENT '箱子真实宽度 mm',
-  `raw_height` DOUBLE NOT NULL COMMENT '箱子真实高度 mm',
-  `pos_x` DOUBLE NOT NULL COMMENT '放置坐标 x mm',
-  `pos_y` DOUBLE NOT NULL COMMENT '放置坐标 y mm',
-  `pos_z` DOUBLE NOT NULL COMMENT '放置坐标 z mm',
-  `stack_height_before` DOUBLE NOT NULL DEFAULT 0 COMMENT '放置当前箱之前的垛型最高顶面 mm',
-  `state` TINYINT UNSIGNED NOT NULL COMMENT '朝向：1=不转，2=转（90°）；当前固定写 1',
-  `pallet_id` VARCHAR(64) NULL COMMENT '算法内部托盘编号（可选，便于人对账）',
-  `order_id` VARCHAR(64) NULL COMMENT '销售订单号 sales_order_no',
-  `case_type` VARCHAR(32) NULL COMMENT '托盘类型 pallet_type，如 MH423C',
-  `case_group` VARCHAR(32) NULL DEFAULT '0' COMMENT '拼箱组，来自方案 JSON case_group',
-  `product_code` VARCHAR(255) NOT NULL COMMENT '箱子唯一编号；WCS 有则用库存码，Excel 缺码时写随机内部码',
-  `is_send` VARCHAR(255) NULL DEFAULT '2' COMMENT '是否下传：1已下传，2未下传',
-  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '写入时间',
-  PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_box_unique_seq` (`box_unique_id`, `seq`),
-  KEY `idx_box_unique_id` (`box_unique_id`),
-  KEY `idx_is_send` (`is_send`),
-  KEY `idx_created_at` (`created_at`),
-  CONSTRAINT `chk_state` CHECK (`state` IN (1, 2))
-) ENGINE=InnoDB
-  DEFAULT CHARSET=utf8mb4
-  COLLATE=utf8mb4_unicode_ci
-  COMMENT='达标托盘箱子明细：执行规划完成后有达标盘则按箱插入';
+SET FOREIGN_KEY_CHECKS = 1;
