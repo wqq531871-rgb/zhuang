@@ -1,4 +1,4 @@
-"""Create a same-schema robot execution plan from an existing packing report."""
+"""Create a centered robot execution plan from an existing packing report."""
 
 from __future__ import annotations
 
@@ -26,8 +26,8 @@ DEFAULT_CONFIG_PATH = (
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Reorder packed_items with support topology and a low-height "
-            "origin-outward wavefront. Final box coordinates are unchanged."
+            "Reorder packed_items with support topology and a directed "
+            "diagonal-approach wave, then center the pallet layout."
         )
     )
     parser.add_argument("input", help="Existing packing_plan JSON")
@@ -189,11 +189,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if args.z_clearance_mm is not None
                 else settings.suction_z_clearance_mm
             ),
+            approach_offset_x_mm=settings.approach_offset_x_mm,
+            approach_offset_y_mm=settings.approach_offset_y_mm,
+            approach_z_clearance_mm=settings.approach_z_clearance_mm,
+            approach_box_xy_clearance_mm=(
+                settings.approach_box_xy_clearance_mm
+            ),
+            approach_suction_xy_clearance_mm=(
+                settings.approach_suction_xy_clearance_mm
+            ),
             require_suction_pose=(
                 args.require_suction_pose
                 if args.require_suction_pose is not None
                 else settings.require_suction_pose
             ),
+            max_occupied_directions=settings.max_occupied_directions,
+            side_neighbor_clearance_mm=settings.side_neighbor_clearance_mm,
+            side_height_tolerance_mm=settings.side_height_tolerance_mm,
+            preserve_open_direction=settings.preserve_open_direction,
+            max_sequence_search_seconds_per_pallet=(
+                settings.max_sequence_search_seconds_per_pallet
+            ),
+            scan_column_tolerance_mm=settings.scan_column_tolerance_mm,
         )
         execution_report = plan_execution_report(report, config=config)
         wcs_result = None

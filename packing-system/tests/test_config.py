@@ -26,7 +26,7 @@ from src.config import (
     SmallBoxDetectionConfig,
     ExcelDataConfig,
 )
-from src.config.loader import ConfigLoader
+from src.config.loader import ConfigLoader, create_default_config_yaml
 
 
 def test_constants():
@@ -216,6 +216,12 @@ def test_execution_sequence_config():
             'suction_xy_clearance_mm': 12.0,
             'suction_z_clearance_mm': 5.0,
             'require_suction_pose': False,
+            'max_occupied_directions': 2,
+            'side_neighbor_clearance_mm': 6.0,
+            'side_height_tolerance_mm': 2.0,
+            'preserve_open_direction': True,
+            'max_sequence_search_seconds_per_pallet': 1.5,
+            'scan_column_tolerance_mm': 1.5,
         }
     })
 
@@ -228,9 +234,25 @@ def test_execution_sequence_config():
     assert config.suction_xy_clearance_mm == 12.0
     assert config.suction_z_clearance_mm == 5.0
     assert config.require_suction_pose is False
+    assert config.max_occupied_directions == 2
+    assert config.side_neighbor_clearance_mm == 6.0
+    assert config.side_height_tolerance_mm == 2.0
+    assert config.preserve_open_direction is True
+    assert config.max_sequence_search_seconds_per_pallet == 1.5
+    assert config.scan_column_tolerance_mm == 1.5
+    assert config.approach_offset_x_mm == 35.0
+    assert config.approach_offset_y_mm == 35.0
+    assert config.approach_z_clearance_mm == 0.0
+    assert config.approach_box_xy_clearance_mm == 0.0
+    assert config.approach_suction_xy_clearance_mm == 2.0
+    assert not hasattr(config, 'adaptive_staircase_enabled')
+    assert not hasattr(config, 'staircase_height_difference_threshold_mm')
+    assert not hasattr(config, 'staircase_transition_ratio_threshold')
+    assert not hasattr(config, 'staircase_min_transition_edges')
+    assert not hasattr(config, 'prefer_adjacent_occupied_sides')
 
 
-def test_execution_sequence_config_rejects_string_boolean_switches():
+def test_execution_sequence_config_rejects_string_boolean_switch():
     loader = ConfigLoader.from_dict({
         'execution_sequence': {
             'enabled': 'false',
@@ -239,6 +261,80 @@ def test_execution_sequence_config_rejects_string_boolean_switches():
 
     with pytest.raises(ValueError, match='enabled must be a boolean'):
         loader.load_execution_sequence_config()
+
+
+@pytest.mark.parametrize(
+    'field',
+    [
+        'approach_offset_x_mm',
+        'approach_offset_y_mm',
+        'approach_z_clearance_mm',
+        'approach_box_xy_clearance_mm',
+        'approach_suction_xy_clearance_mm',
+    ],
+)
+@pytest.mark.parametrize(
+    'value, message',
+    [
+        (True, 'finite number'),
+        (-1.0, 'non-negative'),
+        (float('nan'), 'finite'),
+        (float('inf'), 'finite'),
+    ],
+)
+def test_execution_sequence_config_rejects_invalid_approach_values(
+    field,
+    value,
+    message,
+):
+    loader = ConfigLoader.from_dict({
+        'execution_sequence': {
+            field: value,
+        }
+    })
+
+    with pytest.raises(ValueError, match=message):
+        loader.load_execution_sequence_config()
+
+
+def test_generated_default_config_matches_shipped_approach_behavior(tmp_path):
+    generated_path = tmp_path / 'packing_config.yaml'
+    create_default_config_yaml(generated_path)
+
+    generated_loader = ConfigLoader(generated_path)
+    shipped_loader = ConfigLoader(
+        project_root / 'config' / 'packing_config.yaml'
+    )
+    generated = generated_loader.load_execution_sequence_config()
+    shipped = shipped_loader.load_execution_sequence_config()
+
+    assert generated.box_xy_clearance_mm == shipped.box_xy_clearance_mm == 0.0
+    assert (
+        generated.scan_column_tolerance_mm
+        == shipped.scan_column_tolerance_mm
+    )
+
+    expected_approach_settings = {
+        'approach_offset_x_mm': 35.0,
+        'approach_offset_y_mm': 35.0,
+        'approach_z_clearance_mm': 0.0,
+        'approach_box_xy_clearance_mm': 0.0,
+        'approach_suction_xy_clearance_mm': 2.0,
+    }
+    for field, expected in expected_approach_settings.items():
+        assert getattr(generated, field) == getattr(shipped, field) == expected
+
+    removed_fields = {
+        'adaptive_staircase_enabled',
+        'staircase_height_difference_threshold_mm',
+        'staircase_transition_ratio_threshold',
+        'staircase_min_transition_edges',
+        'prefer_adjacent_occupied_sides',
+    }
+    generated_data = generated_loader.config_data['execution_sequence']
+    shipped_data = shipped_loader.config_data['execution_sequence']
+    assert removed_fields.isdisjoint(generated_data)
+    assert removed_fields.isdisjoint(shipped_data)
 
 
 if __name__ == "__main__":

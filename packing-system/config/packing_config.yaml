@@ -52,7 +52,7 @@ execution_sequence:
   # true 时：根目录 run_packing、以及 UI「一键装箱」（Excel / 接口 WCS）在写出 packing_plan 后自动生成
   #   *_execution.json / *_execution_wcs.json / *_execution_wcs_map.json。
   enabled: true
-  # 同高度安全候选箱从指定托盘角点向外扩散。
+  # 有向空间波从指定托盘角点向外扩散；现场机器人在 x_max_y_max 侧时保持 x_min_y_min。
   # 可选：x_min_y_min / x_min_y_max / x_max_y_min / x_max_y_max
   origin: x_min_y_min
   # 几何比较容差，用于判断接触、重合和同一高度。
@@ -63,9 +63,32 @@ execution_sequence:
   suction_xy_clearance_mm: 0.0
   # 吸盘下降至目标箱顶时要求保留的 Z 安全余量。
   suction_z_clearance_mm: 0.0
+  # 目标点 +X/+Y 方向的预放偏移；默认 35/35 mm 对应约 49.5 mm 斜向推进。
+  approach_offset_x_mm: 35.0
+  approach_offset_y_mm: 35.0
+  # 预放点相对目标放置高度的 Z 高差。0 是未标定占位值；现场必须写入实测高度。
+  # 已知 668 箱样例在 0 mm 时会安全拒绝第 11 托盘，不得把离线诊断值当生产值。
+  approach_z_clearance_mm: 0.0
+  # 推进阶段箱体/吸盘每侧 XY 安全包络。
+  approach_box_xy_clearance_mm: 0.0
+  approach_suction_xy_clearance_mm: 2.0
   # true 时每个箱子必须包含完整 suction_rect_* 字段。
   require_suction_pose: true
+  # 放置目标箱时，允许同高或更高邻箱占用的最大侧面方向数（x-/x+/y-/y+）。
+  max_occupied_directions: 2
+  # 判断侧面邻箱时允许的最大水平间隙。
+  side_neighbor_clearance_mm: 5.0
+  # 判断同高围挡时的顶面高度容差。
+  side_height_tolerance_mm: 2.0
+  # true 时用残余反向可完成性检查保证执行时保留开放方向。
+  preserve_open_direction: true
+  # 每个托盘防包围规划的最长时间。
+  max_sequence_search_seconds_per_pallet: 1.0
+  # X/Y 进度相差不超过该值时聚为同一空间等级，只影响软排序。
+  scan_column_tolerance_mm: 5.0
 tolerances:
+  # TODO: 后续统一注入主装箱、GCP、重排和全部救援路径；当前部分路径仍使用代码内常量。
+  # 在统一注入完成前，修改本段数值不能保证所有装箱路径同步变化。
   xy_tolerance: 2.0
   z_tolerance: 0.0
 algorithm:

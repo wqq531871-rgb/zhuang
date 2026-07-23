@@ -8,6 +8,14 @@ from pathlib import Path
 
 import pytest
 
+import run_execution_planning
+from src.execution.approach_geometry import (
+    MovingRectPath,
+    moving_path_blocked,
+    preposition_descent_blocked,
+    segment_intersects_rect,
+)
+from src.execution import sequence_planner as sequence_planner_module
 from src.execution.sequence_planner import (
     ExecutionSequenceConfig,
     ExecutionSequenceError,
@@ -78,6 +86,139 @@ def _ids(items):
     return [item["id"] for item in items]
 
 
+def test_approach_geometry_segment_intersects_axis_aligned_rectangle():
+    assert segment_intersects_rect((0, 0), (2, 2), (0.5, 1.5, 0.5, 1.5))
+    assert not segment_intersects_rect((0, 0), (0, 2), (1, 2, 0.5, 1.5))
+
+
+def test_approach_geometry_near_side_blocker_blocks_diagonal_sweep():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert moving_path_blocked(path, (100, 200, 0, 100), 0, 100, 0)
+
+
+def test_approach_geometry_exact_diagonal_corridor_excludes_swept_aabb_corner():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert not moving_path_blocked(
+        path, (130, 140, 0, 5), 0, 100, 0, tolerance=0
+    )
+
+
+def test_approach_geometry_blocker_outside_diagonal_corridor_is_safe():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert not moving_path_blocked(path, (0, 100, 150, 250), 0, 100, 0)
+
+
+def test_approach_geometry_blocker_wholly_below_moving_z_interval_is_safe():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert not moving_path_blocked(path, (100, 200, 0, 100), -100, -1, 0)
+
+
+def test_approach_geometry_preposition_descent_is_blocked_above_path_bottom():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert preposition_descent_blocked(path, (100, 200, 100, 200), 25, 0)
+
+
+def test_approach_geometry_preposition_contact_at_clearance_is_safe():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert not preposition_descent_blocked(path, (145, 245, 35, 135), 25, 10)
+
+
+def test_approach_geometry_final_only_far_side_contact_is_safe():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert not moving_path_blocked(path, (-100, 0, 0, 100), 0, 100, 0)
+
+
+def test_approach_geometry_path_rejects_nonfinite_translated_start():
+    with pytest.raises(ValueError):
+        MovingRectPath((1e308, 1.1e308, 0, 1), 1e308, 0, 0, 1)
+
+
+def test_approach_geometry_segment_rejects_nonfinite_slab_delta():
+    with pytest.raises(ValueError):
+        segment_intersects_rect(
+            (-1e308, 0), (1e308, 0), (-1, 1, -1, 1), tolerance=0
+        )
+
+
+def test_approach_geometry_segment_rejects_nonfinite_tolerance_expansion():
+    with pytest.raises(ValueError):
+        segment_intersects_rect(
+            (0, 0), (1, 1), (1e308, 1.1e308, 0, 1), tolerance=1e308
+        )
+
+
+def test_approach_geometry_moving_sweep_rejects_nonfinite_minkowski_bounds():
+    path = MovingRectPath((0, 1, 0, 1), 0, 0, 0, 1)
+
+    with pytest.raises(ValueError):
+        moving_path_blocked(
+            path,
+            (1e308, 1.1e308, 0, 1),
+            0,
+            1,
+            1e308,
+            tolerance=0,
+        )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ((0, 0, 0, 100), 35, 35, 0, 100),
+        ((0, 100, 0, 100), -1, 35, 0, 100),
+        ((0, 100, 0, 100), 35, float("nan"), 0, 100),
+        ((0, 100, 0, 100), 35, 35, 100, 100),
+    ],
+)
+def test_approach_geometry_path_rejects_invalid_geometry(args):
+    with pytest.raises(ValueError):
+        MovingRectPath(*args)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: segment_intersects_rect(
+            (0, 0), (float("inf"), 1), (0, 1, 0, 1)
+        ),
+        lambda: segment_intersects_rect((0, 0), (1, 1), (0, 0, 0, 1)),
+        lambda: segment_intersects_rect(
+            (0, 0), (1, 1), (0, 1, 0, 1), tolerance=-1
+        ),
+        lambda: preposition_descent_blocked(
+            MovingRectPath((0, 1, 0, 1), 1, 1, 0, 1),
+            (0, 1, 0, 1),
+            float("nan"),
+            0,
+        ),
+        lambda: moving_path_blocked(
+            MovingRectPath((0, 1, 0, 1), 1, 1, 0, 1),
+            (0, 1, 0, 1),
+            1,
+            0,
+            0,
+        ),
+        lambda: moving_path_blocked(
+            MovingRectPath((0, 1, 0, 1), 1, 1, 0, 1),
+            (0, 1, 0, 1),
+            0,
+            1,
+            -1,
+        ),
+    ],
+)
+def test_approach_geometry_functions_reject_invalid_geometry(call):
+    with pytest.raises(ValueError):
+        call()
+
+
 def test_support_boxes_precede_the_box_they_support():
     base = _box("base", 0, 0, 0)
     top = _box("top", 0, 0, 100)
@@ -87,7 +228,293 @@ def test_support_boxes_precede_the_box_they_support():
     assert _ids(ordered) == ["base", "top"]
 
 
-def test_low_height_wavefront_prefers_shorter_resulting_top():
+def test_approach_dependency_keeps_far_box_before_near_side_blocker():
+    far = _box("far", 0, 0, 0)
+    near = _box("near", 100, 0, 0)
+
+    ordered = sequence_pallet_items(
+        _pallet([near, far]),
+        ExecutionSequenceConfig(
+            origin="x_max_y_min",
+            preserve_open_direction=False,
+        ),
+    )
+
+    assert _ids(ordered) == ["far", "near"]
+
+
+def test_direct_approach_edges_use_exact_diagonal_corridor():
+    far = _box("far", 0, 0, 0)
+    near = _box("near", 100, 0, 0)
+    outside = _box("outside", 130, 0, 0, length=10, width=5)
+    items = [far, near, outside]
+    edges = [set() for _item in items]
+    indegree = [0 for _item in items]
+
+    sequence_planner_module._add_approach_edges(
+        items,
+        ExecutionSequenceConfig(),
+        edges,
+        indegree,
+        PALLET_DIMS,
+    )
+
+    assert 1 in edges[0]
+    assert 0 not in edges[1]
+    assert 2 not in edges[0]
+
+
+def test_approach_edges_preserve_direct_support_dependency():
+    base = _box("base", 0, 0, 0)
+    top = _box("top", 0, 0, 100)
+    items = [top, base]
+    edges, indegree, _supports = sequence_planner_module._support_edges(
+        items, 1e-6
+    )
+
+    sequence_planner_module._add_approach_edges(
+        items,
+        ExecutionSequenceConfig(),
+        edges,
+        indegree,
+        PALLET_DIMS,
+    )
+
+    assert edges == [set(), {0}]
+
+
+def test_approach_replay_rejects_manually_unsafe_prefix():
+    far = _box("far", 0, 0, 0)
+    near = _box("near", 100, 0, 0)
+
+    with pytest.raises(
+        ExecutionSequenceError,
+        match="far.*near.*approach|far.*near.*pre-position",
+    ):
+        sequence_planner_module._assert_approach_replay_safe(
+            [far, near],
+            [1, 0],
+            ExecutionSequenceConfig(),
+            PALLET_DIMS,
+        )
+
+
+def test_support_that_blocks_shifted_suction_preposition_creates_cycle():
+    support = _box("support", 80, 80, 0)
+    target = _box(
+        "target",
+        0,
+        0,
+        100,
+        cup_rect={"x_min": 30, "x_max": 50, "y_min": 30, "y_max": 50},
+    )
+
+    with pytest.raises(ExecutionSequenceError, match="cyclic") as exc_info:
+        sequence_pallet_items(
+            _pallet([support, target]),
+            ExecutionSequenceConfig(suction_z_clearance_mm=150.0),
+        )
+
+    assert "support" in str(exc_info.value)
+    assert "target" in str(exc_info.value)
+
+
+def test_approach_z_clearance_passes_above_low_blocker_without_suction_pose():
+    far = _box("far", 0, 0, 0)
+    low_near = _box("low-near", 100, 0, 0, height=20)
+    suction_names = (
+        "suction_rect_x_min",
+        "suction_rect_x_max",
+        "suction_rect_y_min",
+        "suction_rect_y_max",
+    )
+    for item in (far, low_near):
+        for name in suction_names:
+            item.pop(name)
+
+    ordered = sequence_pallet_items(
+        _pallet([far, low_near]),
+        ExecutionSequenceConfig(
+            origin="x_max_y_min",
+            approach_z_clearance_mm=20.0,
+            require_suction_pose=False,
+            preserve_open_direction=False,
+        ),
+    )
+
+    assert _ids(ordered) == ["low-near", "far"]
+
+
+def test_final_box_descent_adds_edge_and_replay_rejects_unsafe_prefix():
+    blocker = _box("blocker", 0, 0, 0, length=99, height=20)
+    target = _box("target", 100, 0, 0)
+    suction_names = (
+        "suction_rect_x_min",
+        "suction_rect_x_max",
+        "suction_rect_y_min",
+        "suction_rect_y_max",
+    )
+    for item in (blocker, target):
+        for name in suction_names:
+            item.pop(name)
+    items = [blocker, target]
+    config = ExecutionSequenceConfig(
+        approach_z_clearance_mm=20.0,
+        approach_box_xy_clearance_mm=2.0,
+        require_suction_pose=False,
+        preserve_open_direction=False,
+    )
+    edges = [set() for _item in items]
+    indegree = [0 for _item in items]
+
+    sequence_planner_module._add_approach_edges(
+        items, config, edges, indegree, PALLET_DIMS
+    )
+
+    assert 0 in edges[1]
+    with pytest.raises(ExecutionSequenceError, match="box final descent"):
+        sequence_planner_module._assert_approach_replay_safe(
+            items, [0, 1], config, PALLET_DIMS
+        )
+
+
+def test_final_box_descent_cycle_is_rejected_by_public_planner():
+    blocker = _box("blocker", 0, 0, 0, length=99, height=20)
+    target = _box("target", 100, 0, 0)
+    for item in (blocker, target):
+        for name in (
+            "suction_rect_x_min",
+            "suction_rect_x_max",
+            "suction_rect_y_min",
+            "suction_rect_y_max",
+        ):
+            item.pop(name)
+
+    with pytest.raises(ExecutionSequenceError, match="cyclic"):
+        sequence_pallet_items(
+            _pallet([blocker, target]),
+            ExecutionSequenceConfig(
+                approach_z_clearance_mm=20.0,
+                approach_box_xy_clearance_mm=2.0,
+                require_suction_pose=False,
+                preserve_open_direction=False,
+            ),
+        )
+
+
+def test_centered_layout_gate_calls_approach_replay(monkeypatch):
+    item = _box("centered", 450, 450, 0)
+
+    def reject_approach_replay(*_args, **_kwargs):
+        raise ExecutionSequenceError("approach replay sentinel")
+
+    monkeypatch.setattr(
+        sequence_planner_module,
+        "_assert_approach_replay_safe",
+        reject_approach_replay,
+    )
+
+    with pytest.raises(ExecutionSequenceError, match="approach replay sentinel"):
+        sequence_planner_module._assert_final_execution_layout(
+            [item], ExecutionSequenceConfig()
+        )
+
+
+def test_approach_edge_scan_checks_deadline_during_pair_loops(monkeypatch):
+    items = [
+        _box("left", 0, 0, 0),
+        _box("middle", 300, 0, 0),
+        _box("right", 600, 0, 0),
+    ]
+    checks = []
+    monkeypatch.setattr(
+        sequence_planner_module,
+        "_check_deadline",
+        lambda deadline: checks.append(deadline),
+    )
+
+    sequence_planner_module._add_approach_edges(
+        items,
+        ExecutionSequenceConfig(),
+        [set() for _item in items],
+        [0 for _item in items],
+        PALLET_DIMS,
+        deadline=123.0,
+    )
+
+    expected_minimum = 2 * len(items) + len(items) + len(items) ** 2
+    assert len(checks) >= expected_minimum
+    assert set(checks) == {123.0}
+
+
+def test_approach_replay_checks_deadline_during_pair_loops(monkeypatch):
+    items = [
+        _box("left", 0, 0, 0),
+        _box("middle", 300, 0, 0),
+        _box("right", 600, 0, 0),
+    ]
+    checks = []
+    monkeypatch.setattr(
+        sequence_planner_module,
+        "_check_deadline",
+        lambda deadline: checks.append(deadline),
+    )
+
+    sequence_planner_module._assert_approach_replay_safe(
+        items,
+        [0, 1, 2],
+        ExecutionSequenceConfig(),
+        PALLET_DIMS,
+        deadline=456.0,
+    )
+
+    pair_count = sum(range(len(items)))
+    expected_minimum = 2 * len(items) + len(items) + pair_count
+    assert len(checks) >= expected_minimum
+    assert set(checks) == {456.0}
+
+
+def test_final_layout_forwards_deadline_to_approach_gates(monkeypatch):
+    calls = []
+
+    def record_edges(
+        _items,
+        _config,
+        _edges,
+        _indegree,
+        _pallet_dims=None,
+        deadline=None,
+    ):
+        calls.append(("edges", deadline))
+
+    def record_replay(
+        _items,
+        _ordered_indices,
+        _config,
+        _pallet_dims=None,
+        deadline=None,
+    ):
+        calls.append(("replay", deadline))
+
+    monkeypatch.setattr(
+        sequence_planner_module, "_add_approach_edges", record_edges
+    )
+    monkeypatch.setattr(
+        sequence_planner_module,
+        "_assert_approach_replay_safe",
+        record_replay,
+    )
+
+    sequence_planner_module._assert_final_execution_layout(
+        [_box("centered", 450, 450, 0)],
+        ExecutionSequenceConfig(preserve_open_direction=False),
+        deadline=789.0,
+    )
+
+    assert calls == [("edges", 789.0), ("replay", 789.0)]
+
+
+def test_directed_wave_origin_progress_precedes_resulting_top_height():
     tall_at_origin = _box("tall", 0, 0, 0, height=300)
     short_farther = _box("short", 200, 0, 0, height=100)
 
@@ -96,14 +523,14 @@ def test_low_height_wavefront_prefers_shorter_resulting_top():
         ExecutionSequenceConfig(origin="x_min_y_min"),
     )
 
-    assert _ids(ordered) == ["short", "tall"]
+    assert _ids(ordered) == ["tall", "short"]
 
 
 @pytest.mark.parametrize(
     "origin, expected",
     [
-        ("x_min_y_min", ["00", "10", "01", "11"]),
-        ("x_max_y_max", ["11", "01", "10", "00"]),
+        ("x_min_y_min", ["00", "01", "10", "11"]),
+        ("x_max_y_max", ["11", "10", "01", "00"]),
     ],
 )
 def test_equal_height_boxes_expand_outward_from_configured_origin(origin, expected):
@@ -116,10 +543,711 @@ def test_equal_height_boxes_expand_outward_from_configured_origin(origin, expect
 
     ordered = sequence_pallet_items(
         _pallet(boxes),
-        ExecutionSequenceConfig(origin=origin),
+        ExecutionSequenceConfig(
+            origin=origin,
+            approach_offset_x_mm=0.0,
+            approach_offset_y_mm=0.0,
+            approach_suction_xy_clearance_mm=0.0,
+        ),
     )
 
     assert _ids(ordered) == expected
+
+
+@pytest.mark.parametrize("preserve_open_direction", [True, False])
+def test_directed_wave_scans_x_ranks_then_y(preserve_open_direction):
+    boxes = [
+        _box("c10", 140, 0, 0, length=101, width=41, height=61),
+        _box("c01", 0, 160, 0, length=59, width=73, height=61),
+        _box("c00", 0, 0, 0, length=83, width=47, height=61),
+    ]
+
+    ordered = sequence_pallet_items(
+        _pallet(boxes),
+        ExecutionSequenceConfig(
+            preserve_open_direction=preserve_open_direction,
+        ),
+    )
+
+    assert _ids(ordered) == ["c00", "c01", "c10"]
+
+
+def test_origin_scan_groups_nearby_x_coordinates_into_one_column():
+    boxes = [
+        _box("same_column_y200", 0.0, 200.0, 0),
+        _box("same_column_y0", 1.0, 0.0, 0),
+        _box("next_column", 150.0, 0.0, 0),
+    ]
+
+    ordered = sequence_pallet_items(
+        _pallet(boxes),
+        ExecutionSequenceConfig(
+            preserve_open_direction=True,
+            scan_column_tolerance_mm=2.0,
+        ),
+    )
+
+    assert _ids(ordered) == [
+        "same_column_y0",
+        "same_column_y200",
+        "next_column",
+    ]
+
+
+def test_default_scan_column_tolerance_groups_five_mm_layout_offset():
+    boxes = [
+        _box("far_shifted_left", 0.0, 200.0, 0),
+        _box("near_origin", 5.0, 0.0, 0),
+        _box("next_column", 150.0, 0.0, 0),
+    ]
+
+    ordered = sequence_pallet_items(
+        _pallet(boxes),
+        ExecutionSequenceConfig(
+            preserve_open_direction=True,
+        ),
+    )
+
+    assert _ids(ordered) == [
+        "near_origin",
+        "far_shifted_left",
+        "next_column",
+    ]
+
+
+def test_directed_wave_keeps_input_order_at_same_coordinate_ranks():
+    boxes = [
+        _box("x4_first", 4.0, 0.0, 0, length=1.0, width=1.0),
+        _box("x0_second", 0.0, 0.0, 0, length=1.0, width=1.0),
+    ]
+
+    ordered = sequence_pallet_items(
+        _pallet(boxes),
+        ExecutionSequenceConfig(
+            preserve_open_direction=False,
+            scan_column_tolerance_mm=5.0,
+        ),
+    )
+
+    assert _ids(ordered) == ["x4_first", "x0_second"]
+
+
+def test_directed_wave_coordinate_ranks_are_global_across_support_tiers():
+    support = _box(
+        "support",
+        0,
+        0,
+        0,
+        length=20,
+        width=300,
+        height=100,
+    )
+    same_column_y200 = _box(
+        "same_column_y200",
+        4,
+        200,
+        100,
+        length=1,
+        width=1,
+    )
+    same_column_y0 = _box(
+        "same_column_y0",
+        9,
+        0,
+        100,
+        length=1,
+        width=1,
+    )
+
+    ordered = sequence_pallet_items(
+        _pallet([same_column_y200, same_column_y0, support]),
+        ExecutionSequenceConfig(
+            preserve_open_direction=True,
+            max_occupied_directions=4,
+            scan_column_tolerance_mm=5.0,
+        ),
+    )
+
+    assert _ids(ordered) == [
+        "support",
+        "same_column_y200",
+        "same_column_y0",
+    ]
+
+
+def test_hard_dependency_resumes_stable_forward_scan_without_open_reason(caplog):
+    scan_first = _box("A", 0, 0, 0, height=300)
+    scan_middle = _box("B", 200, 0, 0, height=100)
+    scan_last = _box(
+        "C",
+        400,
+        0,
+        0,
+        height=200,
+        cup_rect={"x_min": 50, "x_max": 500, "y_min": 0, "y_max": 100},
+    )
+    boxes = [scan_first, scan_middle, scan_last]
+    edges, indegree, _supports = sequence_planner_module._support_edges(
+        boxes, 0.001
+    )
+    sequence_planner_module._add_clearance_edges(
+        boxes, ExecutionSequenceConfig(), edges, indegree
+    )
+
+    assert edges == [set(), set(), {0}]
+
+    with caplog.at_level("WARNING", logger=sequence_planner_module.__name__):
+        ordered = sequence_pallet_items(
+            _pallet(boxes),
+            ExecutionSequenceConfig(),
+        )
+
+    assert _ids(ordered) == ["B", "C", "A"]
+    assert "execution scan deviation" in caplog.text
+    assert "expected='A'" in caplog.text
+    assert "selected='B'" in caplog.text
+    assert "reason=hard_dependency" in caplog.text
+    assert "reason=open_direction" not in caplog.text
+    deviation_warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if "execution scan deviation" in record.getMessage()
+    ]
+    assert len(deviation_warnings) == 1
+    assert "count=1" in deviation_warnings[0]
+    assert "selected='C'" not in deviation_warnings[0]
+
+
+def test_scan_deviations_use_one_warning_and_preview_at_most_eight(caplog):
+    pair_count = 9
+    items = []
+    edges = [set() for _idx in range(pair_count * 2)]
+    forward_keys = []
+    expected_order = []
+    for pair_idx in range(pair_count):
+        expected_idx = pair_idx * 2
+        prerequisite_idx = expected_idx + 1
+        items.extend(
+            [
+                {"id": "A%d" % (pair_idx + 1)},
+                {"id": "B%d" % (pair_idx + 1)},
+            ]
+        )
+        edges[prerequisite_idx].add(expected_idx)
+        forward_keys.extend([(expected_idx,), (prerequisite_idx,)])
+        expected_order.extend([prerequisite_idx, expected_idx])
+
+    with caplog.at_level("WARNING", logger=sequence_planner_module.__name__):
+        ordered_indices = sequence_planner_module._stable_forward_order(
+            items=items,
+            edges=edges,
+            config=ExecutionSequenceConfig(preserve_open_direction=False),
+            forward_keys=forward_keys,
+            blockers=None,
+            deadline=sequence_planner_module.time.monotonic() + 1.0,
+            pallet_id="P-log-limit",
+        )
+
+    assert ordered_indices == expected_order
+    deviation_warnings = [
+        record.getMessage()
+        for record in caplog.records
+        if "execution scan deviation" in record.getMessage()
+    ]
+    assert len(deviation_warnings) == 1
+    assert "count=9" in deviation_warnings[0]
+    assert "expected='A8'" in deviation_warnings[0]
+    assert "expected='A9'" not in deviation_warnings[0]
+
+
+def test_forward_scheduler_skips_locally_safe_candidate_when_residual_is_blocked(
+    caplog,
+):
+    scan_first = _box("A", 0, 0, 0, height=300)
+    support = _box("B", 100, 0, 0, height=100)
+    supported = _box("C", 100, 0, 100, height=100)
+
+    with caplog.at_level("WARNING", logger=sequence_planner_module.__name__):
+        ordered = sequence_pallet_items(
+            _pallet([scan_first, support, supported]),
+            ExecutionSequenceConfig(
+                approach_offset_x_mm=0.0,
+                approach_offset_y_mm=0.0,
+                approach_suction_xy_clearance_mm=0.0,
+                max_occupied_directions=0,
+            ),
+        )
+
+    assert _ids(ordered) == ["B", "C", "A"]
+    assert "expected='A'" in caplog.text
+    assert "selected='B'" in caplog.text
+    assert "reason=open_direction" in caplog.text
+    assert "lookahead=true" in caplog.text
+
+
+def test_open_direction_scan_deviation_is_logged_with_specific_reason(caplog):
+    boxes = [
+        _box("center", 100, 100, 0),
+        _box("left", 0, 100, 0),
+        _box("below", 50, 0, 0),
+        _box("above", 50, 200, 0),
+    ]
+
+    with caplog.at_level("WARNING", logger=sequence_planner_module.__name__):
+        ordered = sequence_pallet_items(
+            _pallet(boxes),
+            ExecutionSequenceConfig(
+                approach_offset_x_mm=0.0,
+                approach_offset_y_mm=0.0,
+                approach_suction_xy_clearance_mm=0.0,
+                preserve_open_direction=True,
+                max_occupied_directions=2,
+            ),
+        )
+
+    assert _ids(ordered) == ["left", "below", "center", "above"]
+    assert "box='above' after='center'" in caplog.text
+    assert "reason=open_direction" in caplog.text
+
+
+def test_disabling_open_direction_keeps_scan_order_without_the_gate():
+    boxes = [
+        _box("center", 100, 100, 0),
+        _box("left", 0, 100, 0),
+        _box("below", 50, 0, 0),
+        _box("above", 50, 200, 0),
+    ]
+
+    ordered = sequence_pallet_items(
+        _pallet(boxes),
+        ExecutionSequenceConfig(
+            approach_offset_x_mm=0.0,
+            approach_offset_y_mm=0.0,
+            approach_suction_xy_clearance_mm=0.0,
+            preserve_open_direction=False,
+            max_occupied_directions=2,
+        ),
+    )
+
+    assert _ids(ordered) == ["left", "below", "above", "center"]
+
+
+def test_wavefront_does_not_fill_a_three_sided_pocket():
+    below = _box("below", 100, 200, 0)
+    left = _box("left", 0, 300, 0)
+    right = _box("right", 200, 100, 0, width=300)
+    center = _box("center", 100, 300, 0)
+
+    ordered = sequence_pallet_items(
+        _pallet([center, left, right, below]),
+        ExecutionSequenceConfig(
+            origin="x_min_y_min",
+            max_occupied_directions=2,
+            side_neighbor_clearance_mm=5.0,
+        ),
+    )
+
+    positions = {item["id"]: item["seq"] for item in ordered}
+    placed_neighbors = sum(
+        positions[box_id] < positions["center"]
+        for box_id in ("below", "left", "right")
+    )
+    assert placed_neighbors <= 2
+
+
+def test_lower_side_boxes_do_not_enclose_a_taller_box():
+    below = _box("below", 100, 200, 0, height=100)
+    left = _box("left", 0, 300, 0, height=100)
+    right = _box("right", 200, 100, 0, width=300, height=100)
+    center = _box("center", 100, 300, 0, height=200)
+
+    ordered = sequence_pallet_items(
+        _pallet([center, left, right, below]),
+        ExecutionSequenceConfig(
+            approach_offset_x_mm=0.0,
+            approach_offset_y_mm=0.0,
+            approach_suction_xy_clearance_mm=0.0,
+            max_occupied_directions=2,
+            side_neighbor_clearance_mm=5.0,
+            side_height_tolerance_mm=2.0,
+        ),
+    )
+
+    positions = {item["id"]: item["seq"] for item in ordered}
+    placed_neighbors = sum(
+        positions[box_id] < positions["center"]
+        for box_id in ("below", "left", "right")
+    )
+    assert placed_neighbors <= 2
+
+
+def test_coordinate_ranks_cluster_each_axis_from_cluster_anchor():
+    geometry = [
+        (0.0, 0.0, 0.0, 1.0, 1.0, 100.0),
+        (4.0, 4.0, 0.0, 1.0, 1.0, 100.0),
+        (9.0, 9.0, 0.0, 1.0, 1.0, 100.0),
+    ]
+
+    ranks = sequence_planner_module._coordinate_ranks(
+        geometry,
+        ExecutionSequenceConfig(scan_column_tolerance_mm=5.0),
+        PALLET_DIMS,
+    )
+
+    assert ranks == [(0, 0), (0, 0), (1, 1)]
+
+
+def test_directed_wave_keys_mix_spatial_rings_and_support_tiers():
+    geometry = [
+        (100.0, 100.0, 0.0, 100.0, 100.0, 100.0),
+        (0.0, 100.0, 0.0, 100.0, 100.0, 100.0),
+        (100.0, 0.0, 0.0, 100.0, 100.0, 100.0),
+        (0.0, 0.0, 100.0, 100.0, 100.0, 100.0),
+        (0.0, 0.0, 0.0, 100.0, 100.0, 100.0),
+    ]
+    supports = [set(), set(), set(), {4}, set()]
+
+    keys = sequence_planner_module._directed_wave_keys(
+        geometry,
+        supports,
+        ExecutionSequenceConfig(),
+        PALLET_DIMS,
+    )
+
+    assert keys == [
+        (1, 1, 1, 1, 0, 0),
+        (1, 1, 0, 1, 0, 1),
+        (1, 1, 1, 0, 0, 2),
+        (1, 0, 0, 0, 1, 3),
+        (0, 0, 0, 0, 0, 4),
+    ]
+    assert sorted(range(len(keys)), key=keys.__getitem__) == [4, 3, 1, 2, 0]
+
+
+def test_support_tiers_handle_a_deep_reverse_indexed_chain_iteratively():
+    item_count = 1200
+    supports = [{idx + 1} for idx in range(item_count - 1)] + [set()]
+
+    tiers = sequence_planner_module._support_tiers(supports)
+
+    assert tiers[-1] == 0
+    assert tiers[0] == item_count - 1
+    assert all(
+        tiers[idx] == tiers[idx + 1] + 1
+        for idx in range(item_count - 1)
+    )
+
+
+@pytest.mark.parametrize(
+    "supports, message",
+    [
+        ([{1}], "support dependency index .* out of range"),
+        ([{1}, {0}], "support dependency graph contains a cycle"),
+    ],
+)
+def test_support_tiers_reject_malformed_dependency_graphs(supports, message):
+    with pytest.raises(ExecutionSequenceError, match=message):
+        sequence_planner_module._support_tiers(supports)
+
+
+def test_directed_wave_expands_shuffled_irregular_grid_by_square_rings():
+    coordinates = [
+        (215.0, 97.0),
+        (0.0, 211.0),
+        (103.0, 0.0),
+        (215.0, 211.0),
+        (0.0, 0.0),
+        (103.0, 211.0),
+        (0.0, 97.0),
+        (215.0, 0.0),
+        (103.0, 97.0),
+    ]
+    geometry = [
+        (x, y, 0.0, 40.0 + idx, 50.0 + idx, 100.0)
+        for idx, (x, y) in enumerate(coordinates)
+    ]
+
+    keys = sequence_planner_module._directed_wave_keys(
+        geometry,
+        [set() for _entry in geometry],
+        ExecutionSequenceConfig(scan_column_tolerance_mm=5.0),
+        PALLET_DIMS,
+    )
+
+    ordered_indices = sorted(range(9), key=keys.__getitem__)
+
+    assert [coordinates[idx] for idx in ordered_indices] == [
+        (0.0, 0.0),
+        (0.0, 97.0),
+        (103.0, 0.0),
+        (103.0, 97.0),
+        (0.0, 211.0),
+        (103.0, 211.0),
+        (215.0, 0.0),
+        (215.0, 97.0),
+        (215.0, 211.0),
+    ]
+
+
+@pytest.mark.parametrize(
+    "origin, expected",
+    [
+        (
+            "x_min_y_min",
+            [(0.0, 0.0), (0.0, 100.0), (100.0, 0.0), (100.0, 100.0)],
+        ),
+        (
+            "x_max_y_max",
+            [(100.0, 100.0), (100.0, 0.0), (0.0, 100.0), (0.0, 0.0)],
+        ),
+    ],
+)
+def test_directed_wave_reverses_progress_from_configured_origin(origin, expected):
+    coordinates = [
+        (100.0, 0.0),
+        (0.0, 100.0),
+        (0.0, 0.0),
+        (100.0, 100.0),
+    ]
+    geometry = [
+        (x, y, 0.0, 100.0, 100.0, 100.0)
+        for x, y in coordinates
+    ]
+
+    keys = sequence_planner_module._directed_wave_keys(
+        geometry,
+        [set() for _entry in geometry],
+        ExecutionSequenceConfig(origin=origin),
+        PALLET_DIMS,
+    )
+
+    assert [
+        coordinates[idx]
+        for idx in sorted(range(len(geometry)), key=keys.__getitem__)
+    ] == expected
+
+
+def test_coordinate_ranking_checks_deadline_through_progress_and_axis_loops(
+    monkeypatch,
+):
+    checks = []
+    monkeypatch.setattr(
+        sequence_planner_module,
+        "_check_deadline",
+        lambda deadline: checks.append(deadline),
+    )
+    geometry = [
+        (0.0, 0.0, 0.0, 100.0, 100.0, 100.0),
+        (100.0, 100.0, 0.0, 100.0, 100.0, 100.0),
+    ]
+
+    sequence_planner_module._coordinate_ranks(
+        geometry,
+        ExecutionSequenceConfig(),
+        PALLET_DIMS,
+        deadline=123.0,
+    )
+
+    assert len(checks) >= len(geometry) * 3
+    assert set(checks) == {123.0}
+
+
+def test_public_planner_uses_one_directed_wave_for_bases_and_supported_boxes():
+    boxes = [
+        _box("diagonal_base", 100, 100, 0),
+        _box("y_base", 0, 100, 0),
+        _box("x_base", 100, 0, 0),
+        _box("origin_upper", 0, 0, 100),
+        _box("origin_base", 0, 0, 0),
+    ]
+
+    ordered = sequence_pallet_items(
+        _pallet(boxes),
+        ExecutionSequenceConfig(
+            approach_offset_x_mm=0.0,
+            approach_offset_y_mm=0.0,
+            approach_suction_xy_clearance_mm=0.0,
+            preserve_open_direction=False,
+            max_occupied_directions=4,
+        ),
+    )
+
+    assert _ids(ordered) == [
+        "origin_base",
+        "origin_upper",
+        "y_base",
+        "x_base",
+        "diagonal_base",
+    ]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "_classify_staircase_wave",
+        "_uses_staircase_wave",
+        "_staircase_shells",
+        "_stable_staircase_order",
+        "_greedy_staircase_order",
+        "_stable_regular_order",
+        "_greedy_reverse_order",
+    ],
+)
+def test_obsolete_ordering_helpers_are_absent(name):
+    assert not hasattr(sequence_planner_module, name)
+
+
+def test_public_planner_emits_no_mode_classification_log(caplog):
+    boxes = [
+        _box("origin", 0, 0, 0),
+        _box("far", 100, 100, 0),
+    ]
+
+    with caplog.at_level("INFO", logger=sequence_planner_module.__name__):
+        sequence_pallet_items(
+            _pallet(boxes),
+            ExecutionSequenceConfig(preserve_open_direction=False),
+        )
+
+    assert "execution sequence classification" not in caplog.text
+
+
+def test_removed_adaptive_config_fields_are_not_exposed():
+    obsolete_fields = {
+        "prefer_adjacent_occupied_sides",
+        "adaptive_staircase_enabled",
+        "staircase_height_difference_threshold_mm",
+        "staircase_transition_ratio_threshold",
+        "staircase_min_transition_edges",
+    }
+
+    assert obsolete_fields.isdisjoint(
+        ExecutionSequenceConfig.__dataclass_fields__
+    )
+
+
+def test_approach_config_defaults_are_explicit():
+    config = ExecutionSequenceConfig()
+
+    assert config.approach_offset_x_mm == 35.0
+    assert config.approach_offset_y_mm == 35.0
+    assert config.approach_z_clearance_mm == 0.0
+    assert config.approach_box_xy_clearance_mm == 0.0
+    assert config.approach_suction_xy_clearance_mm == 2.0
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "approach_offset_x_mm",
+        "approach_offset_y_mm",
+        "approach_z_clearance_mm",
+        "approach_box_xy_clearance_mm",
+        "approach_suction_xy_clearance_mm",
+    ],
+)
+@pytest.mark.parametrize(
+    "value, message",
+    [
+        (True, "finite number"),
+        (-1.0, "non-negative"),
+        (float("nan"), "finite"),
+        (float("inf"), "finite"),
+    ],
+)
+def test_invalid_approach_config_values_are_rejected(field, value, message):
+    with pytest.raises(ValueError, match=message):
+        ExecutionSequenceConfig(**{field: value})
+
+
+def test_require_suction_pose_must_be_boolean():
+    with pytest.raises(ValueError, match="require_suction_pose must be a boolean"):
+        ExecutionSequenceConfig(require_suction_pose="false")
+
+
+def test_approach_config_rejects_integer_too_large_for_float():
+    with pytest.raises(ValueError, match="finite number"):
+        ExecutionSequenceConfig(approach_offset_x_mm=10**10000)
+
+
+def test_open_direction_time_limit_is_reported_by_public_planner(monkeypatch):
+    boxes = [
+        _box("00", 0, 0, 0),
+        _box("10", 100, 0, 0),
+        _box("01", 0, 100, 0),
+        _box("11", 100, 100, 0),
+    ]
+    timestamps = iter((0.0, 2.0, 2.0))
+    monkeypatch.setattr(
+        sequence_planner_module.time,
+        "monotonic",
+        lambda: next(timestamps, 2.0),
+    )
+
+    with pytest.raises(ExecutionSequenceError, match="within 1.000s"):
+        sequence_pallet_items(
+            _pallet(boxes),
+            ExecutionSequenceConfig(
+                max_sequence_search_seconds_per_pallet=1.0,
+            ),
+        )
+
+
+def test_approach_timeout_uses_existing_public_error(monkeypatch):
+    observed_deadlines = []
+
+    def timeout_during_approach(
+        _items,
+        _config,
+        _edges,
+        _indegree,
+        _pallet_dims=None,
+        deadline=None,
+    ):
+        observed_deadlines.append(deadline)
+        raise sequence_planner_module._ExecutionSequenceDeadlineExceeded
+
+    monkeypatch.setattr(sequence_planner_module.time, "monotonic", lambda: 10.0)
+    monkeypatch.setattr(
+        sequence_planner_module,
+        "_add_approach_edges",
+        timeout_during_approach,
+    )
+
+    with pytest.raises(
+        ExecutionSequenceError,
+        match="no execution order within 1.000s",
+    ):
+        sequence_pallet_items(
+            _pallet([_box("only", 0, 0, 0)]),
+            ExecutionSequenceConfig(
+                preserve_open_direction=False,
+                max_sequence_search_seconds_per_pallet=1.0,
+            ),
+        )
+
+    assert observed_deadlines == [11.0]
+
+
+def test_blocker_map_checks_deadline_inside_pair_scan(monkeypatch):
+    timestamps = iter((0.0, 0.0, 2.0))
+    monkeypatch.setattr(
+        sequence_planner_module.time,
+        "monotonic",
+        lambda: next(timestamps, 2.0),
+    )
+
+    with pytest.raises(
+        sequence_planner_module._ExecutionSequenceDeadlineExceeded
+    ):
+        sequence_planner_module._direction_blocker_map(
+            [
+                (0.0, 0.0, 0.0, 100.0, 100.0, 100.0),
+                (100.0, 0.0, 0.0, 100.0, 100.0, 100.0),
+            ],
+            ExecutionSequenceConfig(),
+            deadline=1.0,
+        )
 
 
 def test_box_clearance_rejects_pair_with_no_safe_vertical_order():
@@ -243,7 +1371,27 @@ def test_non_finite_execution_clearances_are_rejected(field, value):
         ExecutionSequenceConfig(**{field: value})
 
 
-def test_report_schema_and_item_values_are_preserved_while_order_changes():
+@pytest.mark.parametrize(
+    "field, value, message",
+    [
+        ("max_occupied_directions", 5, "integer from 0 to 4"),
+        ("max_occupied_directions", True, "integer from 0 to 4"),
+        ("side_neighbor_clearance_mm", -1.0, "non-negative"),
+        ("side_neighbor_clearance_mm", True, "finite number"),
+        ("side_height_tolerance_mm", float("inf"), "finite"),
+        ("side_height_tolerance_mm", False, "finite number"),
+        ("preserve_open_direction", "true", "boolean"),
+        ("max_sequence_search_seconds_per_pallet", 0.0, "positive"),
+        ("max_sequence_search_seconds_per_pallet", True, "finite number"),
+        ("scan_column_tolerance_mm", -1.0, "non-negative"),
+    ],
+)
+def test_invalid_open_direction_settings_are_rejected(field, value, message):
+    with pytest.raises(ValueError, match=message):
+        ExecutionSequenceConfig(**{field: value})
+
+
+def test_report_business_values_are_preserved_while_execution_fields_change():
     tall = _box("tall", 0, 0, 0, height=300)
     short = _box("short", 200, 0, 0, height=100)
     tall.update({
@@ -277,14 +1425,86 @@ def test_report_schema_and_item_values_are_preserved_while_order_changes():
     assert source == original, "source report must remain immutable"
     assert set(result) == set(source)
     assert set(result["pallets"][0]) == set(source["pallets"][0])
-    assert _ids(result["pallets"][0]["packed_items"]) == ["short", "tall"]
+    assert _ids(result["pallets"][0]["packed_items"]) == ["tall", "short"]
     source_by_id = {item["id"]: item for item in source["pallets"][0]["packed_items"]}
     for seq, item in enumerate(result["pallets"][0]["packed_items"], 1):
         expected = deepcopy(source_by_id[item["id"]])
         expected.pop("original_packing_sequence")
         expected.pop("robot_packing_sequence")
         expected["seq"] = seq
-        assert item == expected
+        actual_business = deepcopy(item)
+        expected_business = deepcopy(expected)
+        for value in (actual_business, expected_business):
+            value.pop("position")
+            value.pop("suction_rect_x_min")
+            value.pop("suction_rect_x_max")
+            value.pop("suction_rect_y_min")
+            value.pop("suction_rect_y_max")
+            value.pop("stack_height_before", None)
+        assert actual_business == expected_business
+
+
+def test_execution_layout_is_centered_and_suction_coordinates_move_with_boxes():
+    left = _box("left", 0, 0, 0)
+    right = _box("right", 200, 0, 0)
+    source = {"pallets": [_pallet([right, left])]}
+
+    result = plan_execution_report(source)
+
+    by_id = {
+        item["id"]: item
+        for item in result["pallets"][0]["packed_items"]
+    }
+    assert by_id["left"]["position"] == {"x": 350.0, "y": 450.0, "z": 0.0}
+    assert by_id["right"]["position"] == {"x": 550.0, "y": 450.0, "z": 0.0}
+    assert by_id["left"]["suction_rect_x_min"] == 350.0
+    assert by_id["left"]["suction_rect_x_max"] == 450.0
+    assert by_id["left"]["suction_rect_y_min"] == 450.0
+    assert by_id["left"]["suction_rect_y_max"] == 550.0
+
+
+def test_execution_layout_does_not_shift_an_axis_with_no_remaining_space():
+    full_length = _box("full", 0, 0, 0, length=1000.0, width=100.0)
+
+    result = plan_execution_report({"pallets": [_pallet([full_length])]})
+
+    item = result["pallets"][0]["packed_items"][0]
+    assert item["position"] == {"x": 0.0, "y": 450.0, "z": 0.0}
+    assert item["suction_rect_x_min"] == 0.0
+    assert item["suction_rect_x_max"] == 1000.0
+    assert item["suction_rect_y_min"] == 450.0
+    assert item["suction_rect_y_max"] == 550.0
+
+
+def test_execution_layout_recomputes_robot_depth_after_centering():
+    item = _box("centered", 0, 0, 0)
+    item.update({
+        "robot_reference": "x_min_y_min",
+        "robot_depth": 0.05,
+        "robot_depth_band": 0,
+    })
+    pallet = {
+        **_pallet([item]),
+        "robot_reference": "x_min_y_min",
+        "depth_band_count": 4,
+    }
+
+    result = plan_execution_report({"pallets": [pallet]})
+
+    centered = result["pallets"][0]["packed_items"][0]
+    assert centered["robot_depth"] == 0.5
+    assert centered["robot_depth_band"] == 2
+
+
+def test_each_execution_item_records_stack_height_before_placement():
+    base = _box("base", 0, 0, 0, height=100.0)
+    top = _box("top", 0, 0, 100.0, height=80.0)
+
+    result = plan_execution_report({"pallets": [_pallet([top, base])]})
+
+    items = result["pallets"][0]["packed_items"]
+    assert _ids(items) == ["base", "top"]
+    assert [item["stack_height_before"] for item in items] == [0.0, 100.0]
 
 
 def test_wcs_seq_follows_execution_order_while_layer_id_remains_geometric():
@@ -312,10 +1532,15 @@ def test_wcs_seq_follows_execution_order_while_layer_id_remains_geometric():
     ]
     cartons_by_seq = sorted(cartons, key=lambda carton: carton["seq"])
     assert [carton["seq"] for carton in cartons_by_seq] == [1, 2]
-    assert [carton["product_code"] for carton in cartons_by_seq] == [2, 1]
+    assert [carton["product_code"] for carton in cartons_by_seq] == [1, 2]
+    assert all("stack_height_before" not in carton for carton in cartons_by_seq)
     assert {carton["layer_id"] for carton in cartons_by_seq} == {1}
     mapped = next(iter(result.plan_by_unique_id.values()))
-    assert _ids(mapped["packed_items"]) == ["short", "tall"]
+    assert _ids(mapped["packed_items"]) == ["tall", "short"]
+    assert all(
+        "stack_height_before" not in item
+        for item in mapped["packed_items"]
+    )
 
 
 def _cli_report():
@@ -334,6 +1559,51 @@ def _cli_report():
             }
         ],
     }
+
+
+def test_cli_passes_approach_config_to_planner(tmp_path, monkeypatch):
+    source = tmp_path / "packing.json"
+    output = tmp_path / "packing_execution.json"
+    config_path = tmp_path / "packing_config.yaml"
+    report = _cli_report()
+    source.write_text(json.dumps(report), encoding="utf-8")
+    config_path.write_text(
+        "execution_sequence:\n"
+        "  enabled: true\n"
+        "  approach_offset_x_mm: 41\n"
+        "  approach_offset_y_mm: 42\n"
+        "  approach_z_clearance_mm: 43\n"
+        "  approach_box_xy_clearance_mm: 44\n"
+        "  approach_suction_xy_clearance_mm: 45\n",
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def capture_config(input_report, config):
+        captured["config"] = config
+        return deepcopy(input_report)
+
+    monkeypatch.setattr(
+        run_execution_planning, "plan_execution_report", capture_config
+    )
+
+    result = run_execution_planning.main(
+        [
+            str(source),
+            "--config",
+            str(config_path),
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert result == 0
+    planner_config = captured["config"]
+    assert planner_config.approach_offset_x_mm == 41.0
+    assert planner_config.approach_offset_y_mm == 42.0
+    assert planner_config.approach_z_clearance_mm == 43.0
+    assert planner_config.approach_box_xy_clearance_mm == 44.0
+    assert planner_config.approach_suction_xy_clearance_mm == 45.0
 
 
 def test_cli_writes_same_schema_execution_and_optional_wcs_files(tmp_path):
@@ -365,7 +1635,11 @@ def test_cli_writes_same_schema_execution_and_optional_wcs_files(tmp_path):
     assert json.loads(source.read_text(encoding="utf-8")) == report
     execution = json.loads(output.read_text(encoding="utf-8"))
     assert set(execution) == set(report)
-    assert _ids(execution["pallets"][0]["packed_items"]) == ["short", "tall"]
+    assert _ids(execution["pallets"][0]["packed_items"]) == ["tall", "short"]
+    assert [
+        item["stack_height_before"]
+        for item in execution["pallets"][0]["packed_items"]
+    ] == [0.0, 300.0]
     cases = json.loads(wcs_output.read_text(encoding="utf-8"))
     cartons = [
         carton
@@ -373,13 +1647,15 @@ def test_cli_writes_same_schema_execution_and_optional_wcs_files(tmp_path):
         for carton in layer["cartons"]
     ]
     assert [c["product_code"] for c in sorted(cartons, key=lambda c: c["seq"])] \
-        == [2, 1]
+        == [1, 2]
+    assert all("stack_height_before" not in carton for carton in cartons)
     map_output = wcs_output.with_name(wcs_output.stem + "_map.json")
     persisted_map = json.loads(map_output.read_text(encoding="utf-8"))
     unique_id = cases[0]["box_unique_id"]
     mapped_items = persisted_map[unique_id]["packed_items"]
-    assert _ids(mapped_items) == ["short", "tall"]
-    assert mapped_items[0]["position"] == {"x": 200.0, "y": 0.0, "z": 0.0}
+    assert _ids(mapped_items) == ["tall", "short"]
+    assert mapped_items[0]["position"] == {"x": 350.0, "y": 450.0, "z": 0.0}
+    assert all("stack_height_before" not in item for item in mapped_items)
     assert mapped_items[0]["suction_orientation"] == "cup_100x_100y"
 
 
@@ -529,6 +1805,27 @@ def test_cli_rejects_nan_clearance_without_writing_output(tmp_path):
     assert completed.returncode != 0
     assert "finite" in completed.stderr
     assert not output.exists()
+
+
+def test_cli_rejects_removed_adaptive_flag(tmp_path):
+    source = tmp_path / "packing.json"
+    source.write_text(json.dumps(_cli_report()), encoding="utf-8")
+    script = Path(__file__).resolve().parents[1] / "run_execution_planning.py"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            str(source),
+            "--adaptive-staircase-enabled",
+        ],
+        cwd=str(script.parent),
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    assert "unrecognized arguments" in completed.stderr
 
 
 def test_wcs_cases_are_not_published_when_release_replace_fails(

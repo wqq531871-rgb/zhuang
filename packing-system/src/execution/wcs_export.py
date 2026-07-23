@@ -7,7 +7,11 @@ from typing import Dict, List, Optional, Tuple
 
 from src.adapter.wcs_adapter import WcsPlanResult, report_to_plan_result
 
-from .sequence_planner import ExecutionSequenceConfig, plan_execution_report
+from .sequence_planner import (
+    STACK_HEIGHT_BEFORE_FIELD,
+    ExecutionSequenceConfig,
+    plan_execution_report,
+)
 
 
 def _item_z(item: Dict) -> float:
@@ -71,7 +75,11 @@ def report_to_execution_plan_result(
         )
         case["layers"] = layers
         case["total_height"] = total_height
+    plan_by_unique_id = deepcopy(base_result.plan_by_unique_id)
+    for pallet in plan_by_unique_id.values():
+        for item in pallet.get("packed_items") or []:
+            item.pop(STACK_HEIGHT_BEFORE_FIELD, None)
     return WcsPlanResult(
         cases=cases,
-        plan_by_unique_id=base_result.plan_by_unique_id,
+        plan_by_unique_id=plan_by_unique_id,
     )
