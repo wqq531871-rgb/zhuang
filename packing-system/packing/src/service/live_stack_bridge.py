@@ -29,16 +29,20 @@ def _load_impl():
 
 _impl = _load_impl()
 
+clear_current_session_after_replan = _impl.clear_current_session_after_replan
 command_path = _impl.command_path
 find_plan_map_for_uid = _impl.find_plan_map_for_uid
+list_selected_pallets = _impl.list_selected_pallets
 read_json = _impl.read_json
 runtime_dir = _impl.runtime_dir
 session_path = _impl.session_path
 write_selected_pallet_session = _impl.write_selected_pallet_session
 
 __all__ = [
+    "clear_current_session_after_replan",
     "command_path",
     "find_plan_map_for_uid",
+    "list_selected_pallets",
     "read_json",
     "runtime_dir",
     "session_path",

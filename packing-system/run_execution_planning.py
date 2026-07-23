@@ -280,6 +280,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "[WCS-DB] wcs_box_orientation 后置写入异常：%s" % exc,
                 file=sys.stderr,
             )
+        try:
+            from src.service.plc_queue_db import clear_plc_queue_after_replan
+
+            clear_plc_queue_after_replan(config_path=config_path)
+        except Exception as exc:  # noqa: BLE001
+            print("[现场码垛] 清空旧队列失败：%s" % exc, file=sys.stderr)
+        try:
+            from src.service.live_stack_bridge import clear_current_session_after_replan
+
+            clear_current_session_after_replan()
+        except Exception as exc:  # noqa: BLE001
+            print("[现场会话] 清空当前选定失败：%s" % exc, file=sys.stderr)
 
     print(
         "execution plan written: pallets=%d boxes=%d reordered_pallets=%d path=%s"

@@ -181,6 +181,19 @@ def publish_execution_bundle(
         persist_box_orientations(wcs_result, config_path=config_path)
     except Exception as exc:  # noqa: BLE001
         print("[WCS-DB] wcs_box_orientation 后置写入异常：%s" % exc)
+    # 新结果入库后清掉上一轮现场码放残留，面板跟最新计算走
+    try:
+        from src.service.plc_queue_db import clear_plc_queue_after_replan
+
+        clear_plc_queue_after_replan(config_path=config_path)
+    except Exception as exc:  # noqa: BLE001
+        print("[现场码垛] 清空旧队列失败：%s" % exc)
+    try:
+        from src.service.live_stack_bridge import clear_current_session_after_replan
+
+        clear_current_session_after_replan()
+    except Exception as exc:  # noqa: BLE001
+        print("[现场会话] 清空当前选定失败：%s" % exc)
     return ExecutionBundlePaths(
         execution=execution_path,
         wcs_cases=wcs_path,

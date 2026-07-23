@@ -118,6 +118,22 @@ class WcsPlcQueueRepository:
             row = cur.fetchone() or {}
             return int(row.get("n") or 0)
 
+    def _parse_queue_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        item = dict(row)
+        cmd = item.get("command_json")
+        if isinstance(cmd, (bytes, bytearray)):
+            cmd = cmd.decode("utf-8", errors="replace")
+        if isinstance(cmd, str):
+            try:
+                item["command"] = json.loads(cmd)
+            except json.JSONDecodeError:
+                item["command"] = {}
+        elif isinstance(cmd, dict):
+            item["command"] = cmd
+        else:
+            item["command"] = {}
+        return item
+
     def enqueue(
         self,
         *,
@@ -188,23 +204,27 @@ class WcsPlcQueueRepository:
                 "LIMIT %s",
                 (lim,),
             )
-            rows = []
-            for row in cur.fetchall() or []:
-                item = dict(row)
-                cmd = item.get("command_json")
-                if isinstance(cmd, (bytes, bytearray)):
-                    cmd = cmd.decode("utf-8", errors="replace")
-                if isinstance(cmd, str):
-                    try:
-                        item["command"] = json.loads(cmd)
-                    except json.JSONDecodeError:
-                        item["command"] = {}
-                elif isinstance(cmd, dict):
-                    item["command"] = cmd
-                else:
-                    item["command"] = {}
-                rows.append(item)
-            return rows
+            return [self._parse_queue_row(row) for row in (cur.fetchall() or [])]
+
+    def list_for_pallet(self, box_unique_id: str) -> List[Dict[str, Any]]:
+        """当前托盘码放队列，按 seq 升序（跟计算结果该盘箱序一致）。"""
+        uid = str(box_unique_id or "").strip()
+        if not uid:
+            return []
+        with self._cursor() as (_conn, cur):
+            cur.execute(
+                "SELECT * FROM wcs_plc_queue "
+                "WHERE box_unique_id = %s "
+                "ORDER BY seq ASC, id ASC",
+                (uid,),
+            )
+            return [self._parse_queue_row(row) for row in (cur.fetchall() or [])]
+
+    def clear_all(self) -> int:
+        """新一轮装箱结果入库后清空旧码放队列，避免界面一直显示上一盘残留。"""
+        with self._cursor() as (_conn, cur):
+            cur.execute("DELETE FROM wcs_plc_queue")
+            return int(cur.rowcount or 0)
 
     def get_by_id(self, queue_id: int) -> Optional[Dict[str, Any]]:
         with self._cursor() as (_conn, cur):
@@ -215,20 +235,7 @@ class WcsPlcQueueRepository:
             row = cur.fetchone()
             if not row:
                 return None
-            item = dict(row)
-            cmd = item.get("command_json")
-            if isinstance(cmd, (bytes, bytearray)):
-                cmd = cmd.decode("utf-8", errors="replace")
-            if isinstance(cmd, str):
-                try:
-                    item["command"] = json.loads(cmd)
-                except json.JSONDecodeError:
-                    item["command"] = {}
-            elif isinstance(cmd, dict):
-                item["command"] = cmd
-            else:
-                item["command"] = {}
-            return item
+            return self._parse_queue_row(row)
 
     def next_required_seq(self, box_unique_id: str) -> int:
         """同一托盘下一条必须下传的 seq（已发送最大序号 + 1，至少为 1）。"""
@@ -327,6 +334,17 @@ def get_plc_queue_repo(
 ) -> WcsPlcQueueRepository:
     cfg = db_config or load_database_config_from_yaml(config_path)
     return WcsPlcQueueRepository(cfg)
+
+
+def clear_plc_queue_after_replan(
+    *,
+    config_path: Optional[Path] = None,
+    db_config: Optional[DatabaseConfig] = None,
+) -> int:
+    """新一轮装箱结果写入后调用：清掉上一轮现场码放残留。"""
+    n = get_plc_queue_repo(config_path=config_path, db_config=db_config).clear_all()
+    print(f"[现场码垛] 新计算结果已入库，已清空旧码放队列 {n} 条")
+    return n
 
 
 def stub_send_plc_command(

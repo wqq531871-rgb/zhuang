@@ -168,3 +168,32 @@ def write_selected_pallet_session(
         f"plan={plan.name if plan else '未找到'} 历史={len(history)} 盘"
     )
     return {**session, "history_count": len(history)}
+
+
+def clear_current_session_after_replan(
+    workspace: Optional[Path] = None,
+) -> None:
+    """新一轮装箱结果入库后：清空「当前选定托盘」，避免面板一直显示上一盘。
+
+    历史列表保留（三维仍可看过往盘），仅把进行中标为已完成。
+    """
+    path = session_path(workspace)
+    if path.is_file():
+        try:
+            path.unlink()
+        except OSError:
+            _atomic_write(path, {})
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    items = list_selected_pallets(workspace)
+    if not items:
+        print("[现场会话] 新计算结果已入库，当前选定托盘已清空")
+        return
+    updated = []
+    for old in items:
+        entry = dict(old)
+        if str(entry.get("stack_status") or "") == "active":
+            entry["stack_status"] = "done"
+            entry["completed_at"] = now
+        updated.append(entry)
+    _atomic_write(history_path(workspace), updated)
+    print(f"[现场会话] 新计算结果已入库，当前选定已清空，历史 {len(updated)} 盘保留")

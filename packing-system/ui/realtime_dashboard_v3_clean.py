@@ -1111,26 +1111,31 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         }.get(str(status or ""), "未知")
 
     def _refresh_live_stack_panel(self) -> None:
-        """轮询码垛队列，刷新现场监视面板（文案面向现场操作）。"""
+        """轮询当前选定托盘的码放队列（不扫整表历史残留）。"""
         if not hasattr(self, "lst_live_plc"):
             return
         prev_id = self._live_plc_queue_id(self.lst_live_plc.currentItem())
+        session = self._read_live_session()
+        uid = str(session.get("box_unique_id") or "").strip()
+        order_id = str(session.get("order_id") or "").strip()
         rows = []
         err = None
+        total = 0
         try:
             self._ensure_packing_import_path()
             from src.service.plc_queue_db import get_plc_queue_repo
 
             config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
             repo = get_plc_queue_repo(config_path=config_path)
-            rows = repo.list_recent(40)
+            if uid:
+                rows = repo.list_for_pallet(uid)
+                total = int(repo.count_boxes_on_pallet(uid) or 0)
         except Exception as exc:
             err = str(exc)
 
         self.lst_live_plc.blockSignals(True)
         self.lst_live_plc.clear()
         pending_n = 0
-        latest = rows[0] if rows else None
         restore_row = None
         for row in rows:
             status = str(row.get("status") or "")
@@ -1139,9 +1144,9 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             seq = int(row.get("seq") or 0)
             state = int(row.get("state") or 0)
             rotate_txt = "需要旋转" if state == 2 else "不旋转"
-            order = ""
+            order = order_id
             cmd = row.get("command") or {}
-            if isinstance(cmd, dict):
+            if isinstance(cmd, dict) and cmd.get("order_id"):
                 order = str(cmd.get("order_id") or "")
             text = (
                 f"{self._live_status_label(status)} · "
@@ -1160,7 +1165,6 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         if restore_row is not None:
             self.lst_live_plc.setCurrentItem(restore_row)
         elif self.lst_live_plc.count() > 0:
-            # 默认选中「下一箱应下传」的 pending（同托盘最小待发序号）
             pick = None
             try:
                 self._ensure_packing_import_path()
@@ -1168,14 +1172,13 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
 
                 config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
                 repo = get_plc_queue_repo(config_path=config_path)
+                required = repo.next_required_seq(uid) if uid else 1
                 for i in range(self.lst_live_plc.count()):
                     it = self.lst_live_plc.item(i)
                     if str(it.data(QtCore.Qt.UserRole + 1) or "") != "pending":
                         continue
                     row = it.data(QtCore.Qt.UserRole + 2) or {}
-                    uid = str(row.get("box_unique_id") or "")
-                    seq = int(row.get("seq") or 0)
-                    if seq == repo.next_required_seq(uid):
+                    if int(row.get("seq") or 0) == required:
                         pick = it
                         break
             except Exception:
@@ -1201,58 +1204,80 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
                 self.step_live_stack.set_state("error", "暂时不可用")
             return
 
-        if latest is None:
-            session = self._read_live_session()
-            if session.get("box_unique_id"):
-                self.lbl_live_order.setText(
-                    f"订单：{session.get('order_id') or '—'}（WCS 已选托盘）"
-                )
-                self.lbl_live_box.setText("进度：整盘可演示（打开三维演示）")
-                self.lbl_live_rotation.setText("是否旋转：—")
-                self.lbl_live_plc.setText("状态：已选定托盘，可打开三维看整盘模拟")
-                if hasattr(self, "step_live_stack"):
-                    self.step_live_stack.set_state("done", "托盘已选定")
-            else:
-                self.lbl_live_order.setText("订单：—")
-                self.lbl_live_box.setText("进度：—")
-                self.lbl_live_rotation.setText("是否旋转：—")
-                self.lbl_live_plc.setText("状态：等待箱子到达…")
-                if hasattr(self, "step_live_stack"):
-                    self.step_live_stack.set_state("idle", "等待箱子到达")
+        if not uid:
+            self.lbl_live_order.setText("订单：—")
+            self.lbl_live_box.setText("进度：—")
+            self.lbl_live_rotation.setText("是否旋转：—")
+            self.lbl_live_plc.setText("状态：等待 WCS 选定托盘（或重新计算后需重新选定）…")
+            if hasattr(self, "step_live_stack"):
+                self.step_live_stack.set_state("idle", "等待选定托盘")
             return
 
-        seq = int(latest.get("seq") or 0)
-        state = int(latest.get("state") or 0)
-        status = str(latest.get("status") or "")
-        cmd = latest.get("command") or {}
-        order_id = str((cmd or {}).get("order_id") or latest.get("order_id") or "—")
-        total = "?"
-        try:
-            self._ensure_packing_import_path()
-            from src.service.plc_queue_db import get_plc_queue_repo
+        if not order_id and rows:
+            cmd0 = (rows[-1].get("command") or {}) if rows else {}
+            if isinstance(cmd0, dict):
+                order_id = str(cmd0.get("order_id") or "")
 
-            config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
-            uid = str(latest.get("box_unique_id") or "")
-            total = get_plc_queue_repo(config_path=config_path).count_boxes_on_pallet(uid)
-        except Exception:
-            pass
+        self.lbl_live_order.setText(f"订单：{order_id or '—'}")
 
-        self.lbl_live_order.setText(f"订单：{order_id}")
-        self.lbl_live_box.setText(f"进度：第 {seq} / {total} 箱")
+        current = self.lst_live_plc.currentItem()
+        current_row = current.data(QtCore.Qt.UserRole + 2) if current else None
+        if isinstance(current_row, dict) and current_row.get("seq"):
+            seq = int(current_row.get("seq") or 0)
+            state = int(current_row.get("state") or 0)
+            status = str(current_row.get("status") or "")
+        elif rows:
+            # 无选中时：下一箱应确认 / 已到最新箱
+            try:
+                self._ensure_packing_import_path()
+                from src.service.plc_queue_db import get_plc_queue_repo
+
+                config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
+                seq = get_plc_queue_repo(config_path=config_path).next_required_seq(uid)
+                if pending_n == 0 and total > 0:
+                    seq = min(total, max(seq - 1, 0))
+            except Exception:
+                seq = int(rows[-1].get("seq") or 0)
+            state = int(rows[-1].get("state") or 0)
+            status = str(rows[-1].get("status") or "")
+        else:
+            seq = 0
+            state = 0
+            status = ""
+
+        if total <= 0:
+            total_txt = "?"
+        else:
+            total_txt = str(total)
+        if seq <= 0 and not rows:
+            self.lbl_live_box.setText(
+                f"进度：0 / {total_txt} 箱（整盘可演示，等待箱子到达）"
+            )
+            self.lbl_live_rotation.setText("是否旋转：—")
+            self.lbl_live_plc.setText("状态：已选定托盘，可打开三维看整盘模拟")
+            if hasattr(self, "step_live_stack"):
+                self.step_live_stack.set_state("done", "托盘已选定")
+            return
+
+        self.lbl_live_box.setText(f"进度：第 {seq} / {total_txt} 箱")
         self.lbl_live_rotation.setText(
             "是否旋转：需要旋转 90°" if state == 2 else "是否旋转：不需要旋转"
         )
         if pending_n > 0:
             self.lbl_live_plc.setText(f"状态：有 {pending_n} 箱待确认码放")
-        else:
+        elif rows:
             self.lbl_live_plc.setText(
                 f"状态：{self._live_status_label(status)}（暂无待确认箱子）"
             )
+        else:
+            self.lbl_live_plc.setText("状态：等待箱子到达…")
         if hasattr(self, "step_live_stack"):
             if pending_n > 0:
                 self.step_live_stack.set_state("active", f"待确认 {pending_n} 箱")
-            else:
+            elif rows:
                 self.step_live_stack.set_state("done", "暂无待码放箱子")
+            else:
+                self.step_live_stack.set_state("idle", "等待箱子到达")
 
     def _live_command_file(self) -> Path:
         runtime = workspace_dir_from_project(self.project_dir) / "runtime"
@@ -2065,6 +2090,10 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
                 self.step_result.set_state("done", f"结果文件：{path.name}")
                 self._set_status("done")
             self.workspace_tabs.setCurrentIndex(0)
+            if hasattr(self, "_refresh_live_stack_panel"):
+                self._refresh_live_stack_panel()
+            if hasattr(self, "_refresh_push_pallet_combo"):
+                self._refresh_push_pallet_combo()
         except Exception as exc:
             self.on_backend_failed(f"加载算法输出 JSON 失败：{exc}")
 

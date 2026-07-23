@@ -36,6 +36,7 @@ WcsPlcQueueRepository = _impl.WcsPlcQueueRepository
 build_plc_command_from_box_row = _impl.build_plc_command_from_box_row
 enqueue_plc_after_rotation = _impl.enqueue_plc_after_rotation
 get_plc_queue_repo = _impl.get_plc_queue_repo
+clear_plc_queue_after_replan = _impl.clear_plc_queue_after_replan
 stub_send_plc_command = _impl.stub_send_plc_command
 
 __all__ = [
@@ -46,5 +47,6 @@ __all__ = [
     "build_plc_command_from_box_row",
     "enqueue_plc_after_rotation",
     "get_plc_queue_repo",
+    "clear_plc_queue_after_replan",
     "stub_send_plc_command",
 ]

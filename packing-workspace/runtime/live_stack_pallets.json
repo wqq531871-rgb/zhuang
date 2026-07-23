@@ -6,7 +6,18 @@
     "plan_path": "E:\\Homework\\AA装箱\\A装箱和可视化\\zhuang\\packing-workspace\\output\\success\\wcs_plan_map_20260724_013331.json",
     "source": "sendcasetask",
     "updated_at": "2026-07-24 01:35:15",
-    "stack_status": "active",
-    "received_at": "2026-07-24 01:35:15"
+    "stack_status": "done",
+    "received_at": "2026-07-24 01:35:15",
+    "completed_at": "2026-07-24 01:51:54"
+  },
+  {
+    "box_unique_id": "022920c02ffa4c3bb78acffcba4b43d4",
+    "order_id": "PAIN25450MN01S",
+    "robot_id": "001",
+    "plan_path": "E:\\Homework\\AA装箱\\A装箱和可视化\\zhuang\\packing-workspace\\output\\success\\wcs_plan_map_20260724_015325.json",
+    "source": "sendcasetask",
+    "updated_at": "2026-07-24 01:54:12",
+    "received_at": "2026-07-24 01:54:12",
+    "stack_status": "active"
   }
 ]
