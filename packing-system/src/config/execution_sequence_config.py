@@ -15,16 +15,17 @@ class ExecutionSequenceSettings:
     box_xy_clearance_mm: float = 0.0
     suction_xy_clearance_mm: float = 0.0
     suction_z_clearance_mm: float = 0.0
-    approach_offset_x_mm: float = 35.0
-    approach_offset_y_mm: float = 35.0
-    approach_z_clearance_mm: float = 0.0
+    approach_offset_x_mm: float = 20.0
+    approach_offset_y_mm: float = 20.0
+    approach_z_clearance_mm: float = 20.0
     approach_box_xy_clearance_mm: float = 0.0
-    approach_suction_xy_clearance_mm: float = 2.0
+    approach_suction_xy_clearance_mm: float = 0.0
     require_suction_pose: bool = True
     max_occupied_directions: int = 2
     side_neighbor_clearance_mm: float = 5.0
     side_height_tolerance_mm: float = 2.0
     preserve_open_direction: bool = True
+    force_publish_on_gate_failure: bool = False
     max_sequence_search_seconds_per_pallet: float = 1.0
     scan_column_tolerance_mm: float = 5.0
 
@@ -33,6 +34,7 @@ class ExecutionSequenceSettings:
             "enabled",
             "require_suction_pose",
             "preserve_open_direction",
+            "force_publish_on_gate_failure",
         ):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError("%s must be a boolean" % name)

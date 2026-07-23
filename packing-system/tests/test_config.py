@@ -220,6 +220,7 @@ def test_execution_sequence_config():
             'side_neighbor_clearance_mm': 6.0,
             'side_height_tolerance_mm': 2.0,
             'preserve_open_direction': True,
+            'force_publish_on_gate_failure': True,
             'max_sequence_search_seconds_per_pallet': 1.5,
             'scan_column_tolerance_mm': 1.5,
         }
@@ -238,13 +239,14 @@ def test_execution_sequence_config():
     assert config.side_neighbor_clearance_mm == 6.0
     assert config.side_height_tolerance_mm == 2.0
     assert config.preserve_open_direction is True
+    assert config.force_publish_on_gate_failure is True
     assert config.max_sequence_search_seconds_per_pallet == 1.5
     assert config.scan_column_tolerance_mm == 1.5
-    assert config.approach_offset_x_mm == 35.0
-    assert config.approach_offset_y_mm == 35.0
-    assert config.approach_z_clearance_mm == 0.0
+    assert config.approach_offset_x_mm == 20.0
+    assert config.approach_offset_y_mm == 20.0
+    assert config.approach_z_clearance_mm == 20.0
     assert config.approach_box_xy_clearance_mm == 0.0
-    assert config.approach_suction_xy_clearance_mm == 2.0
+    assert config.approach_suction_xy_clearance_mm == 0.0
     assert not hasattr(config, 'adaptive_staircase_enabled')
     assert not hasattr(config, 'staircase_height_difference_threshold_mm')
     assert not hasattr(config, 'staircase_transition_ratio_threshold')
@@ -260,6 +262,20 @@ def test_execution_sequence_config_rejects_string_boolean_switch():
     })
 
     with pytest.raises(ValueError, match='enabled must be a boolean'):
+        loader.load_execution_sequence_config()
+
+
+def test_execution_sequence_config_rejects_string_force_publish_switch():
+    loader = ConfigLoader.from_dict({
+        'execution_sequence': {
+            'force_publish_on_gate_failure': 'true',
+        }
+    })
+
+    with pytest.raises(
+        ValueError,
+        match='force_publish_on_gate_failure must be a boolean',
+    ):
         loader.load_execution_sequence_config()
 
 
@@ -315,14 +331,16 @@ def test_generated_default_config_matches_shipped_approach_behavior(tmp_path):
     )
 
     expected_approach_settings = {
-        'approach_offset_x_mm': 35.0,
-        'approach_offset_y_mm': 35.0,
-        'approach_z_clearance_mm': 0.0,
+        'approach_offset_x_mm': 20.0,
+        'approach_offset_y_mm': 20.0,
+        'approach_z_clearance_mm': 20.0,
         'approach_box_xy_clearance_mm': 0.0,
-        'approach_suction_xy_clearance_mm': 2.0,
+        'approach_suction_xy_clearance_mm': 0.0,
     }
     for field, expected in expected_approach_settings.items():
         assert getattr(generated, field) == getattr(shipped, field) == expected
+    assert generated.force_publish_on_gate_failure is True
+    assert shipped.force_publish_on_gate_failure is True
 
     removed_fields = {
         'adaptive_staircase_enabled',

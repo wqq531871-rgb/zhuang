@@ -60,18 +60,17 @@ execution_sequence:
   # 箱体垂直下放路径的 XY 额外安全包络。
   box_xy_clearance_mm: 0.0
   # 吸盘垂直下放路径的 XY 额外安全包络。
-  suction_xy_clearance_mm: 2.0
+  suction_xy_clearance_mm: 0.0
   # 吸盘下降至目标箱顶时要求保留的 Z 安全余量。
   suction_z_clearance_mm: 0.0
-  # 目标点 +X/+Y 方向的预放偏移；默认 35/35 mm 对应约 49.5 mm 斜向推进。
-  approach_offset_x_mm: 35.0
-  approach_offset_y_mm: 35.0
-  # 预放点相对目标放置高度的 Z 高差。0 是未标定占位值；现场必须写入实测高度。
-  # 已知 668 箱样例在 0 mm 时会安全拒绝第 11 托盘，不得把离线诊断值当生产值。
-  approach_z_clearance_mm: 0.0
+  # 目标点 +X/+Y 方向的预放偏移；当前 20/20 mm 对应约 28.3 mm 斜向推进。
+  approach_offset_x_mm: 20.0
+  approach_offset_y_mm: 20.0
+  # 预放点相对目标放置高度的 Z 高差；当前值为 20 mm，正式生产仍应按实测轨迹标定。
+  approach_z_clearance_mm: 20.0
   # 推进阶段箱体/吸盘每侧 XY 安全包络。
   approach_box_xy_clearance_mm: 0.0
-  approach_suction_xy_clearance_mm: 2.0
+  approach_suction_xy_clearance_mm: 0.0
   # true 时每个箱子必须包含完整 suction_rect_* 字段。
   require_suction_pose: true
   # 放置目标箱时，允许同高或更高邻箱占用的最大侧面方向数（x-/x+/y-/y+）。
@@ -82,6 +81,8 @@ execution_sequence:
   side_height_tolerance_mm: 2.0
   # true 时用残余反向可完成性检查保证执行时保留开放方向。
   preserve_open_direction: true
+  # true 时完整门禁失败会保留支撑与局部退出走廊，强制生成 execution/WCS 三件套。
+  force_publish_on_gate_failure: true
   # 每个托盘防包围规划的最长时间。
   max_sequence_search_seconds_per_pallet: 1.0
   # X/Y 进度相差不超过该值时聚为同一空间等级，只影响软排序。

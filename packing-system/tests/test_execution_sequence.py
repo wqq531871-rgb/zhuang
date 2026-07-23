@@ -10,6 +10,8 @@ import pytest
 
 import run_execution_planning
 from src.execution import approach_geometry as approach_geometry_module
+from src.execution import publisher as publisher_module
+from src.execution import wcs_export as wcs_export_module
 from src.execution.approach_geometry import (
     MovingRectPath,
     moving_path_blocked,
@@ -379,6 +381,115 @@ def test_support_that_blocks_shifted_suction_preposition_creates_cycle():
 
     assert "support" in str(exc_info.value)
     assert "target" in str(exc_info.value)
+
+
+def test_force_publish_falls_back_to_support_safe_wave_after_gate_cycle(
+    caplog,
+):
+    support = _box("support", 80, 80, 0)
+    target = _box(
+        "target",
+        0,
+        0,
+        100,
+        cup_rect={"x_min": 30, "x_max": 50, "y_min": 30, "y_max": 50},
+    )
+    report = {"pallets": [_pallet([support, target])]}
+    config = ExecutionSequenceConfig(
+        suction_z_clearance_mm=150.0,
+        approach_offset_x_mm=35.0,
+        approach_offset_y_mm=35.0,
+        approach_suction_xy_clearance_mm=2.0,
+        force_publish_on_gate_failure=True,
+    )
+
+    with caplog.at_level("WARNING", logger=sequence_planner_module.__name__):
+        result = plan_execution_report(report, config=config)
+
+    items = result["pallets"][0]["packed_items"]
+    assert _ids(items) == ["support", "target"]
+    assert [item["seq"] for item in items] == [1, 2]
+    assert [item["stack_height_before"] for item in items] == [0.0, 100.0]
+    assert "forced execution order" in caplog.text
+    assert "cyclic execution dependencies" in caplog.text
+
+
+def test_force_publish_does_not_bypass_duplicate_box_ids():
+    report = {
+        "pallets": [_pallet([_box("same", 0, 0, 0), _box("same", 100, 0, 0)])]
+    }
+
+    with pytest.raises(ExecutionSequenceError, match="present and unique"):
+        plan_execution_report(
+            report,
+            config=ExecutionSequenceConfig(
+                force_publish_on_gate_failure=True,
+            ),
+        )
+
+
+def test_force_publish_does_not_bypass_pallet_bounds():
+    report = {"pallets": [_pallet([_box("outside", 950, 0, 0)])]}
+
+    with pytest.raises(ExecutionSequenceError, match="outside pallet bounds"):
+        plan_execution_report(
+            report,
+            config=ExecutionSequenceConfig(
+                force_publish_on_gate_failure=True,
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    "mutate_suction, error_match",
+    [
+        (
+            lambda item: [
+                item.pop(name)
+                for name in (
+                    "suction_rect_x_min",
+                    "suction_rect_x_max",
+                    "suction_rect_y_min",
+                    "suction_rect_y_max",
+                )
+            ],
+            "missing suction rectangle",
+        ),
+        (
+            lambda item: item.pop("suction_rect_y_max"),
+            "missing suction rectangle",
+        ),
+        (
+            lambda item: item.update(
+                {"suction_rect_x_min": float("nan")}
+            ),
+            "suction rectangle values must be finite",
+        ),
+        (
+            lambda item: item.update(
+                {"suction_rect_x_max": item["suction_rect_x_min"]}
+            ),
+            "invalid suction rectangle",
+        ),
+    ],
+    ids=("missing", "partial", "non_finite", "degenerate"),
+)
+def test_force_publish_does_not_bypass_required_suction_pose(
+    mutate_suction,
+    error_match,
+):
+    item = _box("flat", 0, 0, 0)
+    mutate_suction(item)
+    report = {"pallets": [_pallet([item])]}
+
+    with pytest.raises(ExecutionSequenceError, match=error_match):
+        plan_execution_report(
+            report,
+            config=ExecutionSequenceConfig(
+                require_suction_pose=True,
+                force_publish_on_gate_failure=True,
+            ),
+        )
 
 
 def test_approach_z_clearance_passes_above_low_blocker_without_suction_pose():
@@ -1661,6 +1772,52 @@ def test_wcs_seq_follows_execution_order_while_layer_id_remains_geometric():
         "stack_height_before" not in item
         for item in mapped["packed_items"]
     )
+
+
+def test_execution_bundle_plans_once_and_reuses_the_same_seq(
+    tmp_path, monkeypatch
+):
+    report = _cli_report()
+    original_path = tmp_path / "packing_plan.json"
+    calls = []
+    real_planner = plan_execution_report
+
+    def counted_planner(input_report, config=None):
+        calls.append(input_report)
+        return real_planner(input_report, config=config)
+
+    monkeypatch.setattr(
+        publisher_module, "plan_execution_report", counted_planner
+    )
+    monkeypatch.setattr(
+        wcs_export_module, "plan_execution_report", counted_planner
+    )
+
+    paths = publisher_module.publish_execution_bundle(
+        report,
+        original_path,
+        ExecutionSequenceConfig(),
+    )
+
+    assert len(calls) == 1
+    execution = json.loads(paths.execution.read_text(encoding="utf-8"))
+    cases = json.loads(paths.wcs_cases.read_text(encoding="utf-8"))
+    plan_map = json.loads(paths.wcs_map.read_text(encoding="utf-8"))
+    unique_id = cases[0]["box_unique_id"]
+    execution_items = execution["pallets"][0]["packed_items"]
+    mapped_items = plan_map[unique_id]["packed_items"]
+    cartons = [
+        carton
+        for layer in cases[0]["layers"]
+        for carton in layer["cartons"]
+    ]
+    assert [item["seq"] for item in execution_items] == [1, 2]
+    assert [item["seq"] for item in mapped_items] == [1, 2]
+    assert [carton["seq"] for carton in sorted(
+        cartons, key=lambda carton: carton["seq"]
+    )] == [1, 2]
+    assert all("stack_height_before" in item for item in execution_items)
+    assert all("stack_height_before" not in item for item in mapped_items)
 
 
 def _cli_report():
