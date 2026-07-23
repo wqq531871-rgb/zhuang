@@ -11,6 +11,12 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Set, Tuple
 
+from .approach_geometry import (
+    MovingRectPath,
+    moving_path_blocked,
+    preposition_descent_blocked,
+)
+
 
 _ORIGINS = {
     "x_min_y_min",
@@ -45,6 +51,11 @@ class ExecutionSequenceConfig:
     box_xy_clearance_mm: float = 0.0
     suction_xy_clearance_mm: float = 0.0
     suction_z_clearance_mm: float = 0.0
+    approach_offset_x_mm: float = 35.0
+    approach_offset_y_mm: float = 35.0
+    approach_z_clearance_mm: float = 0.0
+    approach_box_xy_clearance_mm: float = 0.0
+    approach_suction_xy_clearance_mm: float = 2.0
     require_suction_pose: bool = True
     max_occupied_directions: int = 2
     side_neighbor_clearance_mm: float = 5.0
@@ -63,6 +74,15 @@ class ExecutionSequenceConfig:
             "box_xy_clearance_mm": self.box_xy_clearance_mm,
             "suction_xy_clearance_mm": self.suction_xy_clearance_mm,
             "suction_z_clearance_mm": self.suction_z_clearance_mm,
+            "approach_offset_x_mm": self.approach_offset_x_mm,
+            "approach_offset_y_mm": self.approach_offset_y_mm,
+            "approach_z_clearance_mm": self.approach_z_clearance_mm,
+            "approach_box_xy_clearance_mm": (
+                self.approach_box_xy_clearance_mm
+            ),
+            "approach_suction_xy_clearance_mm": (
+                self.approach_suction_xy_clearance_mm
+            ),
             "side_neighbor_clearance_mm": self.side_neighbor_clearance_mm,
             "side_height_tolerance_mm": self.side_height_tolerance_mm,
             "max_sequence_search_seconds_per_pallet": (
@@ -75,7 +95,7 @@ class ExecutionSequenceConfig:
                 raise ValueError("%s must be a finite number" % name)
             try:
                 numeric = float(value)
-            except (TypeError, ValueError) as exc:
+            except (TypeError, ValueError, OverflowError) as exc:
                 raise ValueError("%s must be a finite number" % name) from exc
             if not math.isfinite(numeric):
                 raise ValueError("%s must be finite" % name)
@@ -84,6 +104,8 @@ class ExecutionSequenceConfig:
             object.__setattr__(self, name, numeric)
         if not isinstance(self.preserve_open_direction, bool):
             raise ValueError("preserve_open_direction must be a boolean")
+        if not isinstance(self.require_suction_pose, bool):
+            raise ValueError("require_suction_pose must be a boolean")
         if (
             isinstance(self.max_occupied_directions, bool)
             or not isinstance(self.max_occupied_directions, int)
@@ -313,6 +335,242 @@ def _add_clearance_edges(
                 _add_edge(edges, indegree, target_idx, blocker_idx)
 
 
+@dataclass(frozen=True)
+class _ApproachPaths:
+    box: MovingRectPath
+    box_final_descent: MovingRectPath
+    suction: Optional[MovingRectPath]
+
+
+@dataclass(frozen=True)
+class _ApproachBlocker:
+    rect: Tuple[float, float, float, float]
+    z_min: float
+    z_max: float
+
+
+def _approach_pallet_height(
+    items: List[Dict], pallet_dims: Optional[Dict[str, float]]
+) -> float:
+    dims = _pallet_dims(items) if pallet_dims is None else pallet_dims
+    try:
+        height = float(dims["height"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ExecutionSequenceError(
+            "approach geometry requires a finite positive pallet height"
+        ) from exc
+    if not math.isfinite(height) or height <= 0:
+        raise ExecutionSequenceError(
+            "approach geometry requires a finite positive pallet height"
+        )
+    return height
+
+
+def _approach_paths(
+    items: List[Dict],
+    config: ExecutionSequenceConfig,
+    pallet_dims: Optional[Dict[str, float]],
+    deadline: Optional[float] = None,
+) -> List[_ApproachPaths]:
+    pallet_height = _approach_pallet_height(items, pallet_dims)
+    result = []
+    for item in items:
+        _check_deadline(deadline)
+        target_id = item.get("id")
+        try:
+            _x, _y, target_bottom, _length, _width, target_height = (
+                _physical_geometry(item)
+            )
+            box_z_min = target_bottom + config.approach_z_clearance_mm
+            box_z_max = box_z_min + target_height
+            if not all(math.isfinite(value) for value in (box_z_min, box_z_max)):
+                raise ValueError("box approach Z interval must be finite")
+            box_path = MovingRectPath(
+                final_rect=_rect(item),
+                offset_x=config.approach_offset_x_mm,
+                offset_y=config.approach_offset_y_mm,
+                z_min=box_z_min,
+                z_max=box_z_max,
+            )
+            box_final_descent_path = MovingRectPath(
+                final_rect=_rect(item),
+                offset_x=0.0,
+                offset_y=0.0,
+                z_min=target_bottom,
+                z_max=box_z_max,
+            )
+
+            suction_path = None
+            suction_rect = _suction_rect(
+                item, 0.0, config.require_suction_pose
+            )
+            if suction_rect is not None:
+                suction_z_min = (
+                    target_bottom
+                    + target_height
+                    + config.approach_z_clearance_mm
+                    - config.suction_z_clearance_mm
+                )
+                if not math.isfinite(suction_z_min):
+                    raise ValueError("suction approach Z interval must be finite")
+                if (
+                    suction_z_min
+                    < pallet_height - config.coordinate_tolerance_mm
+                ):
+                    suction_path = MovingRectPath(
+                        final_rect=suction_rect,
+                        offset_x=config.approach_offset_x_mm,
+                        offset_y=config.approach_offset_y_mm,
+                        z_min=suction_z_min,
+                        z_max=pallet_height,
+                    )
+        except ValueError as exc:
+            raise ExecutionSequenceError(
+                "box %r has invalid derived approach geometry: %s"
+                % (target_id, exc)
+            ) from exc
+        result.append(
+            _ApproachPaths(
+                box=box_path,
+                box_final_descent=box_final_descent_path,
+                suction=suction_path,
+            )
+        )
+    return result
+
+
+def _approach_blockers(
+    items: List[Dict], deadline: Optional[float] = None
+) -> List[_ApproachBlocker]:
+    result = []
+    for item in items:
+        _check_deadline(deadline)
+        _x, _y, z_min, _length, _width, height = _physical_geometry(item)
+        z_max = z_min + height
+        if not math.isfinite(z_max):
+            raise ExecutionSequenceError(
+                "box %r has invalid derived approach blocker geometry"
+                % item.get("id")
+            )
+        result.append(
+            _ApproachBlocker(rect=_rect(item), z_min=z_min, z_max=z_max)
+        )
+    return result
+
+
+def _approach_blocking_phase(
+    target_id,
+    target_paths: _ApproachPaths,
+    blocker_id,
+    blocker: _ApproachBlocker,
+    config: ExecutionSequenceConfig,
+) -> Optional[str]:
+    paths = (
+        ("box", target_paths.box, config.approach_box_xy_clearance_mm),
+        (
+            "suction",
+            target_paths.suction,
+            config.approach_suction_xy_clearance_mm,
+        ),
+    )
+    try:
+        for label, path, clearance in paths:
+            if path is None:
+                continue
+            if preposition_descent_blocked(
+                path,
+                blocker.rect,
+                blocker.z_max,
+                clearance,
+                config.coordinate_tolerance_mm,
+            ):
+                return "%s pre-position descent" % label
+            if moving_path_blocked(
+                path,
+                blocker.rect,
+                blocker.z_min,
+                blocker.z_max,
+                clearance,
+                config.coordinate_tolerance_mm,
+            ):
+                return "%s diagonal approach" % label
+            if label == "box" and moving_path_blocked(
+                target_paths.box_final_descent,
+                blocker.rect,
+                blocker.z_min,
+                blocker.z_max,
+                config.approach_box_xy_clearance_mm,
+                config.coordinate_tolerance_mm,
+            ):
+                return "box final descent"
+    except ValueError as exc:
+        raise ExecutionSequenceError(
+            "invalid approach geometry for target %r against blocker %r: %s"
+            % (target_id, blocker_id, exc)
+        ) from exc
+    return None
+
+
+def _add_approach_edges(
+    items: List[Dict],
+    config: ExecutionSequenceConfig,
+    edges: List[Set[int]],
+    indegree: List[int],
+    pallet_dims: Optional[Dict[str, float]] = None,
+    deadline: Optional[float] = None,
+) -> None:
+    target_paths = _approach_paths(items, config, pallet_dims, deadline)
+    blockers = _approach_blockers(items, deadline)
+    for target_idx, paths in enumerate(target_paths):
+        _check_deadline(deadline)
+        for blocker_idx, blocker in enumerate(blockers):
+            _check_deadline(deadline)
+            if blocker_idx == target_idx:
+                continue
+            phase = _approach_blocking_phase(
+                items[target_idx].get("id"),
+                paths,
+                items[blocker_idx].get("id"),
+                blocker,
+                config,
+            )
+            if phase is not None:
+                _add_edge(edges, indegree, target_idx, blocker_idx)
+
+
+def _assert_approach_replay_safe(
+    items: List[Dict],
+    ordered_indices: List[int],
+    config: ExecutionSequenceConfig,
+    pallet_dims: Optional[Dict[str, float]] = None,
+    deadline: Optional[float] = None,
+) -> None:
+    target_paths = _approach_paths(items, config, pallet_dims, deadline)
+    blockers = _approach_blockers(items, deadline)
+    placed: Set[int] = set()
+    for target_idx in ordered_indices:
+        _check_deadline(deadline)
+        for blocker_idx in placed:
+            _check_deadline(deadline)
+            phase = _approach_blocking_phase(
+                items[target_idx].get("id"),
+                target_paths[target_idx],
+                items[blocker_idx].get("id"),
+                blockers[blocker_idx],
+                config,
+            )
+            if phase is not None:
+                raise ExecutionSequenceError(
+                    "box %r approach is blocked by box %r during %s"
+                    % (
+                        items[target_idx].get("id"),
+                        items[blocker_idx].get("id"),
+                        phase,
+                    )
+                )
+        placed.add(target_idx)
+
+
 def _assert_replay_safe(
     items: List[Dict],
     ordered_indices: List[int],
@@ -528,6 +786,7 @@ def _refresh_robot_depth_fields(
 def _assert_final_execution_layout(
     items: List[Dict],
     config: ExecutionSequenceConfig,
+    deadline: Optional[float] = None,
 ) -> None:
     pallet_dims = _pallet_dims(items)
     _validate_bounds(items, pallet_dims, config.coordinate_tolerance_mm)
@@ -535,6 +794,9 @@ def _assert_final_execution_layout(
         items, config.coordinate_tolerance_mm
     )
     _add_clearance_edges(items, config, edges, indegree)
+    _add_approach_edges(
+        items, config, edges, indegree, pallet_dims, deadline=deadline
+    )
     for source_idx, targets in enumerate(edges):
         if any(source_idx >= target_idx for target_idx in targets):
             raise ExecutionSequenceError(
@@ -542,6 +804,13 @@ def _assert_final_execution_layout(
             )
     ordered_indices = list(range(len(items)))
     _assert_replay_safe(items, ordered_indices, supports, config)
+    _assert_approach_replay_safe(
+        items,
+        ordered_indices,
+        config,
+        pallet_dims,
+        deadline=deadline,
+    )
     if config.preserve_open_direction:
         geometry = [_physical_geometry(item) for item in items]
         blockers = _direction_blocker_map(geometry, config)
@@ -1070,6 +1339,28 @@ def _stable_directed_wave_order(
     )
 
 
+def _raise_no_execution_order(
+    pallet: Dict, config: ExecutionSequenceConfig
+) -> None:
+    if config.preserve_open_direction:
+        raise ExecutionSequenceError(
+            "pallet %r has no execution order preserving at least %d open "
+            "directions within %.3fs"
+            % (
+                pallet.get("pallet_id"),
+                4 - config.max_occupied_directions,
+                config.max_sequence_search_seconds_per_pallet,
+            )
+        )
+    raise ExecutionSequenceError(
+        "pallet %r has no execution order within %.3fs"
+        % (
+            pallet.get("pallet_id"),
+            config.max_sequence_search_seconds_per_pallet,
+        )
+    )
+
+
 def sequence_pallet_items(
     pallet: Dict,
     config: Optional[ExecutionSequenceConfig] = None,
@@ -1091,6 +1382,18 @@ def sequence_pallet_items(
         source_items, cfg.coordinate_tolerance_mm
     )
     _add_clearance_edges(source_items, cfg, edges, indegree)
+    deadline = time.monotonic() + cfg.max_sequence_search_seconds_per_pallet
+    try:
+        _add_approach_edges(
+            source_items,
+            cfg,
+            edges,
+            indegree,
+            dims,
+            deadline=deadline,
+        )
+    except _ExecutionSequenceDeadlineExceeded:
+        _raise_no_execution_order(pallet, cfg)
     ready = deque(idx for idx, degree in enumerate(indegree) if degree == 0)
     processed_count = 0
     while ready:
@@ -1113,7 +1416,6 @@ def sequence_pallet_items(
             "pallet %r has cyclic execution dependencies; blocked boxes=%r%s"
             % (pallet.get("pallet_id"), preview, suffix)
         )
-    deadline = time.monotonic() + cfg.max_sequence_search_seconds_per_pallet
     geometry = [_physical_geometry(item) for item in source_items]
     blockers: Optional[List[Dict[str, Set[int]]]] = None
     try:
@@ -1137,24 +1439,18 @@ def sequence_pallet_items(
     except _ExecutionSequenceDeadlineExceeded:
         ordered_indices = None
     if ordered_indices is None:
-        if cfg.preserve_open_direction:
-            raise ExecutionSequenceError(
-                "pallet %r has no execution order preserving at least %d open "
-                "directions within %.3fs"
-                % (
-                    pallet.get("pallet_id"),
-                    4 - cfg.max_occupied_directions,
-                    cfg.max_sequence_search_seconds_per_pallet,
-                )
-            )
-        raise ExecutionSequenceError(
-            "pallet %r has no execution order within %.3fs"
-            % (
-                pallet.get("pallet_id"),
-                cfg.max_sequence_search_seconds_per_pallet,
-            )
-        )
+        _raise_no_execution_order(pallet, cfg)
     _assert_replay_safe(source_items, ordered_indices, supports, cfg)
+    try:
+        _assert_approach_replay_safe(
+            source_items,
+            ordered_indices,
+            cfg,
+            dims,
+            deadline=deadline,
+        )
+    except _ExecutionSequenceDeadlineExceeded:
+        _raise_no_execution_order(pallet, cfg)
     if cfg.preserve_open_direction:
         _assert_open_direction_replay(
             source_items, ordered_indices, cfg, blockers
@@ -1172,7 +1468,12 @@ def sequence_pallet_items(
     _refresh_robot_depth_fields(
         ordered_items, pallet, dims, cfg.origin
     )
-    _assert_final_execution_layout(ordered_items, cfg)
+    try:
+        _assert_final_execution_layout(
+            ordered_items, cfg, deadline=deadline
+        )
+    except _ExecutionSequenceDeadlineExceeded:
+        _raise_no_execution_order(pallet, cfg)
     _annotate_stack_height_before(ordered_items)
     return ordered_items
 
