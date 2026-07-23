@@ -26,8 +26,8 @@ DEFAULT_CONFIG_PATH = (
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Reorder packed_items with support topology and a low-height "
-            "origin-outward wavefront, then center the pallet layout."
+            "Reorder packed_items with support topology and a directed "
+            "diagonal-approach wave, then center the pallet layout."
         )
     )
     parser.add_argument("input", help="Existing packing_plan JSON")
@@ -189,6 +189,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if args.z_clearance_mm is not None
                 else settings.suction_z_clearance_mm
             ),
+            approach_offset_x_mm=settings.approach_offset_x_mm,
+            approach_offset_y_mm=settings.approach_offset_y_mm,
+            approach_z_clearance_mm=settings.approach_z_clearance_mm,
+            approach_box_xy_clearance_mm=(
+                settings.approach_box_xy_clearance_mm
+            ),
+            approach_suction_xy_clearance_mm=(
+                settings.approach_suction_xy_clearance_mm
+            ),
             require_suction_pose=(
                 args.require_suction_pose
                 if args.require_suction_pose is not None
@@ -198,23 +207,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             side_neighbor_clearance_mm=settings.side_neighbor_clearance_mm,
             side_height_tolerance_mm=settings.side_height_tolerance_mm,
             preserve_open_direction=settings.preserve_open_direction,
-            prefer_adjacent_occupied_sides=(
-                settings.prefer_adjacent_occupied_sides
-            ),
             max_sequence_search_seconds_per_pallet=(
                 settings.max_sequence_search_seconds_per_pallet
-            ),
-            adaptive_staircase_enabled=(
-                settings.adaptive_staircase_enabled
-            ),
-            staircase_height_difference_threshold_mm=(
-                settings.staircase_height_difference_threshold_mm
-            ),
-            staircase_transition_ratio_threshold=(
-                settings.staircase_transition_ratio_threshold
-            ),
-            staircase_min_transition_edges=(
-                settings.staircase_min_transition_edges
             ),
             scan_column_tolerance_mm=settings.scan_column_tolerance_mm,
         )

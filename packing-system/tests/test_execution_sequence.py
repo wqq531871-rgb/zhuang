@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import run_execution_planning
 from src.execution.approach_geometry import (
     MovingRectPath,
     moving_path_blocked,
@@ -1560,6 +1561,51 @@ def _cli_report():
     }
 
 
+def test_cli_passes_approach_config_to_planner(tmp_path, monkeypatch):
+    source = tmp_path / "packing.json"
+    output = tmp_path / "packing_execution.json"
+    config_path = tmp_path / "packing_config.yaml"
+    report = _cli_report()
+    source.write_text(json.dumps(report), encoding="utf-8")
+    config_path.write_text(
+        "execution_sequence:\n"
+        "  enabled: true\n"
+        "  approach_offset_x_mm: 41\n"
+        "  approach_offset_y_mm: 42\n"
+        "  approach_z_clearance_mm: 43\n"
+        "  approach_box_xy_clearance_mm: 44\n"
+        "  approach_suction_xy_clearance_mm: 45\n",
+        encoding="utf-8",
+    )
+    captured = {}
+
+    def capture_config(input_report, config):
+        captured["config"] = config
+        return deepcopy(input_report)
+
+    monkeypatch.setattr(
+        run_execution_planning, "plan_execution_report", capture_config
+    )
+
+    result = run_execution_planning.main(
+        [
+            str(source),
+            "--config",
+            str(config_path),
+            "--output",
+            str(output),
+        ]
+    )
+
+    assert result == 0
+    planner_config = captured["config"]
+    assert planner_config.approach_offset_x_mm == 41.0
+    assert planner_config.approach_offset_y_mm == 42.0
+    assert planner_config.approach_z_clearance_mm == 43.0
+    assert planner_config.approach_box_xy_clearance_mm == 44.0
+    assert planner_config.approach_suction_xy_clearance_mm == 45.0
+
+
 def test_cli_writes_same_schema_execution_and_optional_wcs_files(tmp_path):
     source = tmp_path / "packing.json"
     output = tmp_path / "packing_execution.json"
@@ -1759,6 +1805,27 @@ def test_cli_rejects_nan_clearance_without_writing_output(tmp_path):
     assert completed.returncode != 0
     assert "finite" in completed.stderr
     assert not output.exists()
+
+
+def test_cli_rejects_removed_adaptive_flag(tmp_path):
+    source = tmp_path / "packing.json"
+    source.write_text(json.dumps(_cli_report()), encoding="utf-8")
+    script = Path(__file__).resolve().parents[1] / "run_execution_planning.py"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            str(source),
+            "--adaptive-staircase-enabled",
+        ],
+        cwd=str(script.parent),
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    assert "unrecognized arguments" in completed.stderr
 
 
 def test_wcs_cases_are_not_published_when_release_replace_fails(
