@@ -188,11 +188,20 @@ def find_latest_json(project_dir: Path) -> Optional[Path]:
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     )
+    execution_stems = {
+        p.stem.lower()[: -len("_execution")]
+        for p in ordered_candidates
+        if p.stem.lower().endswith("_execution")
+        and "_execution_wcs" not in p.stem.lower()
+    }
     for p in ordered_candidates:
         low = str(p).lower()
         if "config" in low or "__pycache__" in low or "site-packages" in low:
             continue
         if "_execution_wcs" in p.stem:
+            continue
+        stem_l = p.stem.lower()
+        if not stem_l.endswith("_execution") and stem_l in execution_stems:
             continue
         try:
             payload = json.loads(p.read_text(encoding="utf-8"))
@@ -324,6 +333,7 @@ class PackingWorker(QtCore.QThread):
                     latest,
                     self.config_path,
                     project_root=self.project_dir,
+                    output_dir=workspace_dir_from_project(self.project_dir) / "output",
                     log=self.log.emit,
                 )
                 latest = outcome.report_path

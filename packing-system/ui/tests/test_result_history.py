@@ -45,16 +45,19 @@ def test_latest_result_ignores_newer_wcs_artifacts(tmp_path):
     assert find_latest_json(project) == execution
 
 
-def test_history_labels_success_and_fail_buckets(tmp_path):
+def test_history_hides_exports_base_when_execution_in_success(tmp_path):
     project = tmp_path / "packing-system"
     project.mkdir()
-    output = tmp_path / "packing-workspace" / "output"
-    success = output / "success" / "packing_plan_20260721_120000.json"
-    fail = output / "fail" / "packing_plan_20260721_120001.json"
-    _write_report(success)
-    _write_report(fail)
+    workspace = tmp_path / "packing-workspace"
+    exports = workspace / "runtime" / "packing-realtime" / "exports"
+    success = workspace / "output" / "success"
+    base = exports / "ui_packing_plan_20260721_130000.json"
+    execution = success / "ui_packing_plan_20260721_130000_execution.json"
+    _write_report(base)
+    _write_report(execution)
 
     entries = list_result_json_files(project, limit=10)
-    sources = {e.path.name: e.source for e in entries}
-    assert sources[success.name] == "达标"
-    assert sources[fail.name] == "未达标"
+    names = [entry.path.name for entry in entries]
+    assert execution.name in names
+    assert base.name not in names
+

@@ -257,6 +257,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("execution output failed: %s" % exc, file=sys.stderr)
         return 1
 
+    if wcs_result is not None:
+        try:
+            from src.service.success_box_db import persist_success_boxes
+
+            persist_success_boxes(
+                execution_report,
+                wcs_result,
+                config_path=config_path,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(
+                "[WCS-DB] wcs_success_box 后置写入异常：%s" % exc,
+                file=sys.stderr,
+            )
+
     print(
         "execution plan written: pallets=%d boxes=%d reordered_pallets=%d path=%s"
         % (len(execution_pallets), boxes, changed, output)

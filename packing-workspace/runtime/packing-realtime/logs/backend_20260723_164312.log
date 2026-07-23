@@ -1,0 +1,46 @@
+[LOG] 后端日志文件：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\logs\backend_20260723_164312.log
+[LOG] 本次结果将输出到：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260723_164312.json
+[CMD] D:\ProgramData\anaconda3\python.exe E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\packing\run_packing.py --config E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20260723_164311.yaml --out E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260723_164312.json
+已加载约束配置：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20260723_164311.yaml
+已加载配置数据集：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\data\ui_inputs\20260723_164311_668.xlsx
+检测到小箱子体积阈值: 11130000.00 mm^3
+小箱子数量: 0，非小箱子数量: 668
+数据预处理和箱子分组完成（按托盘类型+销售订单号）。
+----------------------------------------
+正在处理托盘类型：MH423C，销售订单号：ANALYSIS_001
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借修复（凑标提交）：新增达标 2，受影响 3 盘重排为 3 盘（其余失败盘未动），耗时 0.9s。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：ANALYSIS_001）处理完成：总托盘 12，指数达标 10，未达标 2，平均缺口 96.00，最大缺口 154.00，失败托盘互借修复成功 2。
+  - KPI：near/mid/deep=0/0/2，救回率=100.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.52s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=4.24s，total=4.76s。
+  - 条件双路径棘轮：替代完整路径未严格改善，保留 GCP。
+========================================
+统计汇总：总托盘 12，指数达标 10，未达标 2，未知 0，平均缺口 96.00，最大缺口 154.00，失败托盘互借修复成功 2
+KPI汇总：near/mid/deep=0/0/2，pair尝试=0，pair改进=0，pair效率=0.00%
+耗时汇总：packing=0.52s，main_topup=0.00s，retry=0.00s，repack=4.24s，end_to_end=16.46s
+========================================
+========================================
+[success] 装箱方案：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_20260723_164329.json
+[success] 托盘统计：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_summary_20260723_164329.xlsx
+[fail] 装箱方案：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\fail\packing_plan_20260723_164329.json
+[fail] 托盘统计：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\fail\packing_plan_summary_20260723_164329.xlsx
+========================================
+算法总运行时间：16.46 秒
+========================================
+方案另存为: E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260723_164312.json
+[执行规划] 开始：D:\ProgramData\anaconda3\python.exe E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\run_execution_planning.py E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260723_164312.json --config E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20260723_164311.yaml --wcs-output E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260723_164312_execution_wcs.json
+[WCS-DB] wcs_success_box��Excel/ȱ��������� 604 ���ڲ� product_code
+[WCS-DB] wcs_success_box��������ѡ 604 �У�д��Ӱ�� 604�����Ѵ�����������
+execution plan written: pallets=12 boxes=668 reordered_pallets=12 path=E:\Homework\AAװ��\Aװ��Ϳ��ӻ�\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260723_164312_execution.json
+WCS execution cases written: E:\Homework\AAװ��\Aװ��Ϳ��ӻ�\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260723_164312_execution_wcs.json
+WCS execution plan map written: E:\Homework\AAװ��\Aװ��Ϳ��ӻ�\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260723_164312_execution_wcs_map.json
+execution scan deviations pallet='MH423C-ANALYSIS_001-9' count=1: expected=347 selected=349 box=347 after=349 reason=hard_dependency
+execution scan deviations pallet='MH423C-ANALYSIS_001-10' count=1: expected=576 selected=661 box=576 after=661 reason=hard_dependency
+execution scan deviations pallet='MH423C-ANALYSIS_001-11' count=4: expected=136 selected=322 box=136 after=322 reason=hard_dependency; expected=137 selected=444 box=137 after=444 reason=hard_dependency; expected=139 selected=344 box=139 after=344 reason=hard_dependency; expected=141 selected=443 box=141 after=443 reason=hard_dependency
+execution scan deviations pallet='MH423C-ANALYSIS_001-12' count=9: expected=98 selected=330 box=98 after=330 reason=hard_dependency; expected=333 selected=177 box=333 after=177 reason=hard_dependency; expected=107 selected=598 box=107 after=598 reason=hard_dependency; expected=331 selected=329 box=331 after=329 reason=hard_dependency; expected=315 selected=93 box=315 after=93 reason=hard_dependency; expected=440 selected=332 box=440 after=332 reason=hard_dependency; expected=441 selected=96 box=441 after=96 reason=hard_dependency; expected=611 selected=87 box=611 after=87 reason=hard_dependency; ...
+execution scan deviations pallet='MH423C-ANALYSIS_001-9' count=1: expected=347 selected=349 box=347 after=349 reason=hard_dependency
+execution scan deviations pallet='MH423C-ANALYSIS_001-10' count=1: expected=576 selected=661 box=576 after=661 reason=hard_dependency
+execution scan deviations pallet='MH423C-ANALYSIS_001-11' count=4: expected=136 selected=322 box=136 after=322 reason=hard_dependency; expected=137 selected=444 box=137 after=444 reason=hard_dependency; expected=139 selected=344 box=139 after=344 reason=hard_dependency; expected=141 selected=443 box=141 after=443 reason=hard_dependency
+execution scan deviations pallet='MH423C-ANALYSIS_001-12' count=9: expected=98 selected=330 box=98 after=330 reason=hard_dependency; expected=333 selected=177 box=333 after=177 reason=hard_dependency; expected=107 selected=598 box=107 after=598 reason=hard_dependency; expected=331 selected=329 box=331 after=329 reason=hard_dependency; expected=315 selected=93 box=315 after=93 reason=hard_dependency; expected=440 selected=332 box=440 after=332 reason=hard_dependency; expected=441 selected=96 box=441 after=96 reason=hard_dependency; expected=611 selected=87 box=611 after=87 reason=hard_dependency; ...
+[执行规划] 完成；统一使用：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260723_164312_execution.json

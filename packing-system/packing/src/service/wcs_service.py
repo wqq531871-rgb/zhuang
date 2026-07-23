@@ -533,6 +533,7 @@ class WcsPackingService:
                 execution_outcome = run_execution_planning_for_plan(
                     report_path,
                     exec_config,
+                    output_dir=self._ds.output_dir,
                     log=print,
                 )
             except Exception as exc:

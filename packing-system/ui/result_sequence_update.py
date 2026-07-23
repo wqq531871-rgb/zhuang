@@ -45,6 +45,90 @@ def result_triplet_paths(packing_plan_path: Path) -> Tuple[Path, Path, Path]:
     )
 
 
+def resolve_execution_report_path(plan_path: Path) -> Path:
+    """Prefer ``*_execution.json`` sibling / workspace output bucket when given a base plan."""
+    path = Path(plan_path).resolve()
+    stem = path.stem
+    if stem.lower().endswith("_execution"):
+        return path
+    sibling = path.with_name(f"{stem}_execution.json")
+    if sibling.exists():
+        return sibling.resolve()
+    for ancestor in path.parents:
+        if ancestor.name != "packing-workspace":
+            continue
+        for bucket in ("success", "fail"):
+            candidate = ancestor / "output" / bucket / f"{stem}_execution.json"
+            if candidate.exists():
+                return candidate.resolve()
+        break
+    return path
+
+
+def load_execution_wcs_case_for_pallet(
+    plan_path: Path,
+    pallet: Dict[str, Any],
+    *,
+    box_index: int = 1,
+) -> Dict[str, Any]:
+    """从执行规划产物 ``*_execution_wcs.json`` / map 取出该托盘的接口2 case。
+
+    使用已生成的 ``box_unique_id`` 与执行顺序 layers，不再从旧 packing_plan 重算。
+    """
+    exec_path = resolve_execution_report_path(plan_path)
+    if not exec_path.stem.lower().endswith("_execution"):
+        raise ValueError(
+            f"未找到执行方案（*_execution.json），无法按执行顺序下传：{plan_path}"
+        )
+    _plan, wcs_path, map_path = result_triplet_paths(exec_path)
+    if not wcs_path.exists():
+        raise ValueError(f"缺少执行 WCS 文件：{wcs_path.name}")
+    if not map_path.exists():
+        raise ValueError(f"缺少执行映射文件：{map_path.name}")
+
+    wcs_map = _load_json(map_path, {})
+    cases = _load_json(wcs_path, [])
+    if not isinstance(wcs_map, dict) or not isinstance(cases, list):
+        raise ValueError("执行 WCS 文件格式无效（期望 map=对象、cases=数组）")
+
+    uid = _find_map_uid(wcs_map, pallet)
+    if uid is None:
+        pallet_id = str((pallet or {}).get("pallet_id") or "")
+        raise ValueError(
+            f"执行映射中找不到托盘 {pallet_id or '?'}，请确认加载的是本次 execution 结果"
+        )
+
+    for case in cases:
+        if not isinstance(case, dict):
+            continue
+        if str(case.get("box_unique_id") or "") != str(uid):
+            continue
+        out = dict(case)
+        out["box_index"] = int(box_index)
+        return out
+
+    raise ValueError(
+        f"执行 WCS 数组中缺少 box_unique_id={uid} 的 case"
+    )
+
+
+def load_execution_wcs_cases(plan_path: Path) -> List[Dict[str, Any]]:
+    """读取整份 ``*_execution_wcs.json``（接口2数组）。"""
+    exec_path = resolve_execution_report_path(plan_path)
+    if not exec_path.stem.lower().endswith("_execution"):
+        raise ValueError(
+            f"未找到执行方案（*_execution.json）：{plan_path}"
+        )
+    _plan, wcs_path, _map_path = result_triplet_paths(exec_path)
+    if not wcs_path.exists():
+        raise ValueError(f"缺少执行 WCS 文件：{wcs_path.name}")
+    cases = _load_json(wcs_path, [])
+    if not isinstance(cases, list):
+        raise ValueError(f"执行 WCS 文件不是 JSON 数组：{wcs_path}")
+    return [c for c in cases if isinstance(c, dict)]
+
+
+
 def apply_seq_values(
     pallet: Dict[str, Any],
     ordered_box_ids: Sequence[str],

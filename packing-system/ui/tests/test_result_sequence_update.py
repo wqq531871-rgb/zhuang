@@ -154,3 +154,54 @@ def test_rewrite_only_patches_seq_for_one_pallet(tmp_path):
     saved_map = json.loads(written_map.read_text(encoding="utf-8"))
     assert [it["seq"] for it in saved_map["uid-a"]["packed_items"]] == [2, 1]
     assert [it["id"] for it in saved_map["uid-b"]["packed_items"]] == ["X", "Y"]
+
+
+def test_load_execution_wcs_case_for_pallet_reads_execution_files(tmp_path):
+    from result_sequence_update import (
+        load_execution_wcs_case_for_pallet,
+        resolve_execution_report_path,
+    )
+
+    workspace = tmp_path / "packing-workspace"
+    success = workspace / "output" / "success"
+    exports = workspace / "runtime" / "packing-realtime" / "exports"
+    success.mkdir(parents=True)
+    exports.mkdir(parents=True)
+
+    stem = "ui_packing_plan_20260721_160000"
+    base = exports / f"{stem}.json"
+    execution = success / f"{stem}_execution.json"
+    wcs = success / f"{stem}_execution_wcs.json"
+    wcs_map = success / f"{stem}_execution_wcs_map.json"
+
+    pallet = {
+        "pallet_id": "P1",
+        "sales_order_no": "SO1",
+        "pallet_type": "MH423C",
+        "mpm_status": "SUCCESS",
+        "packed_items": [_sample_item("A", 1)],
+    }
+    base.write_text(json.dumps({"pallets": [pallet]}), encoding="utf-8")
+    execution.write_text(json.dumps({"pallets": [pallet]}), encoding="utf-8")
+    wcs.write_text(
+        json.dumps(
+            [
+                {
+                    "box_index": 3,
+                    "box_unique_id": "uid-exec",
+                    "layers": [{"cartons": [{"seq": 1, "product_code": 1}]}],
+                    "total_height": 10,
+                    "order_id": "SO1",
+                    "case_type": "MH423C",
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    wcs_map.write_text(json.dumps({"uid-exec": pallet}), encoding="utf-8")
+
+    assert resolve_execution_report_path(base) == execution.resolve()
+    case = load_execution_wcs_case_for_pallet(base, pallet, box_index=1)
+    assert case["box_unique_id"] == "uid-exec"
+    assert case["box_index"] == 1
+    assert case["layers"][0]["cartons"][0]["seq"] == 1

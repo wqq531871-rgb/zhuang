@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -27,7 +28,58 @@ def packing_system_root_from_here() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def default_workspace_output_dir(project_root: Optional[Path] = None) -> Path:
+    """``packing-workspace/output``（可用 ``PACKING_WORKSPACE`` 覆盖工作区根）。"""
+    env = os.environ.get("PACKING_WORKSPACE", "").strip()
+    if env:
+        return Path(env).expanduser().resolve() / "output"
+    root = Path(project_root).resolve() if project_root else packing_system_root_from_here()
+    # packing-system → 同级 packing-workspace/output
+    return (root.parent / "packing-workspace" / "output").resolve()
+
+
+def plan_has_success_pallets(plan_path: Path) -> bool:
+    """源装箱报告是否含达标盘（决定 success / fail 目录）。"""
+    try:
+        report = json.loads(Path(plan_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return False
+    for pallet in report.get("pallets") or []:
+        if str(pallet.get("mpm_status") or "").strip().upper() == "SUCCESS":
+            return True
+    return False
+
+
+def resolve_execution_bucket_dir(
+    plan_path: Path,
+    *,
+    output_dir: Optional[Path] = None,
+    project_root: Optional[Path] = None,
+    has_success: Optional[bool] = None,
+) -> Path:
+    """执行产物目录：有达标盘 → output/success，否则 → output/fail。"""
+    if has_success is None:
+        has_success = plan_has_success_pallets(plan_path)
+    out_root = (
+        Path(output_dir).resolve()
+        if output_dir is not None
+        else default_workspace_output_dir(project_root)
+    )
+    bucket = out_root / ("success" if has_success else "fail")
+    bucket.mkdir(parents=True, exist_ok=True)
+    return bucket
+
+
+def _execution_paths_in_dir(plan_path: Path, bucket_dir: Path) -> Tuple[Path, Path, Path]:
+    stem = Path(plan_path).stem
+    report = bucket_dir / f"{stem}_execution.json"
+    wcs = bucket_dir / f"{stem}_execution_wcs.json"
+    wcs_map = wcs.with_name(wcs.stem + "_map.json")
+    return report, wcs, wcs_map
+
+
 def _execution_paths(plan_path: Path) -> Tuple[Path, Path, Path]:
+    """同目录旁路命名（兼容旧测试 / 未指定 output 时的默认）。"""
     report = plan_path.with_name(plan_path.stem + "_execution.json")
     wcs = plan_path.with_name(plan_path.stem + "_execution_wcs.json")
     wcs_map = wcs.with_name(wcs.stem + "_map.json")
@@ -80,9 +132,10 @@ def run_execution_planning_for_plan(
     config_path: Path,
     *,
     project_root: Optional[Path] = None,
+    output_dir: Optional[Path] = None,
     log: Callable[[str], None] = print,
 ) -> ExecutionPlanningOutcome:
-    """Run planning once; return original report when no complete bundle is made."""
+    """Run planning once; write bundle under output/success|fail; fallback to source."""
 
     plan_path = Path(plan_path).resolve()
     config_path = Path(config_path).resolve()
@@ -103,17 +156,31 @@ def run_execution_planning_for_plan(
         log(f"[执行规划] 找不到配置：{config_path}")
         return fallback
 
-    execution_paths = _execution_paths(plan_path)
+    has_success = plan_has_success_pallets(plan_path)
+    bucket = resolve_execution_bucket_dir(
+        plan_path,
+        output_dir=output_dir,
+        project_root=root,
+        has_success=has_success,
+    )
+    execution_paths = _execution_paths_in_dir(plan_path, bucket)
     before = tuple(_snapshot(path) for path in execution_paths)
     execution_report, wcs_output, wcs_map_output = execution_paths
+    bucket_label = "success" if has_success else "fail"
+    log(f"[执行规划] 产物目录：{bucket}（{bucket_label}）")
+
     cmd = [
         sys.executable,
         str(script),
         str(plan_path),
         "--config",
         str(config_path),
+        "--output",
+        str(execution_report),
         "--wcs-output",
         str(wcs_output),
+        "--wcs-map-output",
+        str(wcs_map_output),
     ]
     log(f"[执行规划] 开始：{' '.join(cmd)}")
     try:

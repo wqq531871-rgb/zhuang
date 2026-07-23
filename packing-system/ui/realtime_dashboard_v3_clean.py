@@ -464,7 +464,17 @@ def list_result_json_files(project_dir: Path, limit: int = _HISTORY_LIMIT) -> Li
     seen = set()
     entries: List[ResultHistoryEntry] = []
     patterns = ["packing_plan_*.json", "ui_packing_plan_*.json"]
-    for root in _result_search_roots(project_dir):
+    roots = _result_search_roots(project_dir)
+    # 跨目录：若 success/fail 已有同名 *_execution.json，则隐藏 exports 里的基础方案
+    execution_stems = set()
+    for root in roots:
+        for path in root.glob("*_execution.json"):
+            if path.is_file() and _is_valid_packing_json(path):
+                name = path.name.lower()
+                if name.endswith("_execution.json"):
+                    execution_stems.add(name[: -len("_execution.json")])
+
+    for root in roots:
         for pattern in patterns:
             for path in root.glob(pattern):
                 if not path.is_file():
@@ -473,11 +483,13 @@ def list_result_json_files(project_dir: Path, limit: int = _HISTORY_LIMIT) -> Li
                 if key in seen:
                     continue
                 name = path.name.lower()
-                # 有 *_execution.json 时隐藏同目录同戳的基础 packing_plan，避免重复
+                stem_l = path.stem.lower()
+                # 有 *_execution.json 时隐藏同戳基础 packing_plan（同目录或跨目录）
                 if "_execution" not in name and name.endswith(".json"):
-                    stem = path.stem
-                    execution_path = path.with_name(f"{stem}_execution.json")
-                    if execution_path.exists() and _is_valid_packing_json(execution_path):
+                    sibling = path.with_name(f"{path.stem}_execution.json")
+                    if sibling.exists() and _is_valid_packing_json(sibling):
+                        continue
+                    if stem_l in execution_stems:
                         continue
                 if not _is_valid_packing_json(path):
                     continue
@@ -496,12 +508,12 @@ def list_result_json_files(project_dir: Path, limit: int = _HISTORY_LIMIT) -> Li
 
 
 def list_packing_plan_files(project_dir: Path, limit: int = _HISTORY_LIMIT) -> List[Path]:
-    """仅整份装箱报告 packing_plan_*.json / ui_packing_plan_*.json（排除 execution 衍生文件）。"""
+    """下传/选用的整份报告：优先 ``*_execution.json``（list_result 已隐藏同戳旧方案）。"""
     entries = list_result_json_files(project_dir, limit=limit * 2)
     out: List[Path] = []
     for entry in entries:
         name = entry.path.name.lower()
-        if "_execution" in name:
+        if "_execution_wcs" in name:
             continue
         if not (
             name.startswith("packing_plan_") or name.startswith("ui_packing_plan_")
@@ -680,8 +692,8 @@ class UiPackingWorker(QtCore.QThread):
                 result_path = latest
 
         if result_path is not None:
-            self._run_execution_planning(result_path)
-            self.finished_json.emit(str(result_path))
+            load_path = self._run_execution_planning(result_path)
+            self.finished_json.emit(str(load_path))
             return
 
         if self.out_path.exists():
@@ -695,8 +707,8 @@ class UiPackingWorker(QtCore.QThread):
                 "请查看底部日志中的后端错误信息。"
             )
 
-    def _run_execution_planning(self, plan_path: Path) -> None:
-        """一键装箱成功后自动跑执行顺序规划（受 execution_sequence.enabled 控制）。"""
+    def _run_execution_planning(self, plan_path: Path) -> Path:
+        """一键装箱成功后自动跑执行顺序规划；成功则返回 execution JSON 路径供可视化加载。"""
         try:
             packing_root = self.project_dir / "packing"
             packing_root_s = str(packing_root.resolve())
@@ -705,15 +717,22 @@ class UiPackingWorker(QtCore.QThread):
             from src.postprocess.execution_planning_hook import (  # type: ignore
                 run_execution_planning_for_plan,
             )
+            from realtime_dashboard_v2 import workspace_dir_from_project
 
-            run_execution_planning_for_plan(
+            outcome = run_execution_planning_for_plan(
                 plan_path,
                 self.config_path,
                 project_root=self.project_dir,
+                output_dir=workspace_dir_from_project(self.project_dir) / "output",
                 log=self._emit_log,
             )
+            if outcome.succeeded:
+                self._emit_log(f"[UI] 可视化将加载执行方案：{outcome.report_path}")
+                return Path(outcome.report_path)
+            self._emit_log("[UI] 执行规划未成功，可视化仍加载原装箱方案。")
         except Exception as exc:
             self._emit_log(f"[执行规划] 调用异常（不影响本轮装箱结果）：{exc}")
+        return plan_path
 
     def _run_api_mode(self, run_script: Path) -> None:
         wcs_script = self.project_dir / DEFAULT_WCS_RUN_SCRIPT_REL
@@ -983,7 +1002,9 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
 
         self.btn_push_wcs = QtWidgets.QPushButton("下传")
         self.btn_push_wcs.setObjectName("PrimaryButton")
-        self.btn_push_wcs.setToolTip("将所选达标托盘构造成接口2 JSON，确认后 POST 给 WCS")
+        self.btn_push_wcs.setToolTip(
+            "从当前 *_execution_wcs.json 读取该盘 case（执行顺序），确认后 POST 接口2"
+        )
         self.btn_push_wcs.clicked.connect(self.push_selected_pallet_to_wcs)
         push_form.addRow("", self.btn_push_wcs)
 
@@ -994,7 +1015,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
 
         layout.insertWidget(insert_at + 1, push_box)
 
-        self.step_push_plan = StepCard("↓", "下传完整方案", "选 packing_plan JSON，POST 接口 internal")
+        self.step_push_plan = StepCard("↓", "下传完整方案", "选 *_execution.json，POST 接口 internal")
         layout.insertWidget(insert_at + 2, self.step_push_plan)
 
         plan_box = QtWidgets.QFrame()
@@ -1005,18 +1026,18 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
 
         self.cmb_push_plan = QtWidgets.QComboBox()
         self.cmb_push_plan.setMinimumWidth(220)
-        self.cmb_push_plan.setToolTip("可选「当前」结果，或历史 packing_plan_*.json")
+        self.cmb_push_plan.setToolTip("优先选 *_execution.json（执行顺序方案）")
         plan_form.addRow("方案 JSON", self.cmb_push_plan)
 
         self.btn_push_plan = QtWidgets.QPushButton("确定下传")
         self.btn_push_plan.setObjectName("PrimaryButton")
         self.btn_push_plan.setToolTip(
-            "将整份 packing_plan JSON POST 到 /adaptor/api/wcs/internal"
+            "将整份执行方案 JSON POST 到 /adaptor/api/wcs/internal"
         )
         self.btn_push_plan.clicked.connect(self.push_selected_plan_internal)
         plan_form.addRow("", self.btn_push_plan)
 
-        self.lbl_push_plan_hint = QtWidgets.QLabel("暂无可下传的 packing_plan")
+        self.lbl_push_plan_hint = QtWidgets.QLabel("暂无可下传的执行方案")
         self.lbl_push_plan_hint.setObjectName("SmallInfo")
         self.lbl_push_plan_hint.setWordWrap(True)
         plan_form.addRow("", self.lbl_push_plan_hint)
@@ -1113,20 +1134,20 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             self.btn_push_plan.setEnabled(has_items)
         if hasattr(self, "lbl_push_plan_hint"):
             self.lbl_push_plan_hint.setText(
-                f"可选 {combo.count()} 个方案文件（整份 JSON 下传到 internal）"
+                f"可选 {combo.count()} 个方案文件（优先 *_execution.json）"
                 if has_items
-                else "暂无可下传的 packing_plan"
+                else "暂无可下传的执行方案"
             )
         if hasattr(self, "step_push_plan"):
             self.step_push_plan.set_state(
                 "done" if has_items else "idle",
-                f"已找到 {combo.count()} 个方案" if has_items else "等待 packing_plan 结果",
+                f"已找到 {combo.count()} 个方案" if has_items else "等待执行方案结果",
             )
 
     def push_selected_plan_internal(self) -> None:
-        """确认后，将整份 packing_plan JSON POST 到 /adaptor/api/wcs/internal。"""
+        """确认后，将整份执行方案 JSON POST 到 /adaptor/api/wcs/internal。"""
         if not hasattr(self, "cmb_push_plan") or self.cmb_push_plan.count() == 0:
-            QtWidgets.QMessageBox.information(self, "下传完整方案", "没有可下传的 packing_plan。")
+            QtWidgets.QMessageBox.information(self, "下传完整方案", "没有可下传的方案文件。")
             return
         raw = self.cmb_push_plan.currentData()
         if not raw:
@@ -1143,6 +1164,9 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             return
 
         try:
+            from result_sequence_update import resolve_execution_report_path
+
+            plan_path = resolve_execution_report_path(plan_path)
             self._ensure_packing_import_path()
             from src.service.wcs_service import (
                 load_data_source_config,
@@ -1164,7 +1188,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             f"确认将该 JSON 整份 POST 到对方接收端？\n\n"
             f"文件：{plan_path.name}\n"
             f"目标：{url}\n\n"
-            f"（目标来自 packing_config.yaml → internal_base_url）",
+            f"（优先使用 *_execution.json；目标来自 packing_config.yaml → internal_base_url）",
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
             QtWidgets.QMessageBox.No,
         )
@@ -1228,13 +1252,18 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
 
         try:
             self._ensure_packing_import_path()
-            from src.adapter import success_pallet_to_plan_case
+            from result_sequence_update import load_execution_wcs_case_for_pallet
             from src.service.wcs_service import (
                 load_data_source_config,
                 push_plan_result,
             )
 
-            case = success_pallet_to_plan_case(pallet, box_index=1)
+            plan_path = self._resolve_current_plan_path()
+            if plan_path is None:
+                raise ValueError("当前没有已加载的装箱/执行结果文件")
+            case = load_execution_wcs_case_for_pallet(
+                plan_path, pallet, box_index=1
+            )
             payload = [case]
             config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
             ds = load_data_source_config(config_path)
@@ -1249,6 +1278,10 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             with open(save_path, "w", encoding="utf-8") as f:
                 json.dump(payload, f, ensure_ascii=False, indent=2)
 
+            self._write_log(
+                f"[UI-下传] 托盘 {pallet_id} 使用执行 WCS："
+                f"box_unique_id={case.get('box_unique_id')} ← {plan_path.name}"
+            )
             self._write_log(f"[UI-下传] 托盘 {pallet_id} → {url}")
             self._write_log(f"[UI-下传] 请求体已保存：{save_path}")
             body = push_plan_result(

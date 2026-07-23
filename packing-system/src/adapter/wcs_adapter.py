@@ -17,6 +17,7 @@
 所有待企业确认项以 ``TODO(§8-x)`` 标注，编号对应分析文档 §8 清单。
 """
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -175,6 +176,37 @@ class WcsPlanResult:
     # ↑ box_unique_id → 算法完整托盘方案（含 position/original_*/suction_*），
     #   供接口 3（预告垛型）/ 4（按 seq 逐箱码垛）取用；接口 3 注记同
     #   box_unique_id 不能多次下发——去重责任在服务壳。
+
+
+def coerce_product_code(value) -> Optional[int]:
+    """把接口 product_code 收成可入库的 int。
+
+    - 正式接口：已经是 int / 数字字符串
+    - Postman Mock：常见 ``"PROD001"`` → 取末尾数字 ``1``
+    - 仍无法解析：返回 None（调用方应跳过并告警，勿静默当 0）
+    """
+    if value is None or value == '':
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        pass
+    digits = re.search(r'(\d+)\s*$', text)
+    if digits:
+        try:
+            return int(digits.group(1))
+        except ValueError:
+            return None
+    return None
 
 
 def _case_sort_key(pallet: Dict, orig_idx: int) -> Tuple:
