@@ -8,6 +8,12 @@ from pathlib import Path
 
 import pytest
 
+from src.execution.approach_geometry import (
+    MovingRectPath,
+    moving_path_blocked,
+    preposition_descent_blocked,
+    segment_intersects_rect,
+)
 from src.execution import sequence_planner as sequence_planner_module
 from src.execution.sequence_planner import (
     ExecutionSequenceConfig,
@@ -77,6 +83,139 @@ def _pallet(items):
 
 def _ids(items):
     return [item["id"] for item in items]
+
+
+def test_approach_geometry_segment_intersects_axis_aligned_rectangle():
+    assert segment_intersects_rect((0, 0), (2, 2), (0.5, 1.5, 0.5, 1.5))
+    assert not segment_intersects_rect((0, 0), (0, 2), (1, 2, 0.5, 1.5))
+
+
+def test_approach_geometry_near_side_blocker_blocks_diagonal_sweep():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert moving_path_blocked(path, (100, 200, 0, 100), 0, 100, 0)
+
+
+def test_approach_geometry_exact_diagonal_corridor_excludes_swept_aabb_corner():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert not moving_path_blocked(
+        path, (130, 140, 0, 5), 0, 100, 0, tolerance=0
+    )
+
+
+def test_approach_geometry_blocker_outside_diagonal_corridor_is_safe():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert not moving_path_blocked(path, (0, 100, 150, 250), 0, 100, 0)
+
+
+def test_approach_geometry_blocker_wholly_below_moving_z_interval_is_safe():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert not moving_path_blocked(path, (100, 200, 0, 100), -100, -1, 0)
+
+
+def test_approach_geometry_preposition_descent_is_blocked_above_path_bottom():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert preposition_descent_blocked(path, (100, 200, 100, 200), 25, 0)
+
+
+def test_approach_geometry_preposition_contact_at_clearance_is_safe():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert not preposition_descent_blocked(path, (145, 245, 35, 135), 25, 10)
+
+
+def test_approach_geometry_final_only_far_side_contact_is_safe():
+    path = MovingRectPath((0, 100, 0, 100), 35, 35, 0, 100)
+
+    assert not moving_path_blocked(path, (-100, 0, 0, 100), 0, 100, 0)
+
+
+def test_approach_geometry_path_rejects_nonfinite_translated_start():
+    with pytest.raises(ValueError):
+        MovingRectPath((1e308, 1.1e308, 0, 1), 1e308, 0, 0, 1)
+
+
+def test_approach_geometry_segment_rejects_nonfinite_slab_delta():
+    with pytest.raises(ValueError):
+        segment_intersects_rect(
+            (-1e308, 0), (1e308, 0), (-1, 1, -1, 1), tolerance=0
+        )
+
+
+def test_approach_geometry_segment_rejects_nonfinite_tolerance_expansion():
+    with pytest.raises(ValueError):
+        segment_intersects_rect(
+            (0, 0), (1, 1), (1e308, 1.1e308, 0, 1), tolerance=1e308
+        )
+
+
+def test_approach_geometry_moving_sweep_rejects_nonfinite_minkowski_bounds():
+    path = MovingRectPath((0, 1, 0, 1), 0, 0, 0, 1)
+
+    with pytest.raises(ValueError):
+        moving_path_blocked(
+            path,
+            (1e308, 1.1e308, 0, 1),
+            0,
+            1,
+            1e308,
+            tolerance=0,
+        )
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ((0, 0, 0, 100), 35, 35, 0, 100),
+        ((0, 100, 0, 100), -1, 35, 0, 100),
+        ((0, 100, 0, 100), 35, float("nan"), 0, 100),
+        ((0, 100, 0, 100), 35, 35, 100, 100),
+    ],
+)
+def test_approach_geometry_path_rejects_invalid_geometry(args):
+    with pytest.raises(ValueError):
+        MovingRectPath(*args)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: segment_intersects_rect(
+            (0, 0), (float("inf"), 1), (0, 1, 0, 1)
+        ),
+        lambda: segment_intersects_rect((0, 0), (1, 1), (0, 0, 0, 1)),
+        lambda: segment_intersects_rect(
+            (0, 0), (1, 1), (0, 1, 0, 1), tolerance=-1
+        ),
+        lambda: preposition_descent_blocked(
+            MovingRectPath((0, 1, 0, 1), 1, 1, 0, 1),
+            (0, 1, 0, 1),
+            float("nan"),
+            0,
+        ),
+        lambda: moving_path_blocked(
+            MovingRectPath((0, 1, 0, 1), 1, 1, 0, 1),
+            (0, 1, 0, 1),
+            1,
+            0,
+            0,
+        ),
+        lambda: moving_path_blocked(
+            MovingRectPath((0, 1, 0, 1), 1, 1, 0, 1),
+            (0, 1, 0, 1),
+            0,
+            1,
+            -1,
+        ),
+    ],
+)
+def test_approach_geometry_functions_reject_invalid_geometry(call):
+    with pytest.raises(ValueError):
+        call()
 
 
 def test_support_boxes_precede_the_box_they_support():
