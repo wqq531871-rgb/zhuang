@@ -114,7 +114,7 @@ def test_build_success_box_rows_joins_stack_height_and_filters_failed():
     assert r1[2:5] == (100.0, 50.0, 40.0)
     assert r1[5:8] == (1.0, 2.0, 0.0)
     assert r1[8] == 12.5
-    assert r1[9] == 1
+    assert r1[9] is None
     assert r1[10:14] == ("P1", "SO1", "MH423C", "0")
     assert r1[14] == "9001"
     assert r2[1] == 2

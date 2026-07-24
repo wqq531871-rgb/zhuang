@@ -11,7 +11,7 @@
  Target Server Version : 80030
  File Encoding         : 65001
 
- Date: 24/07/2026 01:58:56
+ Date: 24/07/2026 10:10:12
 */
 
 SET NAMES utf8mb4;
@@ -32,7 +32,7 @@ CREATE TABLE `wcs_success_box`  (
   `pos_y` double NOT NULL COMMENT '放置坐标 y mm',
   `pos_z` double NOT NULL COMMENT '放置坐标 z mm',
   `stack_height_before` double NOT NULL DEFAULT 0 COMMENT '放置当前箱之前的垛型最高顶面 mm',
-  `state` tinyint(0) UNSIGNED NOT NULL COMMENT '朝向：1=不转，2=转（90°）',
+  `state` tinyint(0) UNSIGNED NULL DEFAULT NULL COMMENT '朝向：初始空；接口4后写1=不转/2=转90°',
   `pallet_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '算法内部托盘编号（可选，便于人对账）',
   `order_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '销售订单号 sales_order_no',
   `case_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '托盘类型 pallet_type，如 MH423C',
@@ -40,6 +40,9 @@ CREATE TABLE `wcs_success_box`  (
   `product_code` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '箱子唯一编号',
   `is_send` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '是否下传\r\n1：已下传\r\n2：未下传',
   `case_group` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL,
+  `camera_length` double NULL DEFAULT NULL,
+  `camera_width` double NULL DEFAULT NULL,
+  `camera_height` double NULL DEFAULT NULL,
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE INDEX `uk_box_unique_seq`(`box_unique_id`, `seq`) USING BTREE,
   INDEX `idx_box_unique_id`(`box_unique_id`) USING BTREE,
