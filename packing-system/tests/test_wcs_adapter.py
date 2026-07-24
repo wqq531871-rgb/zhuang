@@ -116,6 +116,7 @@ def test_end_to_end_roundtrip():
         # case 级字段
         assert len(c['box_unique_id']) == 32 and int(c['box_unique_id'], 16) >= 0
         assert c['case_type'] == 'MH423C' and c['case_group'] == '0'
+        assert c['case_source'] == 'DH'
         assert abs(c['total_height'] - 720.0) < 1e-6, '3 层×240=720'
         # layers / cartons
         assert len(c['layers']) == 3, '按 z 分 3 层'

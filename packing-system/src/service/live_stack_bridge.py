@@ -144,6 +144,7 @@ def write_selected_pallet_session(
         "robot_id": str(robot_id or ""),
         "plan_path": None,
         "source": source,
+        "last_arrived_seq": None,
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
     _atomic_write(session_path(workspace), session)
@@ -167,6 +168,81 @@ def write_selected_pallet_session(
         f"（三维从 DB 加载）历史={len(history)} 盘"
     )
     return {**session, "history_count": len(history)}
+
+
+def record_box_arrive(
+    *,
+    box_unique_id: str,
+    seq: int,
+    order_id: str = "",
+    robot_id: str = "",
+    product_code: str = "",
+    workspace: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """接口4：登记一箱到达（不写 state、不碰 PLC）。"""
+    uid = str(box_unique_id or "").strip()
+    seq_i = int(seq)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    path = session_path(workspace)
+    prev = read_json(path) or {}
+    # 若会话托盘不一致，以本次到达为准（避免未先走接口3时面板空白）
+    session = {
+        "box_unique_id": uid or str(prev.get("box_unique_id") or ""),
+        "order_id": str(order_id or prev.get("order_id") or ""),
+        "robot_id": str(robot_id or prev.get("robot_id") or ""),
+        "plan_path": prev.get("plan_path"),
+        "source": "boxarrive",
+        "last_arrived_seq": seq_i,
+        "last_arrived_product_code": str(product_code or ""),
+        "updated_at": now,
+    }
+    if not session["box_unique_id"]:
+        session["box_unique_id"] = uid
+    _atomic_write(path, session)
+    print(
+        f"[现场会话] 箱子到达 uid={session['box_unique_id']} "
+        f"seq={seq_i} product={product_code or '-'}"
+    )
+    return dict(session)
+
+
+def write_live_play_box(
+    *,
+    box_unique_id: str,
+    seq: int,
+    state: int,
+    order_id: str = "",
+    item_id: str = "",
+    product_code: str = "",
+    camera_length: Optional[float] = None,
+    camera_width: Optional[float] = None,
+    camera_height: Optional[float] = None,
+    auto_play: bool = True,
+    workspace: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """通知三维：当前箱数据就绪；auto_play=True 时播装载一步。"""
+    uid = str(box_unique_id or "").strip()
+    cmd = {
+        "id": datetime.now().strftime("%Y%m%d_%H%M%S_%f"),
+        "action": "play_box",
+        "box_unique_id": uid,
+        "order_id": str(order_id or ""),
+        "seq": int(seq),
+        "item_id": str(item_id or ""),
+        "product_code": str(product_code or ""),
+        "state": int(state),
+        "camera_length": camera_length,
+        "camera_width": camera_width,
+        "camera_height": camera_height,
+        "auto_play": bool(auto_play) and int(state) in (1, 2),
+        "show_conveyor": True,
+    }
+    path = _atomic_write(command_path(workspace), cmd)
+    print(
+        f"[现场指令] play_box uid={uid} seq={seq} state={state} "
+        f"auto_play={cmd['auto_play']} → {path.name}"
+    )
+    return cmd
 
 
 def clear_current_session_after_replan(

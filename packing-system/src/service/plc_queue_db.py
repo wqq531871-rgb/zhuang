@@ -1,5 +1,9 @@
 # -*- coding: utf-8 -*-
-"""PLC 命令构造与队列表 ``wcs_plc_queue``（先构造、按钮再发送）。"""
+"""PLC 命令构造与队列表 ``wcs_plc_queue``。
+
+正常路径：其它模块写好 ``wcs_success_box.state`` 后，监听自动入队并下传。
+界面「应急补发」仍可对手动 pending 项调用 ``stub_send_plc_command``。
+"""
 
 from __future__ import annotations
 
@@ -24,6 +28,15 @@ STATUS_FAILED = "failed"
 
 def _num(value: Any) -> float:
     return float(value or 0.0)
+
+
+def _optional_float(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def build_plc_command_from_box_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -266,6 +279,52 @@ class WcsPlcQueueRepository:
             )
             return int(cur.rowcount or 0) > 0
 
+    def get_queue_status(
+        self, box_unique_id: str, seq: int
+    ) -> Optional[str]:
+        uid = str(box_unique_id or "").strip()
+        with self._cursor() as (_conn, cur):
+            cur.execute(
+                "SELECT status FROM wcs_plc_queue "
+                "WHERE box_unique_id = %s AND seq = %s LIMIT 1",
+                (uid, int(seq)),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return str(row.get("status") or "")
+
+    def get_id_by_uid_seq(self, box_unique_id: str, seq: int) -> Optional[int]:
+        uid = str(box_unique_id or "").strip()
+        with self._cursor() as (_conn, cur):
+            cur.execute(
+                "SELECT id FROM wcs_plc_queue "
+                "WHERE box_unique_id = %s AND seq = %s LIMIT 1",
+                (uid, int(seq)),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return int(row.get("id") or 0) or None
+
+    def list_state_ready_unsent(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """``state`` 已是 1/2，且尚未 sent 的 success_box 行（按 uid, seq）。"""
+        lim = max(1, min(int(limit), 200))
+        sql = (
+            "SELECT s.* FROM wcs_success_box s "
+            "WHERE s.state IN (1, 2) "
+            "AND NOT EXISTS ("
+            "  SELECT 1 FROM wcs_plc_queue q "
+            "  WHERE q.box_unique_id = s.box_unique_id "
+            "    AND q.seq = s.seq AND q.status = %s"
+            ") "
+            "ORDER BY s.box_unique_id ASC, s.seq ASC "
+            "LIMIT %s"
+        )
+        with self._cursor() as (_conn, cur):
+            cur.execute(sql, (STATUS_SENT, lim))
+            return [dict(row) for row in (cur.fetchall() or [])]
+
 
 def enqueue_plc_after_rotation(
     *,
@@ -279,7 +338,7 @@ def enqueue_plc_after_rotation(
     config_path: Optional[Path] = None,
     db_config: Optional[DatabaseConfig] = None,
 ) -> Dict[str, Any]:
-    """判转成功后：读 success_box 行 → 构造命令 → 入队。"""
+    """state 就绪后：读 success_box 行 → 构造命令 → 入队（不发送）。"""
     cfg = db_config or load_database_config_from_yaml(config_path)
     repo = WcsPlcQueueRepository(cfg)
     uid = str(box_unique_id or "").strip()
@@ -310,8 +369,8 @@ def enqueue_plc_after_rotation(
     )
     total = repo.count_boxes_on_pallet(uid)
     print(
-        f"[接口4-PLC] 已构造入队 id={qid} box={uid} seq={seq_i}/{total} "
-        f"state={state}（待界面按钮发送）"
+        f"[PLC入队] id={qid} box={uid} seq={seq_i}/{total} "
+        f"state={state}（待自动/应急下传）"
     )
     return {
         "plc": {
@@ -325,6 +384,165 @@ def enqueue_plc_after_rotation(
             "status": STATUS_PENDING,
             "command": command,
         }
+    }
+
+
+def enqueue_from_success_box_row(
+    row: Dict[str, Any],
+    *,
+    config_path: Optional[Path] = None,
+    db_config: Optional[DatabaseConfig] = None,
+) -> Dict[str, Any]:
+    """从 success_box 行构造入队（读表上的 state）。"""
+    state = int(row.get("state") or 0)
+    if state not in (1, 2):
+        return {
+            "plc": {
+                "ok": False,
+                "reason": "state_not_ready",
+                "box_unique_id": str(row.get("box_unique_id") or ""),
+                "seq": int(row.get("seq") or 0),
+                "state": state,
+            }
+        }
+    return enqueue_plc_after_rotation(
+        box_unique_id=str(row.get("box_unique_id") or ""),
+        seq=int(row.get("seq") or 0),
+        state=state,
+        product_code=str(row.get("product_code") or "") or None,
+        config_path=config_path,
+        db_config=db_config,
+    )
+
+
+def auto_process_state_ready_boxes(
+    *,
+    config_path: Optional[Path] = None,
+    db_config: Optional[DatabaseConfig] = None,
+    limit: int = 50,
+) -> Dict[str, Any]:
+    """扫描 state 就绪箱：入队（若尚未）并按 seq 自动下传。
+
+    同一托盘仍强制升序：未轮到的箱只入队、本轮不发送。
+    """
+    cfg = db_config or load_database_config_from_yaml(config_path)
+    repo = WcsPlcQueueRepository(cfg)
+    ready = repo.list_state_ready_unsent(limit=limit)
+    enqueued = 0
+    sent = 0
+    waiting_order = 0
+    failed = 0
+    details: List[Dict[str, Any]] = []
+
+    for row in ready:
+        uid = str(row.get("box_unique_id") or "").strip()
+        seq = int(row.get("seq") or 0)
+        state = int(row.get("state") or 0)
+        if not uid or seq <= 0 or state not in (1, 2):
+            continue
+
+        status = repo.get_queue_status(uid, seq)
+        qid = 0
+        if status is None or status == STATUS_FAILED:
+            part = enqueue_from_success_box_row(
+                row, config_path=config_path, db_config=cfg
+            )
+            plc = part.get("plc") or {}
+            if not plc.get("ok"):
+                failed += 1
+                details.append(
+                    {
+                        "box_unique_id": uid,
+                        "seq": seq,
+                        "action": "enqueue_failed",
+                        "reason": plc.get("reason"),
+                    }
+                )
+                continue
+            qid = int(plc.get("queue_id") or 0)
+            enqueued += 1
+        elif status == STATUS_PENDING:
+            qid = int(repo.get_id_by_uid_seq(uid, seq) or 0)
+        else:
+            # sent 已被 list 过滤；其它状态跳过
+            continue
+
+        if qid <= 0:
+            failed += 1
+            details.append(
+                {
+                    "box_unique_id": uid,
+                    "seq": seq,
+                    "action": "missing_queue_id",
+                }
+            )
+            continue
+
+        required = repo.next_required_seq(uid)
+        if seq != required:
+            waiting_order += 1
+            details.append(
+                {
+                    "box_unique_id": uid,
+                    "seq": seq,
+                    "action": "waiting_order",
+                    "required_seq": required,
+                    "queue_id": qid,
+                }
+            )
+            continue
+
+        send_result = stub_send_plc_command(
+            qid, config_path=config_path, db_config=cfg
+        )
+        if send_result.get("ok"):
+            sent += 1
+            details.append(
+                {
+                    "box_unique_id": uid,
+                    "seq": seq,
+                    "action": "sent",
+                    "queue_id": qid,
+                }
+            )
+            try:
+                from src.service.live_stack_bridge import write_live_play_box
+
+                cmd_row = repo.fetch_success_box_row(uid, seq) or row
+                write_live_play_box(
+                    box_unique_id=uid,
+                    seq=seq,
+                    state=state,
+                    order_id=str(cmd_row.get("order_id") or ""),
+                    product_code=str(cmd_row.get("product_code") or ""),
+                    camera_length=_optional_float(cmd_row.get("camera_length")),
+                    camera_width=_optional_float(cmd_row.get("camera_width")),
+                    camera_height=_optional_float(cmd_row.get("camera_height")),
+                    auto_play=True,
+                )
+            except Exception as exc:
+                print(f"[PLC下传] 写三维 play_box 失败：{exc}")
+        else:
+            failed += 1
+            details.append(
+                {
+                    "box_unique_id": uid,
+                    "seq": seq,
+                    "action": "send_failed",
+                    "reason": send_result.get("reason"),
+                    "queue_id": qid,
+                }
+            )
+
+    return {
+        "ok": True,
+        "ready": len(ready),
+        "processed": enqueued + sent + waiting_order + failed,
+        "enqueued": enqueued,
+        "sent": sent,
+        "waiting_order": waiting_order,
+        "failed": failed,
+        "details": details,
     }
 
 
@@ -352,10 +570,11 @@ def stub_send_plc_command(
     *,
     config_path: Optional[Path] = None,
     db_config: Optional[DatabaseConfig] = None,
+    note: str = "plc_send: auto/manual handoff marked sent",
 ) -> Dict[str, Any]:
-    """确认码放：下传已构造的码放数据并标记 sent（非 snap7 写硬件）。
+    """下传已构造的码放数据并标记 sent（非 snap7 写硬件）。
 
-    强制同一托盘按 seq 升序：只能发「已发送最大序号 + 1」。
+    自动监听与界面应急补发共用。强制同一托盘按 seq 升序。
     """
     cfg = db_config or load_database_config_from_yaml(config_path)
     repo = WcsPlcQueueRepository(cfg)
@@ -382,7 +601,6 @@ def stub_send_plc_command(
             "required_seq": required,
             "message": f"必须按顺序下传：下一箱应为第 {required} 箱，不能先传第 {seq} 箱",
         }
-    note = "plc_send: data handoff marked sent"
     ok = repo.mark_sent_stub(queue_id, note=note)
     cmd = item.get("command") or {}
     print(

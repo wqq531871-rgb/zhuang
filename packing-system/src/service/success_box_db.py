@@ -227,6 +227,7 @@ def build_wcs_case_from_box_rows(
         "order_id": str(head.get("order_id") or ""),
         "case_group": case_group,
         "case_type": str(head.get("case_type") or ""),
+        "case_source": "DH",
         "layers": [
             {"cartons": by_layer[layer_id]} for layer_id in sorted(by_layer)
         ],

@@ -206,6 +206,28 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="只打印将发送的 JSON，不真正 POST",
     )
+    p.add_argument(
+        "--sim-state",
+        action="store_true",
+        default=True,
+        help="联调接法B：只写 camera LWH（默认开；由判态监听写 state）",
+    )
+    p.add_argument(
+        "--no-sim-state",
+        action="store_false",
+        dest="sim_state",
+        help="不写 camera（只测接口4登记到达）",
+    )
+    p.add_argument(
+        "--sim-rotate",
+        action="store_true",
+        help="模拟相机平面尺寸对调（期望 state=2）",
+    )
+    p.add_argument(
+        "--sim-mismatch",
+        action="store_true",
+        help="模拟异型尺寸（期望 state=0）",
+    )
     return p.parse_args(argv)
 
 
@@ -247,6 +269,36 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"[boxarrive] 第 {i + 1}/{len(rows)} 箱已通知 "
             f"(seq={row.get('seq')}, product_code={row.get('product_code')})"
         )
+        # 接法 B：只写 camera LWH，由判态监听写 state，再由 PLC 监听下传
+        if args.sim_state and not args.dry_run:
+            packing_root = ROOT.parent
+            root_s = str(packing_root.resolve())
+            if root_s not in sys.path:
+                sys.path.insert(0, root_s)
+            from src.service.box_camera_state_db import write_camera_dims_only
+
+            raw_l = float(row.get("raw_length") or 0)
+            raw_w = float(row.get("raw_width") or 0)
+            raw_h = float(row.get("raw_height") or 0)
+            if args.sim_mismatch:
+                cam_l, cam_w, cam_h = raw_l + 80.0, raw_w + 80.0, raw_h
+            elif args.sim_rotate:
+                cam_l, cam_w, cam_h = raw_w, raw_l, raw_h
+            else:
+                cam_l, cam_w, cam_h = raw_l, raw_w, raw_h
+            written = write_camera_dims_only(
+                str(row.get("box_unique_id") or ""),
+                int(row.get("seq") or 0),
+                cam_l,
+                cam_w,
+                cam_h,
+                config_path=args.packing_config,
+            )
+            print(
+                f"[sim-camera] seq={row.get('seq')} "
+                f"cam={cam_l:g}×{cam_w:g}×{cam_h:g} → "
+                f"{written.get('reason')}（等判态监听写 state）"
+            )
 
     print("\n全部完成。")
     return 0

@@ -105,6 +105,7 @@ def load_execution_wcs_case_for_pallet(
             continue
         out = dict(case)
         out["box_index"] = int(box_index)
+        out["case_source"] = "DH"
         return out
 
     raise ValueError(
@@ -216,6 +217,7 @@ def build_wcs_cases_for_pallet_ids(
             raise ValueError(f"托盘 {pallet_id} 没有任何箱子，拒绝下传")
         out = dict(case)
         out["box_index"] = int(box_index)
+        out["case_source"] = "DH"
         built.append(out)
     return built, report_path
 
@@ -372,6 +374,7 @@ def rewrite_result_triplet_for_pallet(
         patched = dict(case)
         patched["layers"] = layers
         patched["total_height"] = total_height
+        patched["case_source"] = "DH"
         cases[idx] = patched
         replaced = True
         break
@@ -384,6 +387,7 @@ def rewrite_result_triplet_for_pallet(
                 "order_id": str(target.get("sales_order_no") or ""),
                 "case_group": str(target.get("case_group") or "0"),
                 "case_type": str(target.get("pallet_type") or ""),
+                "case_source": "DH",
                 "layers": layers,
             }
         )

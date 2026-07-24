@@ -35,6 +35,8 @@ STATUS_FAILED = _impl.STATUS_FAILED
 WcsPlcQueueRepository = _impl.WcsPlcQueueRepository
 build_plc_command_from_box_row = _impl.build_plc_command_from_box_row
 enqueue_plc_after_rotation = _impl.enqueue_plc_after_rotation
+enqueue_from_success_box_row = _impl.enqueue_from_success_box_row
+auto_process_state_ready_boxes = _impl.auto_process_state_ready_boxes
 get_plc_queue_repo = _impl.get_plc_queue_repo
 clear_plc_queue_after_replan = _impl.clear_plc_queue_after_replan
 stub_send_plc_command = _impl.stub_send_plc_command
@@ -46,6 +48,8 @@ __all__ = [
     "WcsPlcQueueRepository",
     "build_plc_command_from_box_row",
     "enqueue_plc_after_rotation",
+    "enqueue_from_success_box_row",
+    "auto_process_state_ready_boxes",
     "get_plc_queue_repo",
     "clear_plc_queue_after_replan",
     "stub_send_plc_command",

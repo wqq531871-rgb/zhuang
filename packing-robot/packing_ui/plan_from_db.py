@@ -49,6 +49,9 @@ _DEMO_SQL = (
     "s.raw_length AS raw_length, "
     "s.raw_width AS raw_width, "
     "s.raw_height AS raw_height, "
+    "s.camera_length AS camera_length, "
+    "s.camera_width AS camera_width, "
+    "s.camera_height AS camera_height, "
     "s.pos_x AS pos_x, "
     "s.pos_y AS pos_y, "
     "s.pos_z AS pos_z, "
@@ -99,6 +102,14 @@ def _row_to_item(row: Mapping[str, Any], index: int) -> PackedItem:
     height = _number(row.get("raw_height"))
     cup_x = _number(row.get("suction_cup_x_size"), 600.0)
     cup_y = _number(row.get("suction_cup_y_size"), 800.0)
+    state_raw = row.get("state")
+    try:
+        state_val = int(state_raw) if state_raw is not None and state_raw != "" else None
+    except (TypeError, ValueError):
+        state_val = None
+    cam_l = row.get("camera_length")
+    cam_w = row.get("camera_width")
+    cam_h = row.get("camera_height")
     raw = {
         "id": row.get("item_id") or f"box-{int(row.get('seq') or index + 1)}",
         "seq": int(row.get("seq") or index + 1),
@@ -106,6 +117,9 @@ def _row_to_item(row: Mapping[str, Any], index: int) -> PackedItem:
         "raw_length": length,
         "raw_width": width,
         "raw_height": height,
+        "camera_length": float(cam_l) if cam_l is not None else None,
+        "camera_width": float(cam_w) if cam_w is not None else None,
+        "camera_height": float(cam_h) if cam_h is not None else None,
         "length": length,
         "width": width,
         "height": height,
@@ -116,7 +130,7 @@ def _row_to_item(row: Mapping[str, Any], index: int) -> PackedItem:
         "suction_box_corner": "x_min_y_min",
         "suction_cup_corner": "x_min_y_min",
         "target_orientation_deg": int(row.get("target_orientation_deg") or 0),
-        "state": int(row.get("state") or 1),
+        "state": state_val,
     }
     derived = _derive_suction_rect(raw, x, y, length, width)
     item_id = str(raw["id"])
