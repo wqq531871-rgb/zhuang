@@ -13,6 +13,7 @@
 - Modify only `D:\research_code\final\zhuang\packing-robot`; never modify `D:\research_code\tongxun`.
 - DB19 offsets are exactly DBW0 through DBW34 as recorded in the approved design.
 - `box_num` is written only to DBW28; DBW2 is PLC-owned and must match database `seq`.
+- PLC DBW20 `x` receives database `pos_y`; DBW22 `y` receives database `pos_x`.
 - `state IS NULL` waits; `state=0` writes only DBW32=1; `state=1/2` sends a normal command.
 - Normal acknowledgement must observe DBW4=1 before clearing DBW0 and DBW30.
 - “自动下发” is off on every application start.
@@ -39,7 +40,7 @@ def test_command_maps_every_approved_dbw():
     assert command.words() == {
         6: 401, 8: 302, 10: 203,
         14: 400, 16: 300, 18: 200,
-        20: 100, 22: 110, 24: 120,
+        20: 110, 22: 100, 24: 120,
         26: 2, 28: 12, 32: 0, 34: 480,
     }
 

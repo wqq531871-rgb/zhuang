@@ -5,18 +5,24 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QSignalBlocker, QTimer, Qt
+from PySide6.QtCore import QSignalBlocker, QThread, QTimer, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QMainWindow,
+    QPlainTextEdit,
+    QPushButton,
     QSplitter,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -31,8 +37,10 @@ from .live_command import (
     read_live_command,
     read_live_session,
 )
-from .plan_from_db import load_plan_from_db
+from .plan_from_db import fetch_plc_row, load_plan_from_db
 from .playback import PlaybackController, PlaybackPanel
+from .plc_protocol import S7Client, S7Config, create_snap7_client
+from .plc_worker import PlcSendWorker
 
 
 class PackingMainWindow(QMainWindow):
@@ -43,6 +51,8 @@ class PackingMainWindow(QMainWindow):
         config_path: str | None = None,
         autoload: bool = True,
         enable_3d: bool = True,
+        plc_client_factory: Any = None,
+        plc_worker_factory: Any = None,
         **_ignored,
     ) -> None:
         super().__init__()
@@ -64,6 +74,12 @@ class PackingMainWindow(QMainWindow):
         self._enable_3d = enable_3d
         self.scene = None
         self._state_sync_thread = None  # 兼容旧测试
+        self._plc_client_factory = plc_client_factory or create_snap7_client
+        self._plc_worker_factory = plc_worker_factory or PlcSendWorker
+        self._plc_probe = None
+        self._plc_connected = False
+        self._plc_thread: QThread | None = None
+        self._plc_worker = None
 
         self.playback_controller = PlaybackController(self)
         self.playback_panel = PlaybackPanel(self.playback_controller)
@@ -176,10 +192,63 @@ class PackingMainWindow(QMainWindow):
         )
         layout = QVBoxLayout(group)
         layout.addWidget(self.details)
+
+        plc_group = QGroupBox("PLC 通讯")
+        plc_layout = QVBoxLayout(plc_group)
+        form = QFormLayout()
+        self.plc_ip_edit = QLineEdit("10.19.40.70")
+        self.plc_rack_spin = QSpinBox()
+        self.plc_rack_spin.setRange(0, 10)
+        self.plc_slot_spin = QSpinBox()
+        self.plc_slot_spin.setRange(0, 10)
+        self.plc_slot_spin.setValue(1)
+        self.plc_db_spin = QSpinBox()
+        self.plc_db_spin.setRange(1, 9999)
+        self.plc_db_spin.setValue(19)
+        form.addRow("IP", self.plc_ip_edit)
+        form.addRow("Rack", self.plc_rack_spin)
+        form.addRow("Slot", self.plc_slot_spin)
+        form.addRow("DB", self.plc_db_spin)
+        plc_layout.addLayout(form)
+
+        self.auto_plc_checkbox = QCheckBox("自动下发")
+        self.auto_plc_checkbox.setChecked(False)
+        plc_layout.addWidget(self.auto_plc_checkbox)
+
+        buttons = QHBoxLayout()
+        self.connect_plc_button = QPushButton("连接 PLC")
+        self.manual_plc_button = QPushButton("手动发送当前托盘")
+        self.stop_plc_button = QPushButton("停止")
+        self.stop_plc_button.setEnabled(False)
+        buttons.addWidget(self.connect_plc_button)
+        buttons.addWidget(self.manual_plc_button)
+        buttons.addWidget(self.stop_plc_button)
+        plc_layout.addLayout(buttons)
+
+        self.plc_connection_label = QLabel("未连接")
+        self.plc_task_label = QLabel("托盘：—　数据库 seq：—　PLC seq：—")
+        self.plc_words_label = QLabel(
+            "FP：—　FP_OVER：—　KONGXIAN：—　DH_OVER：—"
+        )
+        self.plc_log = QPlainTextEdit()
+        self.plc_log.setReadOnly(True)
+        self.plc_log.setMaximumBlockCount(500)
+        self.plc_log.setMinimumHeight(130)
+        plc_layout.addWidget(self.plc_connection_label)
+        plc_layout.addWidget(self.plc_task_label)
+        plc_layout.addWidget(self.plc_words_label)
+        plc_layout.addWidget(self.plc_log)
+        layout.addWidget(plc_group)
         layout.addStretch(1)
         hint = QLabel("鼠标操作\n左键：旋转视角\n滚轮：缩放\n中键：平移")
         hint.setObjectName("hint")
         layout.addWidget(hint)
+
+        self.connect_plc_button.clicked.connect(self._connect_plc)
+        self.manual_plc_button.clicked.connect(
+            lambda: self._start_current_pallet_send("manual")
+        )
+        self.stop_plc_button.clicked.connect(self._stop_plc_send)
         return group
 
     def _apply_style(self) -> None:
@@ -432,10 +501,140 @@ class PackingMainWindow(QMainWindow):
             f"（{'旋转90°' if action.rotation_state == 2 else '不旋转'}）"
         )
 
+    def _plc_config(self) -> S7Config:
+        return S7Config(
+            ip=self.plc_ip_edit.text().strip(),
+            rack=self.plc_rack_spin.value(),
+            slot=self.plc_slot_spin.value(),
+            db_number=self.plc_db_spin.value(),
+        )
+
+    def _append_plc_log(self, message: str) -> None:
+        self.plc_log.appendPlainText(str(message))
+        self.statusBar().showMessage(str(message))
+
+    def _connect_plc(self) -> None:
+        if self._plc_connected:
+            try:
+                if self._plc_probe is not None:
+                    self._plc_probe.disconnect()
+            finally:
+                self._plc_probe = None
+                self._plc_connected = False
+                self.plc_connection_label.setText("未连接")
+                self.connect_plc_button.setText("连接 PLC")
+            return
+        try:
+            probe = S7Client(self._plc_client_factory(), self._plc_config())
+            probe.connect()
+            self._plc_probe = probe
+            self._plc_connected = True
+            self.plc_connection_label.setText(
+                f"已连接 {self.plc_ip_edit.text().strip()} / DB{self.plc_db_spin.value()}"
+            )
+            self.connect_plc_button.setText("断开 PLC")
+            self._append_plc_log("PLC 连接成功")
+        except Exception as exc:  # noqa: BLE001
+            self._append_plc_log(f"PLC 连接失败：{exc}")
+
+    def _maybe_auto_start_plc(self) -> None:
+        if not self.auto_plc_checkbox.isChecked():
+            return
+        if not self._plc_connected:
+            self._append_plc_log("WCS 已加载托盘，等待 PLC 连接")
+            return
+        self._start_current_pallet_send("wcs")
+
+    def _start_current_pallet_send(self, source: str) -> None:
+        if self._plc_thread is not None and self._plc_thread.isRunning():
+            self._append_plc_log("已有托盘正在下发，拒绝重复启动")
+            return
+        if not self._plc_connected:
+            self._append_plc_log("PLC 尚未连接")
+            return
+        if self.current_plan is None or not self.current_plan.items:
+            self._append_plc_log("尚未加载可发送托盘")
+            return
+
+        uid = str(self.current_plan.source_key)
+        sequences = tuple(int(item.sequence) for item in self.current_plan.items)
+        worker = self._plc_worker_factory(
+            config=self._plc_config(),
+            box_unique_id=uid,
+            sequences=sequences,
+            row_loader=lambda box_uid, seq: fetch_plc_row(
+                box_uid, seq, config_path=self._config_path
+            ),
+            client_factory=self._plc_client_factory,
+        )
+        thread = QThread(self)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.status.connect(self._append_plc_log)
+        worker.plc_status.connect(self._on_plc_status)
+        worker.box_finished.connect(self._on_plc_box_finished)
+        worker.alarm.connect(
+            lambda seq: self._append_plc_log(
+                f"报警：seq={seq} state=0，仅写入 DBW32=1"
+            )
+        )
+        worker.failed.connect(lambda error: self._append_plc_log(f"PLC任务失败：{error}"))
+        worker.finished.connect(thread.quit)
+        worker.finished.connect(worker.deleteLater)
+        thread.finished.connect(self._on_plc_thread_finished)
+        thread.finished.connect(thread.deleteLater)
+        self._plc_worker = worker
+        self._plc_thread = thread
+        self.stop_plc_button.setEnabled(True)
+        self.manual_plc_button.setEnabled(False)
+        self.plc_task_label.setText(
+            f"托盘：{uid}　数据库 seq：{sequences[0]}　PLC seq：—"
+        )
+        self._append_plc_log(
+            f"{'WCS自动' if source == 'wcs' else '手动'}启动托盘下发：{uid}"
+        )
+        thread.start()
+
+    def _on_plc_status(self, status: Any) -> None:
+        if status is None:
+            return
+        self.plc_words_label.setText(
+            f"FP：{status.fp}　FP_OVER：{status.fp_over}　"
+            f"KONGXIAN：{status.idle}　DH_OVER：{status.dh_over}"
+        )
+        uid = self.current_plan.source_key if self.current_plan else "—"
+        self.plc_task_label.setText(
+            f"托盘：{uid}　数据库 seq：—　PLC seq：{status.request_seq}"
+        )
+
+    def _on_plc_box_finished(self, seq: int) -> None:
+        self._append_plc_log(f"seq={seq} 下发并握手完成")
+
+    def _on_plc_thread_finished(self) -> None:
+        self.stop_plc_button.setEnabled(False)
+        self.manual_plc_button.setEnabled(True)
+        self._plc_worker = None
+        self._plc_thread = None
+        self._append_plc_log("PLC 托盘任务结束")
+
+    def _stop_plc_send(self) -> None:
+        if self._plc_worker is not None:
+            self._plc_worker.request_stop()
+            self._append_plc_log("已请求安全停止")
+
     def closeEvent(self, event) -> None:  # noqa: N802
         self.playback_controller.pause()
         if hasattr(self, "_command_timer"):
             self._command_timer.stop()
+        self._stop_plc_send()
+        if self._plc_thread is not None:
+            self._plc_thread.quit()
+            self._plc_thread.wait(3000)
+        if self._plc_probe is not None:
+            try:
+                self._plc_probe.disconnect()
+            except Exception:
+                pass
         super().closeEvent(event)
 
     def _poll_live_command(self) -> None:
@@ -509,6 +708,7 @@ class PackingMainWindow(QMainWindow):
         )
         if bool(cmd.get("auto_play")):
             self.playback_controller.play()
+        self._maybe_auto_start_plc()
         self.raise_()
         self.activateWindow()
 

@@ -41,6 +41,31 @@ def test_main_window_is_live_demo_ui():
     window.close()
 
 
+def test_plc_auto_is_off_on_every_window_start():
+    _app()
+    window = _test_window()
+    assert window.auto_plc_checkbox.isChecked() is False
+    assert window.manual_plc_button.text() == "手动发送当前托盘"
+    window.close()
+
+
+def test_wcs_auto_trigger_only_calls_shared_send_entry_when_enabled(monkeypatch):
+    _app()
+    window = _test_window()
+    calls = []
+    monkeypatch.setattr(window, "_start_current_pallet_send", calls.append)
+
+    window.auto_plc_checkbox.setChecked(False)
+    window._maybe_auto_start_plc()
+    assert calls == []
+
+    window.auto_plc_checkbox.setChecked(True)
+    window._plc_connected = True
+    window._maybe_auto_start_plc()
+    assert calls == ["wcs"]
+    window.close()
+
+
 @pytest.mark.skipif(not SAMPLE.is_file(), reason="缺少样例 JSON")
 def test_debug_load_path_fills_boxes_and_playback():
     app = _app()

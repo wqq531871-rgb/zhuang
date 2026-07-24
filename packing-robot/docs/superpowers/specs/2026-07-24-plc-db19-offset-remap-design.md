@@ -47,8 +47,8 @@ PLC。“自动下发”在每次程序启动时均默认为关闭，避免历�
 | DBW14 | `chang` | Python → PLC | `raw_length` |
 | DBW16 | `kuan` | Python → PLC | `raw_width` |
 | DBW18 | `gao` | Python → PLC | `raw_height` |
-| DBW20 | `x` | Python → PLC | `pos_x` |
-| DBW22 | `y` | Python → PLC | `pos_y` |
+| DBW20 | `x` | Python → PLC | `pos_y`（与数据库 XY 对调） |
+| DBW22 | `y` | Python → PLC | `pos_x`（与数据库 XY 对调） |
 | DBW24 | `z` | Python → PLC | `pos_z` |
 | DBW26 | `FXBC` | Python → PLC | 数据库 `state`，正常箱只允许 `1` 或 `2` |
 | DBW28 | `ZYXH` | Python → PLC | 数据库 `box_num`；不写入 DBW2 |

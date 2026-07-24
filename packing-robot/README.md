@@ -17,56 +17,40 @@ python main.py
 
 也可从同级 `packing-system` 的 V3 仪表盘点击「打开机器人仿真」打开（默认路径为本目录；可用环境变量 `PACKING_ROBOT_DIR` 覆盖）。
 
-MySQL 主机、端口、用户名和数据库名与旧 PLC 通讯界面共用
-`OpenAI/PLCPalletSender` 的 QSettings 配置；密码只从环境变量
-`ZHUANGDB_PASSWORD` 读取，不写入代码或配置文件。
+MySQL 参数读取同级 `packing-system/config/packing_config.yaml`；密码不应提交
+到代码仓库。PLC 通讯使用本程序内置的 `python-snap7` 模块，不依赖
+`D:\research_code\tongxun`。
 
 ## 使用方法
 
-1. 点击“导入装箱 JSON”。程序启动时也会自动载入当前目录下第一个 `wcs_plan_map_*.json`。
-2. 在“指标状态”中选择 `SUCCESS`、`ALL`、`FAILED` 或 `UNKNOWN`。默认是 `SUCCESS`。
-3. 选择托盘方案。
-4. 点击“导入相机 JSON”，把相机识别的箱子 ID、坐标和 `0°/90°` 姿态绑定到当前托盘箱子；判断完成后，系统以箱子 ID 作为 `product_code` 查询数据库并更新 `state`。没有相机数据时可使用手动姿态进行离线预览，但 PLC 指令保持不可执行。
-5. 在箱子顺序中选择一个箱子，查看相机姿态、托盘目标姿态、PLC 旋转状态以及 A/B 吸附点。
-6. 使用底部的首箱、上一箱、播放、下一箱、末箱、进度条和倍速控件检查动作。
-7. 点击动作表中的任意一行可跳转到对应箱子。
-8. 点击“导出动作”保存动作 JSON 和按 `seq` 排列的 `plc_commands`。
-9. 点击右侧“打开 PLC 通讯界面”，启动原来的
-   `D:\research_code\tongxun\plc_gui.py`。
-10. 在旧 PLC 界面中手动输入 32 位 `box_unique_id`。旧界面从 MySQL
-    `zhuangdb.wcs_success_box` 查询整盘数据和每箱 `state`，再按 `seq` 发送 PLC。
+1. 启动 `local_wcs_receiver` 和本程序，等待 WCS 调用
+   `/adaptor/api/wcs/sendcasetask` 选定托盘；也可在调试时直接加载当前托盘。
+2. 在右侧 PLC 区域确认 IP、Rack、Slot 和 DB（默认 DB19），点击“连接 PLC”。
+3. “自动下发”每次启动均默认关闭。主动打开后，新的 WCS 托盘指令会自动启动
+   下发；关闭时 WCS 只加载和显示托盘。
+4. 需要人工联调时，点击“手动发送当前托盘”，它与自动模式使用完全相同的
+   数据库监听、序号校验和 PLC 握手。
+5. 当前箱 `state` 为空时持续等待；`state=0` 只发送报警；
+   `state=1/2` 才发送完整箱体数据。
 
 ## PLC 与数据库交接
 
-当前三维仿真系统不直接连接 PLC，也不写 DB19。它负责根据相机姿态和托盘目标姿态
-计算并展示：
+本系统直接连接 Siemens PLC 的 DB19，并根据数据库最新状态逐箱下发：
 
 - `state=1`：A / `x_min_y_min` / 不旋转；
 - `state=2`：B / `x_max_y_min` / 旋转 90°。
 
-相机判断完成后，本系统执行如下数据库映射：
-
-- `RobotAction.item_id` → `wcs_success_box.product_code`；
-- `RobotAction.rotation_state` → `wcs_success_box.state`。
-
-系统对一次相机导入使用一个事务。每个 `product_code` 先以参数化 SQL
-`SELECT ... FOR UPDATE` 锁定；只有查询结果恰好一条时才按主键更新 `state`。
-任一编号缺失、重复或数据库执行失败，整批回滚，并在右侧显示“同步失败”。该校验是
-必要的，因为当前表结构虽然将 `product_code` 描述为箱子唯一编号，但没有为它声明
-唯一索引。
-
-旧 PLC 通讯界面根据操作员输入的 `box_unique_id` 查询整盘数据，并负责 DB19
-握手、按 `seq` 逐箱发送、安全停止和通讯日志。本系统不直接写 PLC DBW12/DB19。
-
-“打开 PLC 通讯界面”会以独立进程启动旧程序；旧程序仍在运行时重复点击不会启动
-第二个实例。
-
-首次使用旧通讯程序时安装它自己的依赖：
-
-```powershell
-cd D:\research_code\tongxun
-python -m pip install -r .\requirements.txt
-```
+- PLC 写 `DBW2` 请求当前箱；Python 将它与数据库 `seq` 校验，不一致时零数据
+  写入并停止整盘。
+- 大写尺寸 `DBW6/8/10` 来自 `camera_length/width/height`。
+- 小写尺寸 `DBW14/16/18` 来自 `raw_length/width/height`。
+- PLC 坐标约定与数据库 XY 对调：`DBW20=pos_y`、`DBW22=pos_x`；
+  `DBW24=pos_z`。
+- `DBW26=state`、`DBW28=box_num`、`DBW34=stack_height_before`。
+- 正常数据全部写完后最后置 `DBW30 DH_OVER=1`；观察到
+  `DBW4 FP_OVER=1` 后才清 `DBW0 FP` 和 `DBW30 DH_OVER`。
+- `state=0` 时只写 `DBW32 baojing=1`，不写尺寸、坐标或完成信号。
+- `DBW12 KONGXIAN` 当前只读取和显示，不参与控制。
 
 ## 三维场景与动画
 
@@ -100,8 +84,8 @@ RETRACT
 - `plc.rotation_state`：`1` 表示不旋转，`2` 表示旋转 90°。
 - `plc.pickup_point`：无论箱子姿态如何，`A` 固定对应箱子自身的 `x_min_y_min`，`B` 固定对应 `x_max_y_min`。
 - `plc.pickup_point_code`：A 为 `1`，B 为 `2`。
-- 当前三维系统不直接发送 PLC；`pickup_point` 和 `pickup_point_code` 用于展示与
-  数据追溯，旧 PLC UI 从数据库读取与它们绑定的 `state`。
+- `pickup_point` 和 `pickup_point_code` 用于展示与追溯；实际 PLC 旋转字段
+  `DBW26 FXBC` 使用数据库最新 `state`。
 - `placement.box_origin.x/y/z`：算法给出的箱子放置基准坐标。
 - `placement.suction_tcp_contact.x/y/z`：由箱子与吸盘的 `x_min_y_min` 对齐关系及箱子顶面计算的吸盘接触目标。
 - `placement.target_orientation_deg`：装箱目标吸盘姿态。
