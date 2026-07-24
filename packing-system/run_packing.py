@@ -211,8 +211,14 @@ def load_execution_planner_config(config_path=None):
             side_neighbor_clearance_mm=settings.side_neighbor_clearance_mm,
             side_height_tolerance_mm=settings.side_height_tolerance_mm,
             preserve_open_direction=settings.preserve_open_direction,
+            force_publish_on_gate_failure=(
+                settings.force_publish_on_gate_failure
+            ),
             max_sequence_search_seconds_per_pallet=(
                 settings.max_sequence_search_seconds_per_pallet
+            ),
+            forced_sequence_search_seconds_per_pallet=(
+                settings.forced_sequence_search_seconds_per_pallet
             ),
             scan_column_tolerance_mm=settings.scan_column_tolerance_mm,
         )

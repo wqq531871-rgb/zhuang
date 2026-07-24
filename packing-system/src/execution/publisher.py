@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple
 from uuid import uuid4
 
 from .sequence_planner import ExecutionSequenceConfig, plan_execution_report
-from .wcs_export import report_to_execution_plan_result
+from .wcs_export import execution_report_to_plan_result
 
 
 @dataclass(frozen=True)
@@ -154,7 +154,7 @@ def publish_execution_bundle(
     wcs_path = out_dir / f"{stem}_execution_wcs.json"
     map_path = wcs_path.with_name(wcs_path.stem + "_map.json")
     execution_report = plan_execution_report(report, config=config)
-    wcs_result = report_to_execution_plan_result(report, config=config)
+    wcs_result = execution_report_to_plan_result(execution_report)
     publish_json_files(
         [
             (execution_path, execution_report),

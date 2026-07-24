@@ -15,17 +15,19 @@ class ExecutionSequenceSettings:
     box_xy_clearance_mm: float = 0.0
     suction_xy_clearance_mm: float = 0.0
     suction_z_clearance_mm: float = 0.0
-    approach_offset_x_mm: float = 35.0
-    approach_offset_y_mm: float = 35.0
-    approach_z_clearance_mm: float = 0.0
+    approach_offset_x_mm: float = 20.0
+    approach_offset_y_mm: float = 20.0
+    approach_z_clearance_mm: float = 20.0
     approach_box_xy_clearance_mm: float = 0.0
-    approach_suction_xy_clearance_mm: float = 2.0
+    approach_suction_xy_clearance_mm: float = 0.0
     require_suction_pose: bool = True
     max_occupied_directions: int = 2
     side_neighbor_clearance_mm: float = 5.0
     side_height_tolerance_mm: float = 2.0
     preserve_open_direction: bool = True
+    force_publish_on_gate_failure: bool = False
     max_sequence_search_seconds_per_pallet: float = 1.0
+    forced_sequence_search_seconds_per_pallet: float = 30.0
     scan_column_tolerance_mm: float = 5.0
 
     def __post_init__(self) -> None:
@@ -33,21 +35,23 @@ class ExecutionSequenceSettings:
             "enabled",
             "require_suction_pose",
             "preserve_open_direction",
+            "force_publish_on_gate_failure",
         ):
             if not isinstance(getattr(self, name), bool):
                 raise ValueError("%s must be a boolean" % name)
         if (
             isinstance(self.max_occupied_directions, bool)
             or not isinstance(self.max_occupied_directions, int)
-            or not 0 <= self.max_occupied_directions <= 4
+            or not 0 <= self.max_occupied_directions <= 2
         ):
             raise ValueError(
-                "max_occupied_directions must be an integer from 0 to 4"
+                "max_occupied_directions must be an integer from 0 to 2"
             )
         for name in (
             "side_neighbor_clearance_mm",
             "side_height_tolerance_mm",
             "max_sequence_search_seconds_per_pallet",
+            "forced_sequence_search_seconds_per_pallet",
             "scan_column_tolerance_mm",
             "approach_offset_x_mm",
             "approach_offset_y_mm",
@@ -70,6 +74,10 @@ class ExecutionSequenceSettings:
         if self.max_sequence_search_seconds_per_pallet <= 0:
             raise ValueError(
                 "max_sequence_search_seconds_per_pallet must be positive"
+            )
+        if self.forced_sequence_search_seconds_per_pallet <= 0:
+            raise ValueError(
+                "forced_sequence_search_seconds_per_pallet must be positive"
             )
 
     @classmethod

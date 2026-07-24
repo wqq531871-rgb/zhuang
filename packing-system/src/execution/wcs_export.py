@@ -64,8 +64,20 @@ def report_to_execution_plan_result(
     """Plan execution order and export WCS cartons with seq from that order."""
 
     execution_report = plan_execution_report(report, config=config)
+    return execution_report_to_plan_result(
+        execution_report,
+        include_failed=include_failed,
+    )
+
+
+def execution_report_to_plan_result(
+    execution_report: Optional[Dict],
+    include_failed: bool = True,
+) -> WcsPlanResult:
+    """Export an already-planned execution report without replanning it."""
+
     base_result = report_to_plan_result(
-        execution_report, include_failed=include_failed
+        deepcopy(execution_report), include_failed=include_failed
     )
     cases = deepcopy(base_result.cases)
     for case in cases:
