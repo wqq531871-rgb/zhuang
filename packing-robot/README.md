@@ -25,7 +25,7 @@ MySQL 参数读取同级 `packing-system/config/packing_config.yaml`；密码不
 
 1. 启动 `local_wcs_receiver` 和本程序，等待 WCS 调用
    `/adaptor/api/wcs/sendcasetask` 选定托盘；也可在调试时直接加载当前托盘。
-2. 在右侧 PLC 区域确认 IP（默认 `10.19.40.72`）、端口（内部固定 `102`）、
+2. 在右侧 PLC 区域确认 IP（默认 `10.19.40.70`）、端口（内部固定 `102`）、
    Rack、Slot 和 DB（默认 DB19），点击“连接 PLC”。
 3. “自动下发”每次启动均默认关闭。主动打开后，新的 WCS 托盘指令会自动启动
    下发；关闭时 WCS 只加载和显示托盘。

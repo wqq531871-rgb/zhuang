@@ -97,7 +97,7 @@ class PlcCommand:
 
 @dataclass(frozen=True)
 class S7Config:
-    ip: str = "10.19.40.72"
+    ip: str = "10.19.40.70"
     port: int = 102
     rack: int = 0
     slot: int = 1

@@ -46,7 +46,7 @@ def test_plc_auto_is_off_on_every_window_start():
     _app()
     window = _test_window()
     assert window.auto_plc_checkbox.isChecked() is False
-    assert window.plc_ip_edit.text() == "10.19.40.72"
+    assert window.plc_ip_edit.text() == "10.19.40.70"
     assert window.manual_plc_button.text() == "手动发送当前托盘"
     window.close()
 

@@ -85,7 +85,7 @@ def config():
 
 def test_default_plc_endpoint_matches_site_controller():
     value = S7Config()
-    assert value.ip == "10.19.40.72"
+    assert value.ip == "10.19.40.70"
     assert value.port == 102
 
 
