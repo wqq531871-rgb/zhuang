@@ -11,6 +11,7 @@ os.environ.setdefault("QT_API", "pyside6")
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QApplication
 
+from packing_ui.animation import PHASES
 from packing_ui.main_window import PackingMainWindow
 
 
@@ -48,6 +49,33 @@ def test_plc_auto_is_off_on_every_window_start():
     assert window.auto_plc_checkbox.isChecked() is False
     assert window.plc_ip_edit.text() == "10.19.40.70"
     assert window.manual_plc_button.text() == "手动发送当前托盘"
+    window.close()
+
+
+def test_replay_current_box_button_replays_only_selected_box():
+    _app()
+    window = _test_window()
+    window.load_path(SAMPLE)
+    window.box_list.setCurrentRow(1)
+    controller = window.playback_controller
+    selected_index = controller.current_step_index
+    controller.phase_index = 3
+    controller.fraction = 0.5
+
+    assert window.playback_panel.replay_button.text() == "重复当前箱"
+    window.playback_panel.replay_button.click()
+
+    assert controller.current_step_index == selected_index
+    assert controller.phase == "READY"
+    assert controller.fraction == 0.0
+    assert controller.is_playing is True
+
+    controller.advance(float(len(PHASES)))
+
+    assert controller.current_step_index == selected_index
+    assert controller.phase == PHASES[-1]
+    assert controller.fraction == 1.0
+    assert controller.is_playing is False
     window.close()
 
 

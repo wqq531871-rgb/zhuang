@@ -142,6 +142,7 @@ class PlaybackPanel(QWidget):
         self.first_button = QPushButton("|◀")
         self.previous_button = QPushButton("◀")
         self.play_button = QPushButton("播放")
+        self.replay_button = QPushButton("重复当前箱")
         self.next_button = QPushButton("▶")
         self.last_button = QPushButton("▶|")
         self.step_label = QLabel("0 / 0")
@@ -158,6 +159,7 @@ class PlaybackPanel(QWidget):
             self.first_button,
             self.previous_button,
             self.play_button,
+            self.replay_button,
             self.next_button,
             self.last_button,
             self.step_label,
@@ -171,6 +173,7 @@ class PlaybackPanel(QWidget):
         self.first_button.clicked.connect(controller.reset)
         self.previous_button.clicked.connect(controller.previous_step)
         self.play_button.clicked.connect(controller.toggle)
+        self.replay_button.clicked.connect(self._replay_current_step)
         self.next_button.clicked.connect(controller.next_step)
         self.last_button.clicked.connect(controller.end)
         self.slider.valueChanged.connect(controller.seek_step)
@@ -179,6 +182,9 @@ class PlaybackPanel(QWidget):
         controller.playingChanged.connect(
             lambda playing: self.play_button.setText("暂停" if playing else "播放")
         )
+
+    def _replay_current_step(self) -> None:
+        self.controller.play_one_step(self.controller.current_step_index)
 
     def refresh_range(self) -> None:
         self.slider.setRange(0, max(0, self.controller.step_count - 1))
