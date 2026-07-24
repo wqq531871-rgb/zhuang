@@ -13,8 +13,9 @@ DEFAULT_HISTORY_NAME = "live_stack_pallets.json"
 
 
 def default_runtime_dir() -> Path:
-    repo = Path(__file__).resolve().parents[2].parent
-    runtime = repo / "packing-workspace" / "runtime"
+    # packing_ui/ → packing-robot/ → zhuang/
+    zhuang = Path(__file__).resolve().parents[2]
+    runtime = zhuang / "packing-workspace" / "runtime"
     runtime.mkdir(parents=True, exist_ok=True)
     return runtime
 

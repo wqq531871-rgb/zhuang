@@ -1041,7 +1041,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.btn_open_robot = QtWidgets.QPushButton("打开三维演示")
         self.btn_open_robot.setObjectName("GhostButton")
         self.btn_open_robot.setToolTip(
-            "打开三维窗口，加载 WCS 已选托盘的整盘码垛顺序（不必等每箱到达）"
+            "打开三维窗口：按 WCS 选定托盘的 box_unique_id 从数据库加载整盘"
         )
         self.btn_open_robot.clicked.connect(self.open_robot_ui)
         btn_row.addWidget(self.btn_open_robot)
@@ -1338,28 +1338,26 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
     def _write_load_pallet_command(
         self, box_unique_id: str, order_id: str = "", plan_path: Optional[Path] = None
     ) -> Optional[Path]:
+        del plan_path  # 三维改为读库，不再传 plan map 路径
         uid = str(box_unique_id or "").strip()
-        if plan_path is None:
-            plan_path = self._find_plan_map_for_uid(uid)
         payload = {
             "id": datetime.now().strftime("%Y%m%d_%H%M%S_%f"),
             "action": "load_pallet",
             "box_unique_id": uid,
             "order_id": order_id,
-            "plan_path": str(plan_path) if plan_path else None,
+            "plan_path": None,
             "auto_play": False,
         }
         cmd_path = self._live_command_file()
         tmp = cmd_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(cmd_path)
-        return plan_path
+        return None
 
     def _write_live_play_command(self, row: dict) -> Optional[Path]:
         """确认码放后：若三维已开，可按箱跳播（可选）。"""
         uid = str(row.get("box_unique_id") or "")
         seq = int(row.get("seq") or 0)
-        plan_path = self._find_plan_map_for_uid(uid)
         payload = {
             "id": datetime.now().strftime("%Y%m%d_%H%M%S_%f"),
             "action": "play_box",
@@ -1369,16 +1367,17 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             "state": int(row.get("state") or 1),
             "camera_orientation_deg": row.get("camera_orientation_deg"),
             "target_orientation_deg": row.get("target_orientation_deg"),
-            "plan_path": str(plan_path) if plan_path else None,
+            "plan_path": None,
         }
         cmd_path = self._live_command_file()
         tmp = cmd_path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(cmd_path)
-        return plan_path
+        return None
 
     def _ensure_robot_ui_for_live(self, plan_path: Optional[Path] = None) -> bool:
-        """确保三维演示窗口在跑；需要时带方案启动。"""
+        """确保三维演示窗口在跑。"""
+        del plan_path
         process = getattr(self, "_robot_ui_process", None)
         if process is not None:
             try:
@@ -1388,7 +1387,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
                 self._robot_ui_process = None
         try:
             self._robot_ui_process = launch_robot_ui(
-                plan_path=plan_path,
+                plan_path=None,
                 command_file=self._live_command_file(),
             )
         except (OSError, FileNotFoundError, RuntimeError) as exc:
@@ -1756,27 +1755,23 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.on_result_history_changed(self.cmb_result_history.currentIndex())
 
     def open_robot_ui(self) -> None:
-        """打开三维演示：按接口3已选托盘整盘加载（不必等接口4）。"""
+        """打开三维演示：按接口3 box_unique_id 从数据库加载整盘。"""
         process = getattr(self, "_robot_ui_process", None)
         if process is not None:
             try:
                 if process.poll() is None:
-                    # 已在跑：再推一次 load_pallet，刷新到最新会话
                     session = self._read_live_session()
                     uid = str(session.get("box_unique_id") or "")
                     if uid:
                         self._write_load_pallet_command(
                             uid,
                             order_id=str(session.get("order_id") or ""),
-                            plan_path=Path(session["plan_path"])
-                            if session.get("plan_path")
-                            else None,
                         )
                     self._write_log("[UI] 三维演示已在运行，已刷新现场托盘指令。")
                     QtWidgets.QMessageBox.information(
                         self,
                         "三维演示",
-                        "三维窗口已在运行。\n已按当前选定托盘刷新整盘模拟。",
+                        "三维窗口已在运行。\n已按当前选定托盘刷新（从数据库加载）。",
                     )
                     return
             except Exception:
@@ -1785,35 +1780,26 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         session = self._read_live_session()
         uid = str(session.get("box_unique_id") or "")
         order_id = str(session.get("order_id") or "")
-        plan_path = None
-        if session.get("plan_path"):
-            candidate = Path(str(session["plan_path"]))
-            if candidate.is_file():
-                plan_path = candidate
-        if plan_path is None and uid:
-            plan_path = self._find_plan_map_for_uid(uid)
-        if plan_path is None:
+        if not uid:
             item = self.lst_live_plc.currentItem() if hasattr(self, "lst_live_plc") else None
             if item is not None:
                 row = item.data(QtCore.Qt.UserRole + 2) or {}
-                uid = uid or str(row.get("box_unique_id") or "")
-                plan_path = self._find_plan_map_for_uid(uid)
-        if plan_path is None:
-            plan_path = self._find_plan_map_for_uid("")
-
-        if uid:
-            self._write_load_pallet_command(uid, order_id=order_id, plan_path=plan_path)
-        elif plan_path is None:
+                uid = str(row.get("box_unique_id") or "")
+                cmd = (row or {}).get("command") or {}
+                if isinstance(cmd, dict) and not order_id:
+                    order_id = str(cmd.get("order_id") or "")
+        if not uid:
             QtWidgets.QMessageBox.warning(
                 self,
                 "三维演示",
-                "还没有选定托盘。\n请先等 WCS 下发选托盘（接口3），或完成装箱生成方案后再试。",
+                "还没有选定托盘。\n请先等 WCS 下发选托盘（接口3）。",
             )
             return
 
+        self._write_load_pallet_command(uid, order_id=order_id, plan_path=None)
         try:
             self._robot_ui_process = launch_robot_ui(
-                plan_path=plan_path,
+                plan_path=None,
                 command_file=self._live_command_file(),
             )
         except (OSError, FileNotFoundError, RuntimeError) as exc:
@@ -1821,9 +1807,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             QtWidgets.QMessageBox.critical(self, "无法打开三维演示", str(exc))
             return
         pid = getattr(self._robot_ui_process, "pid", "?")
-        self._write_log(
-            f"[UI] 已启动三维演示（PID {pid}）托盘={uid or '-'} plan={plan_path}"
-        )
+        self._write_log(f"[UI] 已启动三维演示（PID {pid}）托盘={uid}")
 
     def load_json_dialog(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(

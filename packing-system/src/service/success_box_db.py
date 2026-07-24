@@ -154,7 +154,7 @@ def build_success_box_rows(
                     float(pos.get("y") or 0.0),
                     float(pos.get("z") or 0.0),
                     float(height_by_box_id.get(box_id, 0.0)),
-                    1,  # state：默认不转
+                    None,  # state：初始置空，接口4判转后再写入 1/2
                     pallet_id,
                     order_id,
                     case_type,
