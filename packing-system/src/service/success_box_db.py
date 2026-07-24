@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -12,7 +13,11 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 import pymysql
 from pymysql.cursors import DictCursor
 
-from src.adapter.wcs_adapter import WcsPlanResult, coerce_product_code
+from src.adapter.wcs_adapter import (
+    WcsPlanResult,
+    coerce_product_code,
+    report_to_plan_result,
+)
 from src.utils.case_group import normalize_case_group
 
 # Excel / 缺码时生成的内部码区间（与正式 WCS 短码区分开，仅本表内部用）
@@ -492,6 +497,43 @@ def persist_success_boxes(
     except Exception as exc:
         print(f"[WCS-DB] wcs_success_box 写入失败（不影响装箱结果）：{exc}")
         return 0
+
+
+def persist_success_boxes_from_plan_file(
+    plan_path: Path | str,
+    *,
+    config_path: Optional[Path] = None,
+    db_config: Optional[DatabaseConfig] = None,
+) -> int:
+    """执行规划失败时：用原装箱 JSON（仅 SUCCESS 盘）写入库，供下传弹窗使用。"""
+    path = Path(plan_path)
+    try:
+        report = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError) as exc:
+        print(f"[WCS-DB] 无法读取原装箱方案用于入库：{path}（{exc}）")
+        return 0
+    if not isinstance(report, dict):
+        print(f"[WCS-DB] 原装箱方案根节点不是对象：{path}")
+        return 0
+
+    wcs_result = report_to_plan_result(report, include_failed=False)
+    n = persist_success_boxes(
+        report,
+        wcs_result,
+        config_path=config_path,
+        db_config=db_config,
+    )
+    try:
+        from src.service.box_orientation_db import persist_box_orientations
+
+        persist_box_orientations(
+            wcs_result,
+            config_path=config_path,
+            db_config=db_config,
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"[WCS-DB] wcs_box_orientation 回退写入异常：{exc}")
+    return n
 
 
 def get_success_box_repo(

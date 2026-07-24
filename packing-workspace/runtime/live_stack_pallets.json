@@ -18,6 +18,17 @@
     "source": "sendcasetask",
     "updated_at": "2026-07-24 01:54:12",
     "received_at": "2026-07-24 01:54:12",
+    "stack_status": "done",
+    "completed_at": "2026-07-24 02:28:00"
+  },
+  {
+    "box_unique_id": "0ab7505300bc4447bacf5d7ee279c279",
+    "order_id": "ANALYSIS_001",
+    "robot_id": "001",
+    "plan_path": null,
+    "source": "sendcasetask",
+    "updated_at": "2026-07-24 02:28:00",
+    "received_at": "2026-07-24 02:28:00",
     "stack_status": "active"
   }
 ]

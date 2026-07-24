@@ -1,5 +1,7 @@
 """Unit tests for wcs_success_box row building / WCS case assembly (no MySQL)."""
 
+import json
+
 from src.adapter.wcs_adapter import WcsPlanResult
 from src.service.success_box_db import (
     build_success_box_rows,
@@ -220,3 +222,81 @@ def test_new_internal_product_code_unique_in_batch():
         _INTERNAL_PRODUCT_CODE_MIN <= int(c) <= _INTERNAL_PRODUCT_CODE_MAX
         for c in codes
     )
+
+
+def test_persist_success_boxes_from_plan_file_uses_original_success_pallets(
+    tmp_path, monkeypatch
+):
+    import src.service.success_box_db as mod
+
+    plan = tmp_path / "ui_packing_plan.json"
+    plan.write_text(
+        json.dumps(
+            {
+                "pallets": [
+                    {
+                        "pallet_id": "P-OK",
+                        "mpm_status": "SUCCESS",
+                        "sales_order_no": "SO1",
+                        "pallet_type": "MH423C",
+                        "packed_items": [
+                            {
+                                "id": "b1",
+                                "raw_length": 100,
+                                "raw_width": 50,
+                                "raw_height": 40,
+                                "position": {"x": 0, "y": 0, "z": 0},
+                                "product_code": 1001,
+                                "seq": 1,
+                            }
+                        ],
+                    },
+                    {
+                        "pallet_id": "P-FAIL",
+                        "mpm_status": "FAILED",
+                        "packed_items": [
+                            {
+                                "id": "b2",
+                                "raw_length": 10,
+                                "raw_width": 10,
+                                "raw_height": 10,
+                                "position": {"x": 0, "y": 0, "z": 0},
+                                "product_code": 1002,
+                                "seq": 1,
+                            }
+                        ],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    captured = {}
+
+    def fake_persist(report, wcs_result, *, config_path=None, db_config=None):
+        captured["report"] = report
+        captured["wcs"] = wcs_result
+        return 7
+
+    monkeypatch.setattr(mod, "persist_success_boxes", fake_persist)
+    monkeypatch.setattr(
+        mod,
+        "persist_box_orientations",
+        lambda *a, **k: 0,
+        raising=False,
+    )
+
+    # box_orientation import path inside function
+    import types
+    import sys
+
+    fake_orient = types.ModuleType("src.service.box_orientation_db")
+    fake_orient.persist_box_orientations = lambda *a, **k: 0
+    monkeypatch.setitem(sys.modules, "src.service.box_orientation_db", fake_orient)
+
+    n = mod.persist_success_boxes_from_plan_file(plan)
+    assert n == 7
+    assert len(captured["wcs"].cases) == 1
+    assert captured["wcs"].cases[0]["case_type"] == "MH423C"
+
