@@ -165,6 +165,42 @@ class WcsBoxOrientationRepository:
             row = cur.fetchone()
             return dict(row) if row else None
 
+    def list_pallet_demo_rows(self, box_unique_id: str) -> List[Dict[str, Any]]:
+        """现场三维演示：按 uid JOIN orientation + success_box，按 seq 升序。"""
+        uid = str(box_unique_id or "").strip()
+        if not uid:
+            return []
+        sql = (
+            "SELECT "
+            "o.box_unique_id AS box_unique_id, "
+            "o.seq AS seq, "
+            "o.item_id AS item_id, "
+            "COALESCE(o.product_code, s.product_code) AS product_code, "
+            "o.suction_orientation AS suction_orientation, "
+            "o.suction_cup_x_size AS suction_cup_x_size, "
+            "o.suction_cup_y_size AS suction_cup_y_size, "
+            "o.target_orientation_deg AS target_orientation_deg, "
+            "s.raw_length AS raw_length, "
+            "s.raw_width AS raw_width, "
+            "s.raw_height AS raw_height, "
+            "s.pos_x AS pos_x, "
+            "s.pos_y AS pos_y, "
+            "s.pos_z AS pos_z, "
+            "s.state AS state, "
+            "s.pallet_id AS pallet_id, "
+            "s.order_id AS order_id, "
+            "s.case_type AS case_type, "
+            "s.stack_height_before AS stack_height_before "
+            "FROM wcs_box_orientation o "
+            "INNER JOIN wcs_success_box s "
+            "ON s.box_unique_id = o.box_unique_id AND s.seq = o.seq "
+            "WHERE o.box_unique_id = %s "
+            "ORDER BY o.seq ASC, o.id ASC"
+        )
+        with self._cursor() as (_conn, cur):
+            cur.execute(sql, (uid,))
+            return [dict(row) for row in (cur.fetchall() or [])]
+
     def update_success_box_state(
         self, box_unique_id: str, seq: int, state: int
     ) -> int:
@@ -326,3 +362,15 @@ def get_orientation_repo(
 ) -> WcsBoxOrientationRepository:
     cfg = db_config or load_database_config_from_yaml(config_path)
     return WcsBoxOrientationRepository(cfg)
+
+
+def load_pallet_demo_rows(
+    box_unique_id: str,
+    *,
+    config_path: Optional[Path] = None,
+    db_config: Optional[DatabaseConfig] = None,
+) -> List[Dict[str, Any]]:
+    """三维演示入口：按 box_unique_id 读 orientation JOIN success_box。"""
+    return get_orientation_repo(
+        config_path=config_path, db_config=db_config
+    ).list_pallet_demo_rows(box_unique_id)

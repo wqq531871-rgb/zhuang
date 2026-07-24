@@ -91,6 +91,7 @@ def launch_robot_ui(
     popen_factory: Callable[..., Any] = subprocess.Popen,
     plan_path: Optional[str | Path] = None,
     command_file: Optional[str | Path] = None,
+    config_path: Optional[str | Path] = None,
     extra_args: Optional[Sequence[str]] = None,
     check_deps: bool = True,
 ) -> Any:
@@ -102,10 +103,12 @@ def launch_robot_ui(
         check_robot_dependencies(python_executable)
     env = _sanitize_qt_env(os.environ.copy())
     cmd = [str(Path(python_executable)), str(script)]
-    if plan_path:
-        cmd.extend(["--plan", str(plan_path)])
+    # plan_path 已废弃（三维从 DB 加载），保留参数仅为兼容调用方
+    del plan_path
     if command_file:
         cmd.extend(["--command-file", str(command_file)])
+    if config_path:
+        cmd.extend(["--config", str(config_path)])
     if extra_args:
         cmd.extend(list(extra_args))
     return popen_factory(

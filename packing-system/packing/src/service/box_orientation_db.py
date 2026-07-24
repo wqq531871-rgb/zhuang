@@ -38,6 +38,7 @@ get_orientation_repo = _impl.get_orientation_repo
 judge_rotation_state = _impl.judge_rotation_state
 persist_box_orientations = _impl.persist_box_orientations
 process_box_arrive_rotation = _impl.process_box_arrive_rotation
+load_pallet_demo_rows = _impl.load_pallet_demo_rows
 
 __all__ = [
     "STATE_NO_ROTATE",
@@ -49,4 +50,5 @@ __all__ = [
     "judge_rotation_state",
     "persist_box_orientations",
     "process_box_arrive_rotation",
+    "load_pallet_demo_rows",
 ]

@@ -138,12 +138,11 @@ def write_selected_pallet_session(
 ) -> Dict[str, Any]:
     """接口3：WCS 选定托盘 → 写入历史 + 当前会话 + 通知三维加载。"""
     uid = str(box_unique_id or "").strip()
-    plan = find_plan_map_for_uid(uid, workspace=workspace)
     session = {
         "box_unique_id": uid,
         "order_id": str(order_id or ""),
         "robot_id": str(robot_id or ""),
-        "plan_path": str(plan) if plan else None,
+        "plan_path": None,
         "source": source,
         "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
@@ -158,14 +157,14 @@ def write_selected_pallet_session(
         "action": "load_pallet",
         "box_unique_id": uid,
         "order_id": session["order_id"],
-        "plan_path": session["plan_path"],
+        "plan_path": None,
         "auto_play": False,
         "refresh_history": True,
     }
     _atomic_write(command_path(workspace), cmd)
     print(
         f"[现场会话] 已选定托盘 uid={uid} order={order_id or '-'} "
-        f"plan={plan.name if plan else '未找到'} 历史={len(history)} 盘"
+        f"（三维从 DB 加载）历史={len(history)} 盘"
     )
     return {**session, "history_count": len(history)}
 
