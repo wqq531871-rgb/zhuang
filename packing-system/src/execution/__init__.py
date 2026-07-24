@@ -6,7 +6,10 @@ from .sequence_planner import (
     plan_execution_report,
     sequence_pallet_items,
 )
-from .wcs_export import report_to_execution_plan_result
+from .wcs_export import (
+    execution_report_to_plan_result,
+    report_to_execution_plan_result,
+)
 from .publisher import (
     ExecutionBundlePaths,
     publish_execution_bundle,
@@ -17,6 +20,7 @@ __all__ = [
     "ExecutionSequenceConfig",
     "ExecutionSequenceError",
     "ExecutionBundlePaths",
+    "execution_report_to_plan_result",
     "plan_execution_report",
     "publish_execution_bundle",
     "publish_json_files",

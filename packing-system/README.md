@@ -169,10 +169,12 @@ python code/run_packing.py
 顺序。现场机械臂位于托盘 `x_max_y_max` 一侧；每箱先在目标点 `+X/+Y` 方向的预放
 位置下降，再沿 `-X/-Y` 斜向推进到目标点。`x_min_y_min` 是远端波源，所有托盘统一
 按空间环和支撑层级逐步向机器人侧扩散，不再按托盘高度特征切换逐层/阶梯模式。
-规划器对预放下降、斜向推进、最终下降和放箱后抬升建立硬依赖并逐箱回放；安全依赖
-或防包围门禁需要偏离空间波时，会记录对应箱号和原因。执行规划还会在托盘有剩余
-空间的方向居中整个垛型，同步平移箱体和吸盘 XY 坐标，并为每箱写入放置前的
-`stack_height_before`。原始装箱 JSON 不变。
+规划器对预放下降、斜向推进和最终下降建立路径依赖；对放箱后的抬升和朝机器人侧
+退出，则使用高度感知的局部走廊依赖：只延迟会突出于待放低层箱局部表面、且进入
+抬升或退出扫掠区的上层箱，不要求先完成整层。安全依赖或防包围门禁需要偏离空间波
+时，会记录对应箱号和原因。执行规划还会在托盘有剩余空间的方向居中整个垛型，
+同步平移箱体和吸盘 XY 坐标，并为每箱写入放置前的 `stack_height_before`。原始装箱
+JSON 不变。
 
 是否启用以及原点、安全余量等参数由 `config/packing_config.yaml` 中的
 `execution_sequence` 段控制。正常运行只需要一条命令：
@@ -183,9 +185,13 @@ python code/run_packing.py --config code/config/packing_config.yaml
 
 配置为 `enabled: true` 时，在原方案之外自动生成 `_execution.json`、
 `_execution_wcs.json` 和 `_execution_wcs_map.json`；配置为 `false` 时只输出原方案。
-只有所有托盘通过支撑、扫掠和回放门禁时才发布 execution 三件套；任一托盘出现
-依赖环或超时，系统保留原方案并拒绝发布未经验证的执行文件。仓库中的
-`approach_z_clearance_mm: 0` 是等待现场标定的保守占位值，不能直接视为已验证参数。
+规划器默认先执行完整路径与开放方向门禁。`force_publish_on_gate_failure: true` 时，
+完整门禁失败会按托盘降级为受控强制顺序，仍保留箱子守恒、唯一连续 `seq`、托盘
+边界、配置要求的完整吸盘位置、直接支撑、高度感知局部走廊、垛型居中和
+`stack_height_before`，并保留“最多两条相邻边”的开放角门禁；只绕过完整垂直/斜向
+路径门禁，并写入 warning。设为 `false` 时仍拒绝发布失败托盘。
+当前交付参数为 `approach_offset_x_mm: 20`、`approach_offset_y_mm: 20`、
+`approach_z_clearance_mm: 20`，正式生产前仍应按机械臂实测轨迹标定。
 发送 WCS 规划订单输出接口的文件是 `_execution_wcs.json`，map 文件必须留在机器人
 侧。完整约束、参数和现场余量说明见 `docs/独立执行顺序规划说明.md`。
 

@@ -12,9 +12,9 @@ from src.config import ConfigLoader
 from src.execution import (
     ExecutionSequenceConfig,
     ExecutionSequenceError,
+    execution_report_to_plan_result,
     plan_execution_report,
     publish_json_files as _publish_json_files,
-    report_to_execution_plan_result,
 )
 
 
@@ -207,17 +207,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             side_neighbor_clearance_mm=settings.side_neighbor_clearance_mm,
             side_height_tolerance_mm=settings.side_height_tolerance_mm,
             preserve_open_direction=settings.preserve_open_direction,
+            force_publish_on_gate_failure=(
+                settings.force_publish_on_gate_failure
+            ),
             max_sequence_search_seconds_per_pallet=(
                 settings.max_sequence_search_seconds_per_pallet
+            ),
+            forced_sequence_search_seconds_per_pallet=(
+                settings.forced_sequence_search_seconds_per_pallet
             ),
             scan_column_tolerance_mm=settings.scan_column_tolerance_mm,
         )
         execution_report = plan_execution_report(report, config=config)
         wcs_result = None
         if wcs_output is not None:
-            wcs_result = report_to_execution_plan_result(
-                report, config=config
-            )
+            wcs_result = execution_report_to_plan_result(execution_report)
     except (
         OSError,
         json.JSONDecodeError,
