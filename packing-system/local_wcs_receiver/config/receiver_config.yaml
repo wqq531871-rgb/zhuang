@@ -15,7 +15,7 @@ advertise_base_url: http://10.19.136.146:7002
 
 # TODO(接口 path): 与对方约定一致；一般不用改。编号对标接口文档 4.3～4.7。
 paths:
-  # TODO(4.3 拼箱物料信息下发 path): 对方 → 我；当前仅回成功，不做业务处理。
+  # TODO(4.3 拼箱物料信息下发 path): 对方 → 我；写选定托盘会话（现场码垛「托盘已选定」）。
   sendcasetask_path: /adaptor/api/wcs/sendcasetask
   # TODO(4.4 物料到达 path): 对方 → 我；当前仅回成功，不做业务处理。
   boxarrive_path: /adaptor/api/wcs/boxarrive

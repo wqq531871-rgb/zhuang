@@ -18,7 +18,7 @@ WCS 与机器人系统（我方，算法宿主）通过 **HTTP + JSON** 相互�
 |---|---|---|---|---|---|
 | **4.1** | 库存信息获取（接口1） | 机器人→WCS | `/adaptor/api/wcs/reqstockinfo` 或配置 `stock_path` | **算法输入来源** | 已有适配/出站能力；见配置 `data_source` |
 | **4.2** | 规划订单输出（接口2） | 机器人→WCS | `/adaptor/api/wcs/sendpalletplanresult` 或配置 `plan_path` | **算法输出去向** | 已有适配/出站；case 含 `case_source:"DH"` |
-| **4.3** | 拼箱物料信息下发（接口3） | WCS→机器人 | `/adaptor/api/wcs/sendcasetask` | 执行层（按 `box_unique_id` 取方案） | 接收端已接；**暂仅按示例回成功，不做业务处理** |
+| **4.3** | 拼箱物料信息下发（接口3） | WCS→机器人 | `/adaptor/api/wcs/sendcasetask` | 执行层（按 `box_unique_id` 取方案） | 接收端已接；**写选定托盘会话**（现场码垛「托盘已选定」） |
 | **4.4** | 物料到达（接口4） | WCS→机器人 | `/adaptor/api/wcs/boxarrive` | 执行层（逐箱到达） | 接收端已接；**暂仅按示例回成功，不做业务处理** |
 | **4.5** | 托盘更新 | 机器人→WCS | `/adaptor/api/wcs/reqpallet` | 执行层（机械臂向 WCS 要/报托盘） | **TODO(4.5)** 见下文 |
 | **4.6** | 托盘到达 | WCS→机器人 | `/adaptor/api/wcs/palletarrive` | 执行层（托盘送达站台） | 接收端已接；**暂仅按示例回成功**；**TODO(4.6)** 业务语义待对齐 |

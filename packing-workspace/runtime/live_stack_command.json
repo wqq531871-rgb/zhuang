@@ -1,8 +1,15 @@
 {
-  "id": "20260724_095620_386854",
-  "action": "load_pallet",
-  "box_unique_id": "022920c02ffa4c3bb78acffcba4b43d4",
+  "id": "20260724_152902_855097",
+  "action": "play_box",
+  "box_unique_id": "ff5ee3b34c064cbeb844e1e0be20be71",
   "order_id": "PAIN25450MN01S",
-  "plan_path": null,
-  "auto_play": false
+  "seq": 18,
+  "item_id": "",
+  "product_code": "5",
+  "state": 1,
+  "camera_length": null,
+  "camera_width": null,
+  "camera_height": null,
+  "auto_play": true,
+  "show_conveyor": true
 }
