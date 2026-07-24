@@ -44,6 +44,9 @@ _FALLBACK_PALLET_DIMS: Dict[str, Dict[str, float]] = {
 # 不影响装箱分配；若需"库存不足优先保障高优先级订单达标"属算法新需求。
 _PRIORITY_LAST = 10 ** 9
 
+# 接口 2 每个托盘 case 标记：固定为我方下传来源
+WCS_CASE_SOURCE = "DH"
+
 
 def build_stock_request(msgtime: Optional[str] = None) -> Dict:
     # TODO 接口1请求体构造
@@ -325,6 +328,7 @@ def report_to_plan_result(
     #     "order_id": "LAID15455BN01S",
     #     "case_group": "0",
     #     "case_type": "MH423C",
+    #     "case_source": "DH",
     #     "layers": [
     #       {
     #         "cartons": [
@@ -388,6 +392,7 @@ def report_to_plan_result(
             # 无约束盘输出 "0"（接口默认值口径）；非 0 组直传其值
             'case_group': str(normalize_case_group(pallet.get('case_group'))),
             'case_type': str(pallet.get('pallet_type') or ''),
+            'case_source': WCS_CASE_SOURCE,
             'layers': layers,
         })
         for seq, it in enumerate(items, 1):
