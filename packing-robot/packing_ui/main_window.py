@@ -627,9 +627,13 @@ class PackingMainWindow(QMainWindow):
         if hasattr(self, "_command_timer"):
             self._command_timer.stop()
         self._stop_plc_send()
-        if self._plc_thread is not None:
-            self._plc_thread.quit()
-            self._plc_thread.wait(3000)
+        thread = self._plc_thread
+        if thread is not None and thread.isRunning() and not thread.wait(3000):
+            self._append_plc_log("PLC 正在安全结束当前握手，请稍后再次关闭")
+            if hasattr(self, "_command_timer"):
+                self._command_timer.start()
+            event.ignore()
+            return
         if self._plc_probe is not None:
             try:
                 self._plc_probe.disconnect()

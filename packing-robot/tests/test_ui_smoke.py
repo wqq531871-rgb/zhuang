@@ -8,6 +8,7 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("QT_API", "pyside6")
 
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QApplication
 
 from packing_ui.main_window import PackingMainWindow
@@ -63,6 +64,37 @@ def test_wcs_auto_trigger_only_calls_shared_send_entry_when_enabled(monkeypatch)
     window._plc_connected = True
     window._maybe_auto_start_plc()
     assert calls == ["wcs"]
+    window.close()
+
+
+def test_close_waits_for_safe_plc_stop_instead_of_destroying_running_thread():
+    _app()
+    window = _test_window()
+
+    class Worker:
+        stopped = False
+
+        def request_stop(self):
+            self.stopped = True
+
+    class Thread:
+        def isRunning(self):
+            return True
+
+        def wait(self, _milliseconds):
+            return False
+
+    worker = Worker()
+    window._plc_worker = worker
+    window._plc_thread = Thread()
+    event = QCloseEvent()
+
+    window.closeEvent(event)
+
+    assert worker.stopped is True
+    assert event.isAccepted() is False
+    window._plc_thread = None
+    window._plc_worker = None
     window.close()
 
 
