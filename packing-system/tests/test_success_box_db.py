@@ -117,9 +117,11 @@ def test_build_success_box_rows_joins_stack_height_and_filters_failed():
     assert r1[9] is None
     assert r1[10:14] == ("P1", "SO1", "MH423C", "0")
     assert r1[14] == "9001"
+    assert r1[15] == 2
     assert r2[1] == 2
     assert r2[8] == 40.0
     assert r2[14] == "9002"
+    assert r2[15] == 2
 
 
 def test_build_success_box_rows_treats_zero_product_code_as_null():
@@ -166,6 +168,7 @@ def test_build_success_box_rows_treats_zero_product_code_as_null():
     assert len(rows) == 1
     assert rows[0][13] == "3"
     assert rows[0][14] is None
+    assert rows[0][15] == 1
 
 
 def test_build_wcs_case_from_box_rows_layers_and_height():

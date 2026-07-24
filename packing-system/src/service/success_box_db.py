@@ -28,7 +28,7 @@ _INTERNAL_PRODUCT_CODE_MAX = 999_999_999_999_999
 IS_SEND_UNSENT = "2"
 IS_SEND_SENT = "1"
 
-# 行元组：…, case_type, case_group, product_code
+# 行元组：…, case_type, case_group, product_code, box_num
 _PC_IDX = 14
 
 
@@ -108,7 +108,9 @@ def build_success_box_rows(
     元组：
     box_unique_id, seq, raw_length, raw_width, raw_height,
     pos_x, pos_y, pos_z, stack_height_before, state,
-    pallet_id, order_id, case_type, case_group, product_code
+    pallet_id, order_id, case_type, case_group, product_code, box_num
+
+    ``box_num``：该托盘箱子总数；同一 ``box_unique_id`` 下所有行相同。
     """
     if not execution_report or not wcs_result:
         return []
@@ -136,10 +138,14 @@ def build_success_box_rows(
         order_id = str(pallet.get("sales_order_no") or "").strip() or None
         case_type = str(pallet.get("pallet_type") or "").strip() or None
         case_group = str(normalize_case_group(pallet.get("case_group")))
-        for item in pallet.get("packed_items") or []:
+        items = [
+            item
+            for item in (pallet.get("packed_items") or [])
+            if int(item.get("seq") or 0) > 0
+        ]
+        box_num = len(items)
+        for item in items:
             seq = int(item.get("seq") or 0)
-            if seq <= 0:
-                continue
             pos = item.get("position") or {}
             product_code = _product_code_to_db(item.get("product_code"))
             box_id = item.get("id")
@@ -160,6 +166,7 @@ def build_success_box_rows(
                     case_type,
                     case_group,
                     product_code,
+                    box_num,
                 )
             )
     return rows
@@ -288,7 +295,7 @@ class WcsSuccessBoxRepository:
             if pc in existing_pc:
                 skipped_pc += 1
                 continue
-            # 追加 is_send
+            # 追加 is_send（box_num 已在行内）
             prepared.append(row + (IS_SEND_UNSENT,))
 
         if not prepared:
@@ -302,9 +309,11 @@ class WcsSuccessBoxRepository:
             "INSERT INTO wcs_success_box ("
             "box_unique_id, seq, raw_length, raw_width, raw_height, "
             "pos_x, pos_y, pos_z, stack_height_before, state, "
-            "pallet_id, order_id, case_type, case_group, product_code, is_send"
+            "pallet_id, order_id, case_type, case_group, product_code, "
+            "box_num, is_send"
             ") VALUES ("
-            "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s"
+            "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+            "%s, %s"
             ") ON DUPLICATE KEY UPDATE id = id"
         )
         with self._cursor() as (_conn, cur):

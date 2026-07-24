@@ -16984,7 +16984,7 @@
           "geometric_sequence_feasible": true,
           "robot_motion_verified": false,
           "robot_validation_reason": "geometry_only_not_verified",
-          "seq": 1,
+          "seq": 2,
           "stack_height_before": 0.0
         },
         {
@@ -17054,7 +17054,7 @@
           "geometric_sequence_feasible": true,
           "robot_motion_verified": false,
           "robot_validation_reason": "geometry_only_not_verified",
-          "seq": 2,
+          "seq": 1,
           "stack_height_before": 480.0
         },
         {
