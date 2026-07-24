@@ -83,6 +83,12 @@ def config():
     return S7Config(handshake_timeout=1, poll_interval=0.001)
 
 
+def test_default_plc_endpoint_matches_site_controller():
+    value = S7Config()
+    assert value.ip == "10.19.40.72"
+    assert value.port == 102
+
+
 def test_command_maps_every_approved_dbw_and_swaps_database_xy():
     command = build_command(ROW)
     assert command.words() == {

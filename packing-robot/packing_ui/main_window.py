@@ -196,7 +196,7 @@ class PackingMainWindow(QMainWindow):
         plc_group = QGroupBox("PLC 通讯")
         plc_layout = QVBoxLayout(plc_group)
         form = QFormLayout()
-        self.plc_ip_edit = QLineEdit("10.19.40.70")
+        self.plc_ip_edit = QLineEdit("10.19.40.72")
         self.plc_rack_spin = QSpinBox()
         self.plc_rack_spin.setRange(0, 10)
         self.plc_slot_spin = QSpinBox()
