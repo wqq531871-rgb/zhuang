@@ -147,4 +147,8 @@ def build_json_output_plan(
                 pallet, pallet_dims, tolerance=center_of_mass_tolerance
             )
 
+        # 托盘箱子数：与 wcs_success_box.box_num 同口径；已有则不覆盖
+        if "box_num" not in pallet or pallet.get("box_num") is None:
+            pallet["box_num"] = len(items)
+
     return output_plan

@@ -881,6 +881,10 @@ def test_output_fill_rate():
     assert pallet['box_total_volume'] == 3000000
     assert pallet['pallet_volume'] == 1000000000
     assert pallet['fill_rate'] == 0.003
+    assert pallet['box_num'] == 2
+    plan[0]['box_num'] = 99
+    output2 = build_json_output_plan(plan, raw_boxes)
+    assert output2[0]['box_num'] == 99
     print(
         f"填充率 OK: {pallet['box_total_volume']}/"
         f"{pallet['pallet_volume']}={pallet['fill_rate']}"
