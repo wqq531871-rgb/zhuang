@@ -26,11 +26,14 @@ class ReceiverSettings:
     lookup_plan_map: bool
     plan_map_glob: str
     config_path: Path
-    # 兼容旧配置；接口4不再判转。判转由其它模块写 state。
     packing_config_path: Path
-    # PLC 自动监听：发现 state 后入队并下传
+    # PLC 自动监听：发现 state=1/2 后入队并下传
     plc_auto_enabled: bool
     plc_auto_poll_interval_sec: float
+    # 接法 B：camera_* 已写、state 空 → 自动判态
+    state_judge_enabled: bool
+    state_judge_poll_interval_sec: float
+    state_judge_tol_mm: float
 
 
 def _as_path(value: Any, default: str) -> str:
@@ -53,6 +56,7 @@ def load_settings(config_path: Path) -> ReceiverSettings:
     paths = dict(raw.get("paths") or {})
     rotation = dict(raw.get("rotation_judge") or {})
     plc_auto = dict(raw.get("plc_auto") or {})
+    state_judge = dict(raw.get("state_judge") or {})
 
     # 兼容旧扁平字段 host/port
     host = str(server.get("host") or raw.get("host") or "0.0.0.0")
@@ -69,6 +73,7 @@ def load_settings(config_path: Path) -> ReceiverSettings:
     packing_cfg = Path(
         str(
             plc_auto.get("packing_config")
+            or state_judge.get("packing_config")
             or rotation.get("packing_config")
             or raw.get("packing_config")
             or (packing_system_root / "config" / "packing_config.yaml")
@@ -82,6 +87,18 @@ def load_settings(config_path: Path) -> ReceiverSettings:
         poll_f = float(poll)
     except (TypeError, ValueError):
         poll_f = 0.5
+
+    judge_poll = state_judge.get("poll_interval_sec", poll_f)
+    try:
+        judge_poll_f = float(judge_poll)
+    except (TypeError, ValueError):
+        judge_poll_f = poll_f
+
+    tol = state_judge.get("tol_mm", 5.0)
+    try:
+        tol_f = float(tol)
+    except (TypeError, ValueError):
+        tol_f = 5.0
 
     return ReceiverSettings(
         host=host,
@@ -108,4 +125,7 @@ def load_settings(config_path: Path) -> ReceiverSettings:
         packing_config_path=packing_cfg,
         plc_auto_enabled=bool(plc_auto.get("enabled", True)),
         plc_auto_poll_interval_sec=max(0.1, poll_f),
+        state_judge_enabled=bool(state_judge.get("enabled", True)),
+        state_judge_poll_interval_sec=max(0.1, judge_poll_f),
+        state_judge_tol_mm=max(0.0, tol_f),
     )

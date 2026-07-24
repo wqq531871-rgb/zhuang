@@ -16,7 +16,7 @@ from src.service.success_box_db import (
     load_database_config_from_yaml,
 )
 
-# rotation_state：与 packing-robot / wcs_success_box.state 一致
+# rotation_state：兼容旧角向判转；现场主路径已改为相机 LWH→0/1/2
 STATE_NO_ROTATE = 1
 STATE_ROTATE_90 = 2
 
@@ -183,6 +183,9 @@ class WcsBoxOrientationRepository:
             "s.raw_length AS raw_length, "
             "s.raw_width AS raw_width, "
             "s.raw_height AS raw_height, "
+            "s.camera_length AS camera_length, "
+            "s.camera_width AS camera_width, "
+            "s.camera_height AS camera_height, "
             "s.pos_x AS pos_x, "
             "s.pos_y AS pos_y, "
             "s.pos_z AS pos_z, "

@@ -81,6 +81,8 @@ class RobotAction:
     pickup_point: str = "A"
     pickup_point_code: int = 1
     plc_ready: bool = False
+    show_on_conveyor: bool = False
+    db_state: int | None = None
 
 
 def _sequence_key(raw: Mapping[str, Any], index: int) -> tuple[int, int]:
@@ -225,27 +227,102 @@ def pickup_corner(source_orientation: int, target_orientation_deg: int) -> str:
     return plc_control(source_orientation, target_orientation_deg).pickup_corner
 
 
+def _positive_dim(value: Any) -> bool:
+    try:
+        return float(value) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def item_camera_dims_complete(item: PackedItem) -> bool:
+    original = item.original or {}
+    return (
+        _positive_dim(original.get("camera_length"))
+        and _positive_dim(original.get("camera_width"))
+        and _positive_dim(original.get("camera_height"))
+    )
+
+
+def item_state_ready(item: PackedItem) -> bool:
+    state = (item.original or {}).get("state")
+    try:
+        return int(state) in (0, 1, 2)
+    except (TypeError, ValueError):
+        return False
+
+
 def build_action(
     item: PackedItem,
     conveyor_orientation_deg: int,
     conveyor_z: float,
     camera_data: CameraBoxData | None = None,
 ) -> RobotAction:
-    conveyor_orientation = (
-        camera_data.orientation_deg
-        if camera_data is not None
-        else int(conveyor_orientation_deg) % 180
-    )
     target = target_orientation(item)
-    control = plc_control(conveyor_orientation, target)
-    rotation = 90 if control.rotation_state == 2 else 0
-    corner = control.pickup_corner
+    original = item.original or {}
+    db_state_raw = original.get("state")
+    try:
+        db_state = int(db_state_raw) if db_state_raw is not None and db_state_raw != "" else None
+    except (TypeError, ValueError):
+        db_state = None
+
+    # 优先用库中 state（相机 LWH 判定结果）；否则退回相机角 / 手动姿态
+    if db_state in (1, 2):
+        rotation_state = db_state
+        conveyor_orientation = target if db_state == 1 else (90 if int(target) == 0 else 0)
+        if camera_data is not None:
+            camera_data = CameraBoxData(
+                box_id=camera_data.box_id,
+                orientation_deg=conveyor_orientation,
+                x=camera_data.x,
+                y=camera_data.y,
+                z=camera_data.z,
+                timestamp=camera_data.timestamp,
+                confidence=camera_data.confidence,
+            )
+        else:
+            camera_data = CameraBoxData(
+                box_id=item.id, orientation_deg=conveyor_orientation
+            )
+        control = plc_control(conveyor_orientation, target)
+    elif db_state == 0:
+        rotation_state = 0
+        conveyor_orientation = (
+            camera_data.orientation_deg
+            if camera_data is not None
+            else int(conveyor_orientation_deg) % 180
+        )
+        if camera_data is None:
+            camera_data = CameraBoxData(
+                box_id=item.id, orientation_deg=int(conveyor_orientation)
+            )
+        control = plc_control(
+            conveyor_orientation if conveyor_orientation in (0, 90) else 0,
+            target,
+        )
+        # 异型：仍显示，但不按成功旋转语义覆盖
+        rotation_state = 0
+    else:
+        conveyor_orientation = (
+            camera_data.orientation_deg
+            if camera_data is not None
+            else int(conveyor_orientation_deg) % 180
+        )
+        control = plc_control(conveyor_orientation, target)
+        rotation_state = control.rotation_state
+
+    rotation = 90 if int(rotation_state) == 2 else 0
+    corner = control.pickup_corner if int(rotation_state) in (1, 2) else "x_min_y_min"
+    pickup_point = control.pickup_point if int(rotation_state) in (1, 2) else "A"
+    pickup_code = control.pickup_point_code if int(rotation_state) in (1, 2) else 1
     target_cup_x_size, target_cup_y_size = (
         (600.0, 800.0) if target == 0 else (800.0, 600.0)
     )
     suction_x = item.x + target_cup_x_size / 2.0
     suction_y = item.y + target_cup_y_size / 2.0
     top_z = item.z + item.raw_height
+    dims_ok = item_camera_dims_complete(item)
+    state_ok = item_state_ready(item)
+    show_on_conveyor = dims_ok and state_ok
     return RobotAction(
         item_id=item.id,
         box_type=item.box_type,
@@ -260,7 +337,7 @@ def build_action(
         cup_corner=corner,
         box_place=(item.x, item.y, item.z),
         suction_place=(suction_x, suction_y, top_z),
-        conveyor_orientation_deg=conveyor_orientation,
+        conveyor_orientation_deg=int(conveyor_orientation),
         target_orientation_deg=target,
         rotation_deg=rotation,
         box_size=(item.raw_length, item.raw_width, item.raw_height),
@@ -268,10 +345,12 @@ def build_action(
         place_box_corner="x_min_y_min",
         place_cup_corner="x_min_y_min",
         camera_data=camera_data,
-        rotation_state=control.rotation_state,
-        pickup_point=control.pickup_point,
-        pickup_point_code=control.pickup_point_code,
-        plc_ready=camera_data is not None,
+        rotation_state=int(rotation_state) if int(rotation_state) in (0, 1, 2) else 1,
+        pickup_point=pickup_point,
+        pickup_point_code=pickup_code,
+        plc_ready=show_on_conveyor and int(rotation_state) in (1, 2),
+        show_on_conveyor=show_on_conveyor,
+        db_state=db_state,
     )
 
 

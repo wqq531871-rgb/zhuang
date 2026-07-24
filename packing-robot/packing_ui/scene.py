@@ -303,7 +303,26 @@ class PackingScene(QWidget):
             action.box_size[2],
             box_yaw_relative_to_target,
         )
+        show_conveyor = bool(getattr(action, "show_on_conveyor", True))
+        if not show_conveyor:
+            if self._active_box_actor is not None:
+                self._active_box_actor.SetVisibility(False)
+            for label, actor in self._pickup_marker_actors.items():
+                if actor is not None:
+                    actor.SetVisibility(False)
+            if self._suction_actor is not None and phase == "READY":
+                self._suction_actor.SetVisibility(False)
+            if self._phase_text is not None:
+                _set_annotation_text(
+                    self._phase_text,
+                    f"等待相机尺寸/state  seq={action.sequence}",
+                )
+            self.plotter.render()
+            return
+
         active_color = active_box_color(action.box_type, phase, fraction)
+        if getattr(action, "db_state", None) == 0:
+            active_color = (0.86, 0.25, 0.25)
         self._active_box_actor = self._update_dynamic_actor(
             self._active_box_actor,
             _cuboid_mesh(self._pv, box_points),

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .data import PalletPlan, build_action, load_plan_file, target_orientation
+from .data import PackedItem, PalletPlan, build_action, load_plan_file, target_orientation
 from .integration import CameraBoxData
 from .live_command import (
     default_command_path,
@@ -376,10 +376,16 @@ class PackingMainWindow(QMainWindow):
         by_id = {item.id: item for item in self.current_plan.items}
         for row, action in enumerate(self.actions, start=1):
             item = by_id[action.item_id]
+            rot_txt = {
+                0: "异型",
+                1: "不转",
+                2: "转",
+            }.get(int(action.rotation_state), "?")
+            ready_txt = "已就绪" if action.show_on_conveyor else "待相机"
             self.box_list.addItem(
                 f"{row}. seq={action.sequence}  {item.raw_length:g}×{item.raw_width:g}×"
                 f"{item.raw_height:g}  目标{action.target_orientation_deg}° / "
-                f"{'转' if action.rotation_state == 2 else '不转'}"
+                f"{rot_txt} / {ready_txt}"
             )
         self.box_list.blockSignals(False)
         self.playback_controller.set_actions(self.actions)
@@ -535,27 +541,101 @@ class PackingMainWindow(QMainWindow):
         if index < 0:
             raise ValueError(f"找不到箱子 seq={seq} item_id={item_id}")
 
-        cam_deg = cmd.get("camera_orientation_deg")
-        if cam_deg is None:
-            target = target_orientation(self.current_plan.items[index])
-            state = int(cmd.get("state") or 1)
-            cam_deg = target if state == 1 else (90 if int(target) == 0 else 0)
-        cam_deg = int(cam_deg)
-        if cam_deg not in (0, 90):
-            cam_deg = 0
+        item = self.current_plan.items[index]
+        # 用指令里的 camera_* / state 刷新 item.original（避免必须整盘重载库）
+        original = dict(item.original or {})
+        for key in ("camera_length", "camera_width", "camera_height"):
+            if cmd.get(key) is not None:
+                try:
+                    original[key] = float(cmd.get(key))
+                except (TypeError, ValueError):
+                    pass
+        if cmd.get("state") is not None:
+            try:
+                original["state"] = int(cmd.get("state"))
+            except (TypeError, ValueError):
+                pass
+        # PackedItem 是 frozen；用替换 items 元组的方式更新
+        updated = PackedItem(
+            id=item.id,
+            box_type=item.box_type,
+            length=item.length,
+            width=item.width,
+            height=item.height,
+            raw_length=item.raw_length,
+            raw_width=item.raw_width,
+            raw_height=item.raw_height,
+            x=item.x,
+            y=item.y,
+            z=item.z,
+            box_corner=item.box_corner,
+            cup_corner=item.cup_corner,
+            suction_orientation=item.suction_orientation,
+            cup_x_size=item.cup_x_size,
+            cup_y_size=item.cup_y_size,
+            suction_x_min=item.suction_x_min,
+            suction_x_max=item.suction_x_max,
+            suction_y_min=item.suction_y_min,
+            suction_y_max=item.suction_y_max,
+            sequence=item.sequence,
+            sequence_source=item.sequence_source,
+            original=original,
+        )
+        items = list(self.current_plan.items)
+        items[index] = updated
+        self.current_plan = PalletPlan(
+            source_key=self.current_plan.source_key,
+            pallet_id=self.current_plan.pallet_id,
+            pallet_type=self.current_plan.pallet_type,
+            sales_order_no=self.current_plan.sales_order_no,
+            mpm_status=self.current_plan.mpm_status,
+            sequence_status=self.current_plan.sequence_status,
+            robot_verified=self.current_plan.robot_verified,
+            pallet_length=self.current_plan.pallet_length,
+            pallet_width=self.current_plan.pallet_width,
+            pallet_height=self.current_plan.pallet_height,
+            items=tuple(items),
+            original=self.current_plan.original,
+        )
+
+        state = original.get("state")
+        try:
+            state_i = int(state) if state is not None else None
+        except (TypeError, ValueError):
+            state_i = None
+        target = target_orientation(updated)
+        if state_i == 1:
+            cam_deg = target
+        elif state_i == 2:
+            cam_deg = 90 if int(target) == 0 else 0
+        else:
+            cam_deg = cmd.get("camera_orientation_deg")
+            if cam_deg is None:
+                cam_deg = target
+            cam_deg = int(cam_deg)
+            if cam_deg not in (0, 90):
+                cam_deg = 0
 
         key = self._orientation_key(item_id)
         self._camera_by_item[key] = CameraBoxData(
             box_id=item_id,
-            orientation_deg=cam_deg,
+            orientation_deg=int(cam_deg),
         )
-        self._orientation_by_item[key] = cam_deg
+        self._orientation_by_item[key] = int(cam_deg)
         self._rebuild_actions(selected_index=index)
         self.box_list.setCurrentRow(index)
-        self.playback_controller.play_one_step(index)
-        self.statusBar().showMessage(
-            f"现场码垛：正在码放第 {seq or index + 1} 箱（{item_id}）"
-        )
+
+        auto_play = bool(cmd.get("auto_play", True)) and state_i in (1, 2)
+        if auto_play:
+            self.playback_controller.play_one_step(index)
+            msg = f"现场码垛：正在码放第 {seq or index + 1} 箱（{item_id}）"
+        elif state_i == 0:
+            self.playback_controller.seek_step(index)
+            msg = f"异型箱 seq={seq}：已显示在传送带，不自动装载"
+        else:
+            self.playback_controller.seek_step(index)
+            msg = f"现场码垛：第 {seq or index + 1} 箱数据未完整，传送带不生成"
+        self.statusBar().showMessage(msg)
         self.raise_()
         self.activateWindow()
 

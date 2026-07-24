@@ -44,23 +44,45 @@ def _start_plc_watcher(settings: ReceiverSettings):
     return watcher
 
 
+def _start_camera_state_watcher(settings: ReceiverSettings):
+    _ensure_packing_system_import()
+    from src.service.camera_state_watcher import CameraStateWatcher
+
+    watcher = CameraStateWatcher(
+        config_path=settings.packing_config_path,
+        poll_interval_sec=settings.state_judge_poll_interval_sec,
+        enabled=settings.state_judge_enabled,
+        tol_mm=settings.state_judge_tol_mm,
+    )
+    watcher.start()
+    return watcher
+
+
 def create_app(settings: ReceiverSettings) -> FastAPI:
     swagger_path = settings.swagger_path
-    watcher_holder: Dict[str, Any] = {"watcher": None}
+    watcher_holder: Dict[str, Any] = {
+        "plc_watcher": None,
+        "camera_watcher": None,
+    }
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        watcher_holder["watcher"] = _start_plc_watcher(settings)
+        watcher_holder["camera_watcher"] = _start_camera_state_watcher(settings)
+        watcher_holder["plc_watcher"] = _start_plc_watcher(settings)
         try:
             yield
         finally:
-            watcher = watcher_holder.get("watcher")
-            if watcher is not None:
-                try:
-                    watcher.stop()
-                except Exception as exc:
-                    print(f"[PLC监听] 停止失败：{exc}")
-                watcher_holder["watcher"] = None
+            for key, label in (
+                ("plc_watcher", "PLC监听"),
+                ("camera_watcher", "判态监听"),
+            ):
+                watcher = watcher_holder.get(key)
+                if watcher is not None:
+                    try:
+                        watcher.stop()
+                    except Exception as exc:
+                        print(f"[{label}] 停止失败：{exc}")
+                    watcher_holder[key] = None
 
     # 与对方 http://…/swagger/index.html 对齐；同时保留 /docs 别名。
     app = FastAPI(
@@ -78,6 +100,7 @@ def create_app(settings: ReceiverSettings) -> FastAPI:
     )
     app.state.settings = settings
     app.state.plc_watcher = watcher_holder
+    app.state.watchers = watcher_holder
 
     @app.get("/", include_in_schema=False)
     def root() -> Dict[str, Any]:
@@ -89,6 +112,11 @@ def create_app(settings: ReceiverSettings) -> FastAPI:
             "plc_auto": {
                 "enabled": settings.plc_auto_enabled,
                 "poll_interval_sec": settings.plc_auto_poll_interval_sec,
+            },
+            "state_judge": {
+                "enabled": settings.state_judge_enabled,
+                "poll_interval_sec": settings.state_judge_poll_interval_sec,
+                "tol_mm": settings.state_judge_tol_mm,
             },
             "endpoints": [
                 f"POST {settings.sendcasetask_path}",

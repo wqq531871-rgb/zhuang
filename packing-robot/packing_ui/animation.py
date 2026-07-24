@@ -158,7 +158,7 @@ def trajectory_pose(
     safe_z = max(1250.0, action.pick_z + 550.0, target_cup_z + 550.0)
     motion_target_yaw = (
         float(action.conveyor_orientation_deg)
-        if action.rotation_state == 1
+        if int(action.rotation_state) != 2
         else float(action.conveyor_orientation_deg - 90)
     )
 

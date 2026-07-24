@@ -30,6 +30,15 @@ def _num(value: Any) -> float:
     return float(value or 0.0)
 
 
+def _optional_float(value: Any) -> Optional[float]:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def build_plc_command_from_box_row(row: Dict[str, Any]) -> Dict[str, Any]:
     """从 ``wcs_success_box`` 一行构造 DB19 字段（不发送）。
 
@@ -496,6 +505,23 @@ def auto_process_state_ready_boxes(
                     "queue_id": qid,
                 }
             )
+            try:
+                from src.service.live_stack_bridge import write_live_play_box
+
+                cmd_row = repo.fetch_success_box_row(uid, seq) or row
+                write_live_play_box(
+                    box_unique_id=uid,
+                    seq=seq,
+                    state=state,
+                    order_id=str(cmd_row.get("order_id") or ""),
+                    product_code=str(cmd_row.get("product_code") or ""),
+                    camera_length=_optional_float(cmd_row.get("camera_length")),
+                    camera_width=_optional_float(cmd_row.get("camera_width")),
+                    camera_height=_optional_float(cmd_row.get("camera_height")),
+                    auto_play=True,
+                )
+            except Exception as exc:
+                print(f"[PLC下传] 写三维 play_box 失败：{exc}")
         else:
             failed += 1
             details.append(

@@ -206,6 +206,45 @@ def record_box_arrive(
     return dict(session)
 
 
+def write_live_play_box(
+    *,
+    box_unique_id: str,
+    seq: int,
+    state: int,
+    order_id: str = "",
+    item_id: str = "",
+    product_code: str = "",
+    camera_length: Optional[float] = None,
+    camera_width: Optional[float] = None,
+    camera_height: Optional[float] = None,
+    auto_play: bool = True,
+    workspace: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """通知三维：当前箱数据就绪；auto_play=True 时播装载一步。"""
+    uid = str(box_unique_id or "").strip()
+    cmd = {
+        "id": datetime.now().strftime("%Y%m%d_%H%M%S_%f"),
+        "action": "play_box",
+        "box_unique_id": uid,
+        "order_id": str(order_id or ""),
+        "seq": int(seq),
+        "item_id": str(item_id or ""),
+        "product_code": str(product_code or ""),
+        "state": int(state),
+        "camera_length": camera_length,
+        "camera_width": camera_width,
+        "camera_height": camera_height,
+        "auto_play": bool(auto_play) and int(state) in (1, 2),
+        "show_conveyor": True,
+    }
+    path = _atomic_write(command_path(workspace), cmd)
+    print(
+        f"[现场指令] play_box uid={uid} seq={seq} state={state} "
+        f"auto_play={cmd['auto_play']} → {path.name}"
+    )
+    return cmd
+
+
 def clear_current_session_after_replan(
     workspace: Optional[Path] = None,
 ) -> None:

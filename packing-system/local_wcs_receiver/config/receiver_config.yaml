@@ -42,8 +42,14 @@ lookup_plan_map: false
 # plan_map_glob: ../packing-workspace/output/wcs_plan_map_*.json
 
 # TODO(PLC 自动监听): 发现 wcs_success_box.state=1/2 后自动构造并下传（桩发送）。
-# 接口4只登记到达；相机/判转由其它模块写 state。
 plc_auto:
   enabled: true
   poll_interval_sec: 0.5
+  packing_config: ../config/packing_config.yaml
+
+# TODO(接法B-判态监听): 相机只写 camera_*；本监听发现尺寸齐全且 state 为空后自动判定。
+state_judge:
+  enabled: true
+  poll_interval_sec: 0.5
+  tol_mm: 5.0
   packing_config: ../config/packing_config.yaml
