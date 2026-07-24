@@ -206,6 +206,25 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         action="store_true",
         help="只打印将发送的 JSON，不真正 POST",
     )
+    p.add_argument(
+        "--sim-state",
+        action="store_true",
+        default=True,
+        help="联调：模拟「其它模块」写 state（默认开）",
+    )
+    p.add_argument(
+        "--no-sim-state",
+        action="store_false",
+        dest="sim_state",
+        help="不写 state（只测接口4登记到达）",
+    )
+    p.add_argument(
+        "--camera-deg",
+        type=int,
+        default=0,
+        choices=(0, 90),
+        help="--sim-state 时使用的模拟相机角（默认 0）",
+    )
     return p.parse_args(argv)
 
 
@@ -247,6 +266,26 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"[boxarrive] 第 {i + 1}/{len(rows)} 箱已通知 "
             f"(seq={row.get('seq')}, product_code={row.get('product_code')})"
         )
+        # 模拟其它模块：写 state，供接收端 PLC 监听自动下传
+        if args.sim_state and not args.dry_run:
+            packing_root = ROOT.parent
+            root_s = str(packing_root.resolve())
+            if root_s not in sys.path:
+                sys.path.insert(0, root_s)
+            from src.service.box_orientation_db import process_box_arrive_rotation
+
+            rot = process_box_arrive_rotation(
+                str(row.get("box_unique_id") or ""),
+                int(row.get("seq") or 0),
+                int(args.camera_deg),
+                config_path=args.packing_config,
+            )
+            r = rot.get("rotation") or {}
+            print(
+                f"[sim-state] seq={row.get('seq')} "
+                f"camera={args.camera_deg}° → state={r.get('state')} "
+                f"reason={r.get('reason')}"
+            )
 
     print("\n全部完成。")
     return 0

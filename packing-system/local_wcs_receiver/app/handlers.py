@@ -1,7 +1,7 @@
 """接收接口业务处理。
 
-接口4（boxarrive）：箱子到达 → 查 ``wcs_box_orientation`` 目标角 →
-有相机角则判旋转并更新 ``wcs_success_box.state``。
+接口4（boxarrive）：只登记箱子到达；
+state 由其它模块写入；PLC 由 PlcStateWatcher 监听后自动下传。
 """
 
 from __future__ import annotations
@@ -33,29 +33,17 @@ def _missing_fields(body: Dict[str, Any], required: List[str]) -> List[str]:
     return missing
 
 
-def _resolve_camera_orientation(
-    body: Dict[str, Any], settings: ReceiverSettings
-) -> Optional[int]:
-    """优先请求体 orientation_deg；否则用配置 mock（联调）；都无则 None。"""
-    raw = body.get("orientation_deg", body.get("camera_orientation_deg"))
-    if raw is not None and raw != "":
-        try:
-            deg = int(raw)
-        except (TypeError, ValueError):
-            deg = -1
-        if deg in (0, 90):
-            return deg
-        print(f"[WARN] boxarrive 非法 orientation_deg={raw!r}，忽略")
-    return settings.mock_camera_orientation_deg
-
-
 def _ensure_packing_system_import() -> Path:
     """保证 ``from src.service...`` 可用（cwd 常为 local_wcs_receiver）。"""
     root = _PACKING_SYSTEM_ROOT.resolve()
     root_s = str(root)
     # 去掉误加的 .../src，避免挡住正确的 packing-system 根
     src_s = str(root / "src")
-    sys.path[:] = [p for p in sys.path if Path(p).resolve().as_posix() != Path(src_s).as_posix()]
+    sys.path[:] = [
+        p
+        for p in sys.path
+        if Path(p).resolve().as_posix() != Path(src_s).as_posix()
+    ]
     if root_s not in sys.path:
         sys.path.insert(0, root_s)
     return root
@@ -77,34 +65,42 @@ def _record_selected_pallet(
     return {"session": {"ok": True, **session}}
 
 
-def _run_rotation_judge(
+def _record_box_arrive(
     settings: ReceiverSettings, body: Dict[str, Any]
 ) -> Dict[str, Any]:
-    if not settings.rotation_judge_enabled:
-        return {"rotation": {"ok": False, "reason": "disabled"}}
-
+    """接口4：只登记到达，不判转、不入队 PLC。"""
     _ensure_packing_system_import()
-    from src.service.box_orientation_db import process_box_arrive_rotation
+    from src.service.live_stack_bridge import record_box_arrive
 
     uid = str(body.get("box_unique_id") or "").strip()
     try:
         seq = int(body.get("seq"))
     except (TypeError, ValueError):
         return {
-            "rotation": {
+            "arrive": {
                 "ok": False,
                 "reason": "invalid_seq",
                 "box_unique_id": uid,
             }
         }
 
-    camera = _resolve_camera_orientation(body, settings)
-    return process_box_arrive_rotation(
-        uid,
-        seq,
-        camera,
-        config_path=settings.packing_config_path,
+    session = record_box_arrive(
+        box_unique_id=uid,
+        seq=seq,
+        order_id=str(body.get("order_id") or ""),
+        robot_id=str(body.get("robot_id") or ""),
+        product_code=str(body.get("product_code") or body.get("sku") or ""),
     )
+    return {
+        "arrive": {
+            "ok": True,
+            "reason": "registered",
+            "box_unique_id": session.get("box_unique_id"),
+            "seq": seq,
+            "order_id": session.get("order_id"),
+            "note": "等待其它模块写 state；PLC 监听将自动下传",
+        }
+    }
 
 
 def handle_sendcasetask(
@@ -155,13 +151,12 @@ def handle_boxarrive(
     else:
         if missing:
             print(f"[WARN] boxarrive 缺少字段 {missing}，strict_validation=false 仍回成功")
-        # 接口4：箱子到达 → 查目标姿态并判旋转（有相机角才写 state）
         try:
-            data = _run_rotation_judge(settings, body)
+            data = _record_box_arrive(settings, body)
         except Exception as exc:
-            print(f"[接口4-旋转] 处理失败：{exc}")
+            print(f"[接口4-到达] 登记失败：{exc}")
             data = {
-                "rotation": {
+                "arrive": {
                     "ok": False,
                     "reason": "exception",
                     "error": str(exc),

@@ -26,10 +26,11 @@ class ReceiverSettings:
     lookup_plan_map: bool
     plan_map_glob: str
     config_path: Path
-    # 接口4：到达后查 wcs_box_orientation 并判旋转
-    rotation_judge_enabled: bool
+    # 兼容旧配置；接口4不再判转。判转由其它模块写 state。
     packing_config_path: Path
-    mock_camera_orientation_deg: Optional[int]
+    # PLC 自动监听：发现 state 后入队并下传
+    plc_auto_enabled: bool
+    plc_auto_poll_interval_sec: float
 
 
 def _as_path(value: Any, default: str) -> str:
@@ -37,18 +38,6 @@ def _as_path(value: Any, default: str) -> str:
     if not text.startswith("/"):
         text = "/" + text
     return text
-
-
-def _optional_orientation(value: Any) -> Optional[int]:
-    if value is None or value == "":
-        return None
-    try:
-        deg = int(value)
-    except (TypeError, ValueError):
-        return None
-    if deg not in (0, 90):
-        return None
-    return deg
 
 
 def load_settings(config_path: Path) -> ReceiverSettings:
@@ -63,6 +52,7 @@ def load_settings(config_path: Path) -> ReceiverSettings:
     server = dict(raw.get("server") or {})
     paths = dict(raw.get("paths") or {})
     rotation = dict(raw.get("rotation_judge") or {})
+    plc_auto = dict(raw.get("plc_auto") or {})
 
     # 兼容旧扁平字段 host/port
     host = str(server.get("host") or raw.get("host") or "0.0.0.0")
@@ -78,13 +68,20 @@ def load_settings(config_path: Path) -> ReceiverSettings:
 
     packing_cfg = Path(
         str(
-            rotation.get("packing_config")
+            plc_auto.get("packing_config")
+            or rotation.get("packing_config")
             or raw.get("packing_config")
             or (packing_system_root / "config" / "packing_config.yaml")
         )
     )
     if not packing_cfg.is_absolute():
         packing_cfg = (base_dir / packing_cfg).resolve()
+
+    poll = plc_auto.get("poll_interval_sec", 0.5)
+    try:
+        poll_f = float(poll)
+    except (TypeError, ValueError):
+        poll_f = 0.5
 
     return ReceiverSettings(
         host=host,
@@ -108,9 +105,7 @@ def load_settings(config_path: Path) -> ReceiverSettings:
         lookup_plan_map=bool(raw.get("lookup_plan_map", False)),
         plan_map_glob=str(raw.get("plan_map_glob") or ""),
         config_path=config_path,
-        rotation_judge_enabled=bool(rotation.get("enabled", True)),
         packing_config_path=packing_cfg,
-        mock_camera_orientation_deg=_optional_orientation(
-            rotation.get("mock_camera_orientation_deg")
-        ),
+        plc_auto_enabled=bool(plc_auto.get("enabled", True)),
+        plc_auto_poll_interval_sec=max(0.1, poll_f),
     )

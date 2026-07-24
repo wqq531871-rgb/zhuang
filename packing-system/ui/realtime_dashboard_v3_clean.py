@@ -996,7 +996,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
 
         layout.insertWidget(insert_at + 1, push_box)
 
-        self.step_live_stack = StepCard("▣", "现场码垛", "确认后下传码放数据；三维演示按已选托盘整盘模拟")
+        self.step_live_stack = StepCard("▣", "现场码垛", "到达后等姿态就绪，自动下传；卡住可应急补发")
         layout.insertWidget(insert_at + 2, self.step_live_stack)
 
         live_box = QtWidgets.QFrame()
@@ -1028,7 +1028,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.lst_live_plc = QtWidgets.QListWidget()
         self.lst_live_plc.setMinimumHeight(100)
         self.lst_live_plc.setMaximumHeight(150)
-        self.lst_live_plc.setToolTip("待码放的箱子列表，选中后点「确认码放」")
+        self.lst_live_plc.setToolTip("码放队列（自动下传）；异常时可选中后点「应急补发」")
         self.lst_live_plc.currentItemChanged.connect(self._on_live_plc_selection_changed)
         live_form.addRow("", self.lst_live_plc)
 
@@ -1046,9 +1046,9 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.btn_open_robot.clicked.connect(self.open_robot_ui)
         btn_row.addWidget(self.btn_open_robot)
 
-        self.btn_live_send_plc = QtWidgets.QPushButton("确认码放")
-        self.btn_live_send_plc.setObjectName("PrimaryButton")
-        self.btn_live_send_plc.setToolTip("按顺序下传当前箱的码放数据")
+        self.btn_live_send_plc = QtWidgets.QPushButton("应急补发")
+        self.btn_live_send_plc.setObjectName("GhostButton")
+        self.btn_live_send_plc.setToolTip("正常会自动下传；仅卡住时手动补发当前箱")
         self.btn_live_send_plc.clicked.connect(self.send_selected_plc_command)
         self.btn_live_send_plc.setEnabled(False)
         btn_row.addWidget(self.btn_live_send_plc)
@@ -1105,8 +1105,8 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
     @staticmethod
     def _live_status_label(status: str) -> str:
         return {
-            "pending": "待码放",
-            "sent": "已发出",
+            "pending": "排队中",
+            "sent": "已下传",
             "failed": "失败",
         }.get(str(status or ""), "未知")
 
@@ -1264,18 +1264,18 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             "是否旋转：需要旋转 90°" if state == 2 else "是否旋转：不需要旋转"
         )
         if pending_n > 0:
-            self.lbl_live_plc.setText(f"状态：有 {pending_n} 箱待确认码放")
+            self.lbl_live_plc.setText(f"状态：有 {pending_n} 箱排队，自动下传中…")
         elif rows:
             self.lbl_live_plc.setText(
-                f"状态：{self._live_status_label(status)}（暂无待确认箱子）"
+                f"状态：{self._live_status_label(status)}（暂无待下传箱子）"
             )
         else:
-            self.lbl_live_plc.setText("状态：等待箱子到达…")
+            self.lbl_live_plc.setText("状态：等待箱子到达与姿态就绪…")
         if hasattr(self, "step_live_stack"):
             if pending_n > 0:
-                self.step_live_stack.set_state("active", f"待确认 {pending_n} 箱")
+                self.step_live_stack.set_state("active", f"自动下传中 {pending_n} 箱")
             elif rows:
-                self.step_live_stack.set_state("done", "暂无待码放箱子")
+                self.step_live_stack.set_state("done", "暂无待下传箱子")
             else:
                 self.step_live_stack.set_state("idle", "等待箱子到达")
 
@@ -1411,7 +1411,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             return
         status = str(item.data(QtCore.Qt.UserRole + 1) or "") if item else ""
         if status != "pending":
-            QtWidgets.QMessageBox.information(self, "现场码垛", "这一箱已经处理过了，请选「待码放」的箱子。")
+            QtWidgets.QMessageBox.information(self, "现场码垛", "这一箱已经处理过了，请选「排队中」的箱子。")
             return
         row = item.data(QtCore.Qt.UserRole + 2) if item else {}
         cmd = (row or {}).get("command") or {}
@@ -1439,13 +1439,13 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         rotate = "需要旋转" if int(row.get("state") or 0) == 2 else "不旋转"
         confirm = QtWidgets.QMessageBox.question(
             self,
-            "确认码放",
+            "应急补发",
             (
                 f"订单：{order_id}\n"
                 f"箱子：第 {seq} 箱（按顺序）\n"
                 f"动作：{rotate}\n\n"
-                "确认后下传码放数据。\n"
-                "三维演示请用「打开三维演示」查看整盘模拟。"
+                "正常流程会自动下传。\n"
+                "确认后手动补发这一箱。"
             ),
             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
             QtWidgets.QMessageBox.No,
@@ -1457,7 +1457,11 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             from src.service.plc_queue_db import stub_send_plc_command
 
             config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
-            result = stub_send_plc_command(qid, config_path=config_path)
+            result = stub_send_plc_command(
+                qid,
+                config_path=config_path,
+                note="plc_send: manual emergency handoff marked sent",
+            )
             if not result.get("ok"):
                 if result.get("reason") == "out_of_order":
                     raise RuntimeError(

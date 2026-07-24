@@ -38,6 +38,6 @@ CREATE TABLE `wcs_plc_queue`  (
   PRIMARY KEY (`id`) USING BTREE,
   UNIQUE INDEX `uk_plc_unique_seq`(`box_unique_id`, `seq`) USING BTREE,
   INDEX `idx_plc_status_created`(`status`, `created_at`) USING BTREE
-) ENGINE = InnoDB AUTO_INCREMENT = 4 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = 'PLC 命令队列：构造后待界面确认发送' ROW_FORMAT = Dynamic;
+) ENGINE = InnoDB AUTO_INCREMENT = 4 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = 'PLC 命令队列：state 就绪后自动入队下传；界面可应急补发' ROW_FORMAT = Dynamic;
 
 SET FOREIGN_KEY_CHECKS = 1;

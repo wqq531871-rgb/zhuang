@@ -41,10 +41,9 @@ lookup_plan_map: false
 # TODO(plan map 搜索): lookup_plan_map=true 时生效。
 # plan_map_glob: ../packing-workspace/output/wcs_plan_map_*.json
 
-# TODO(接口4-旋转判断): 箱子到达后查 wcs_box_orientation，有相机角则更新 wcs_success_box.state。
-rotation_judge:
+# TODO(PLC 自动监听): 发现 wcs_success_box.state=1/2 后自动构造并下传（桩发送）。
+# 接口4只登记到达；相机/判转由其它模块写 state。
+plc_auto:
   enabled: true
-  # 读 database 段的 packing 配置（相对 local_wcs_receiver/ 或绝对路径）
+  poll_interval_sec: 0.5
   packing_config: ../config/packing_config.yaml
-  # 暂无真实相机时：填 0 或 90 做联调；null=只查目标角，不写 state（reason=waiting_camera）
-  mock_camera_orientation_deg: 0

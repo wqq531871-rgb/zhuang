@@ -263,9 +263,10 @@ def process_box_arrive_rotation(
     config_path: Optional[Path] = None,
     db_config: Optional[DatabaseConfig] = None,
 ) -> Dict[str, Any]:
-    """接口4：查目标角；有相机角则判转并写 ``wcs_success_box.state``。
+    """判转模块：查目标角；有相机角则写 ``wcs_success_box.state``。
 
-    返回写入响应 ``data`` 的摘要字典。
+    不在此构造/下传 PLC：由 ``PlcStateWatcher`` 监听 state 后自动处理。
+    供「相机入库存 → 更新 state」的独立模块调用。
     """
     cfg = db_config or load_database_config_from_yaml(config_path)
     repo = WcsBoxOrientationRepository(cfg)
@@ -304,7 +305,7 @@ def process_box_arrive_rotation(
     if camera_orientation_deg is None:
         rot["reason"] = "waiting_camera"
         print(
-            f"[接口4-旋转] 已查目标角 box={uid} seq={seq_i} "
+            f"[判转] 已查目标角 box={uid} seq={seq_i} "
             f"target={target}°，等待相机姿态"
         )
         return result
@@ -319,40 +320,17 @@ def process_box_arrive_rotation(
     if updated <= 0:
         rot["reason"] = "success_box_row_missing"
         print(
-            f"[接口4-旋转] 已算 state={state}，但 wcs_success_box "
+            f"[判转] 已算 state={state}，但 wcs_success_box "
             f"无匹配行 box={uid} seq={seq_i}"
         )
         return result
 
     rot["reason"] = "judged"
     print(
-        f"[接口4-旋转] box={uid} seq={seq_i} "
+        f"[判转] box={uid} seq={seq_i} "
         f"camera={camera}° target={target}° → state={state} "
-        f"（已更新 {updated} 行）"
+        f"（已更新 {updated} 行；PLC 由监听自动处理）"
     )
-    # 方案 C：判转完成后立刻构造 PLC 命令入队（不发送，等界面按钮）
-    try:
-        from src.service.plc_queue_db import enqueue_plc_after_rotation
-
-        plc_part = enqueue_plc_after_rotation(
-            box_unique_id=uid,
-            seq=seq_i,
-            state=state,
-            target_orientation_deg=target,
-            camera_orientation_deg=camera,
-            item_id=str(orient.get("item_id") or "") or None,
-            product_code=str(orient.get("product_code") or "") or None,
-            config_path=config_path,
-            db_config=cfg,
-        )
-        result.update(plc_part)
-    except Exception as exc:
-        print(f"[接口4-PLC] 构造入队失败：{exc}")
-        result["plc"] = {
-            "ok": False,
-            "reason": "enqueue_exception",
-            "error": str(exc),
-        }
     return result
 
 
