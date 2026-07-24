@@ -14,3 +14,6 @@ packing-robot/__pycache__/
 packing-robot/**/__pycache__/
 packing-robot/.pytest_cache/
 packing-robot/robot_actions_*.json
+
+# Local isolated development worktrees
+.worktrees/
