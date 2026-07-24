@@ -7,21 +7,21 @@ server:
   # TODO(监听地址): 必须 0.0.0.0 才能让同一局域网访问；127.0.0.1 仅本机。
   host: "0.0.0.0"
   # TODO(端口): 联调/现场改端口；Windows 防火墙需放行该端口入站。
-  port: 8093
+  port: 7002
 
 # TODO(本机对外根地址): 协议+本机局域网 IPv4+端口，发给对方联调用。
 #   当前本机 IPv4=192.168.0.8；换网段时只改这一行。
-advertise_base_url: http://192.168.1.7:8093
+advertise_base_url: http://10.19.136.146:7002
 
-# TODO(接口 path): 与对方约定一致；一般不用改。
+# TODO(接口 path): 与对方约定一致；一般不用改。编号对标接口文档 4.3～4.7。
 paths:
-  # TODO(接口3 path): 拼箱物料信息下发（对方 → 我）。
+  # TODO(4.3 拼箱物料信息下发 path): 对方 → 我；当前仅回成功，不做业务处理。
   sendcasetask_path: /adaptor/api/wcs/sendcasetask
-  # TODO(接口4 path): 物料到达（对方 → 我）。
+  # TODO(4.4 物料到达 path): 对方 → 我；当前仅回成功，不做业务处理。
   boxarrive_path: /adaptor/api/wcs/boxarrive
-  # TODO(接口6 path): 托盘到达（对方 → 我）。
+  # TODO(4.6 托盘到达 path): 对方 → 我；当前仅回成功；业务状态机待定。
   palletarrive_path: /adaptor/api/wcs/palletarrive
-  # TODO(接口7 path): 系统状态（对方 → 我）。注意是 /api/status（无 adaptor 前缀）。
+  # TODO(4.7 获取系统信息 path): 对方 → 我，GET；最快约 1s/次。注意无 adaptor 前缀。
   status_path: /api/status
   # TODO(Swagger 文档 path): 仿对方 /swagger/index.html，浏览器打开可看接口。
   swagger_path: /swagger/index.html
@@ -30,7 +30,8 @@ paths:
 log_dir: logs
 save_requests: true
 
-# TODO(/api/status 设备状态): 0=就绪, 1=执行中, 99=异常（联调时可改）。
+# TODO(4.7 设备状态): 0=就绪(MAX VP运行中+无任务), 1=执行中(运行中+有任务), 99=停止/异常。
+#   TODO(4.7-判定): 何时空闲/何时有任务待定；当前为配置静态值，联调可改。
 device_status: 0
 
 # TODO(校验严格度): false=缺字段仍回 code=0（联调友好）；true=缺必填回非 0。
