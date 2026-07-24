@@ -56,6 +56,7 @@ _DEMO_SQL = (
     "s.pos_y AS pos_y, "
     "s.pos_z AS pos_z, "
     "s.state AS state, "
+    "s.box_num AS box_num, "
     "s.pallet_id AS pallet_id, "
     "s.order_id AS order_id, "
     "s.case_type AS case_type, "
@@ -66,6 +67,51 @@ _DEMO_SQL = (
     "WHERE o.box_unique_id = %s "
     "ORDER BY o.seq ASC, o.id ASC"
 )
+
+_PLC_ROW_SQL = (
+    "SELECT "
+    "seq, camera_length, camera_width, camera_height, "
+    "raw_length, raw_width, raw_height, "
+    "pos_x, pos_y, pos_z, state, box_num, stack_height_before "
+    "FROM wcs_success_box "
+    "WHERE box_unique_id = %s AND seq = %s "
+    "LIMIT 1"
+)
+
+
+def fetch_plc_row(
+    box_unique_id: str,
+    seq: int,
+    *,
+    config_path: Path | None = None,
+    settings: Mapping[str, Any] | None = None,
+    connect_factory: Any = pymysql.connect,
+) -> dict[str, Any] | None:
+    """Fetch the latest PLC fields for one box without caching state."""
+    uid = str(box_unique_id or "").strip()
+    if not uid:
+        raise ValueError("缺少 box_unique_id")
+    seq_i = int(seq)
+    if seq_i < 1:
+        raise ValueError("seq 必须从 1 开始")
+    cfg = dict(settings) if settings is not None else load_mysql_settings(config_path)
+    conn = connect_factory(
+        host=cfg["host"],
+        port=int(cfg["port"]),
+        user=cfg["user"],
+        password=cfg["password"],
+        database=cfg["database"],
+        charset=cfg.get("charset", "utf8mb4"),
+        cursorclass=DictCursor,
+        autocommit=True,
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(_PLC_ROW_SQL, (uid, seq_i))
+            row = cur.fetchone()
+            return dict(row) if row is not None else None
+    finally:
+        conn.close()
 
 
 def fetch_pallet_demo_rows(
@@ -131,6 +177,10 @@ def _row_to_item(row: Mapping[str, Any], index: int) -> PackedItem:
         "suction_cup_corner": "x_min_y_min",
         "target_orientation_deg": int(row.get("target_orientation_deg") or 0),
         "state": state_val,
+        "box_num": (
+            int(row.get("box_num")) if row.get("box_num") is not None else None
+        ),
+        "stack_height_before": _number(row.get("stack_height_before")),
     }
     derived = _derive_suction_rect(raw, x, y, length, width)
     item_id = str(raw["id"])
