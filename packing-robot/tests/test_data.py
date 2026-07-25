@@ -10,6 +10,7 @@ from packing_ui.data import (
     normalize_document,
 )
 from packing_ui.integration import CameraBoxData
+from packing_ui.layout_state import STATE_PATH_CAMERA, STATE_PATH_LAYOUT
 
 
 def item(item_id="box-1", **overrides):
@@ -214,6 +215,40 @@ def test_camera_data_overrides_manual_orientation_and_is_exported_for_plc():
         "pickup_point": "A",
         "pickup_point_code": 1,
     }
+
+
+def test_layout_state_path_is_ready_without_camera_dimensions():
+    parsed_item = normalize_document(
+        {"k": plan(items=[item(state=1)])}
+    )[0].items[0]
+
+    action = build_action(
+        parsed_item,
+        conveyor_orientation_deg=0,
+        conveyor_z=125,
+        state_source=STATE_PATH_LAYOUT,
+    )
+
+    assert action.db_state == 1
+    assert action.show_on_conveyor is True
+    assert action.plc_ready is True
+
+
+def test_camera_state_path_still_waits_without_camera_dimensions():
+    parsed_item = normalize_document(
+        {"k": plan(items=[item(state=1)])}
+    )[0].items[0]
+
+    action = build_action(
+        parsed_item,
+        conveyor_orientation_deg=0,
+        conveyor_z=125,
+        state_source=STATE_PATH_CAMERA,
+    )
+
+    assert action.db_state == 1
+    assert action.show_on_conveyor is False
+    assert action.plc_ready is False
 
 
 def test_load_plan_file_reports_invalid_json(tmp_path):

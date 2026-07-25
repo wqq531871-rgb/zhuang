@@ -10,8 +10,6 @@ from typing import Any, Mapping
 import pymysql
 from pymysql.cursors import DictCursor
 
-from .plan_from_db import load_mysql_settings
-
 
 STATE_PATH_CAMERA = "camera"
 STATE_PATH_LAYOUT = "layout"
@@ -110,11 +108,12 @@ def assign_pallet_layout_states(
     if not uid:
         raise LayoutStateError("缺少当前托盘 box_unique_id")
 
-    config = (
-        dict(settings)
-        if settings is not None
-        else load_mysql_settings(config_path)
-    )
+    if settings is not None:
+        config = dict(settings)
+    else:
+        from .plan_from_db import load_mysql_settings
+
+        config = load_mysql_settings(config_path)
     connection = None
     cursor = None
     try:

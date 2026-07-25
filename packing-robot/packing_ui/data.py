@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from .integration import CameraBoxData, plc_control
+from .layout_state import STATE_PATH_CAMERA, normalize_state_path
 
 
 def _number(value: Any, default: float = 0.0) -> float:
@@ -256,7 +257,9 @@ def build_action(
     conveyor_orientation_deg: int,
     conveyor_z: float,
     camera_data: CameraBoxData | None = None,
+    state_source: str = STATE_PATH_CAMERA,
 ) -> RobotAction:
+    source = normalize_state_path(state_source)
     target = target_orientation(item)
     original = item.original or {}
     db_state_raw = original.get("state")
@@ -322,7 +325,8 @@ def build_action(
     top_z = item.z + item.raw_height
     dims_ok = item_camera_dims_complete(item)
     state_ok = item_state_ready(item)
-    show_on_conveyor = dims_ok and state_ok
+    dimensions_required = source == STATE_PATH_CAMERA
+    show_on_conveyor = state_ok and (dims_ok or not dimensions_required)
     return RobotAction(
         item_id=item.id,
         box_type=item.box_type,
