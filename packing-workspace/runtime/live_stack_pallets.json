@@ -29,6 +29,18 @@
     "source": "sendcasetask",
     "updated_at": "2026-07-24 02:28:00",
     "received_at": "2026-07-24 02:28:00",
+    "stack_status": "done",
+    "completed_at": "2026-07-24 14:47:25"
+  },
+  {
+    "box_unique_id": "068e80576d66478b8ff72b419bc14026",
+    "order_id": "LFEG16300IN02S",
+    "robot_id": "001",
+    "plan_path": null,
+    "source": "sendcasetask",
+    "last_arrived_seq": null,
+    "updated_at": "2026-07-24 17:52:01",
+    "received_at": "2026-07-24 17:52:01",
     "stack_status": "active"
   }
 ]
