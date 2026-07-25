@@ -52,6 +52,14 @@ def test_plc_auto_is_off_on_every_window_start():
     window.close()
 
 
+def test_window_accepts_camera_dimension_writer_dependency():
+    _app()
+    writer = lambda *_args, **_kwargs: 1
+    window = _test_window(camera_dimension_writer=writer)
+    assert window._camera_dimension_writer is writer
+    window.close()
+
+
 def test_replay_current_box_button_replays_only_selected_box():
     _app()
     window = _test_window()

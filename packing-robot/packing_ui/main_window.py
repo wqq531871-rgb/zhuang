@@ -37,7 +37,11 @@ from .live_command import (
     read_live_command,
     read_live_session,
 )
-from .plan_from_db import fetch_plc_row, load_plan_from_db
+from .plan_from_db import (
+    fetch_plc_row,
+    load_plan_from_db,
+    update_camera_dimensions,
+)
 from .playback import PlaybackController, PlaybackPanel
 from .plc_protocol import S7Client, S7Config, create_snap7_client
 from .plc_worker import PlcSendWorker
@@ -53,6 +57,7 @@ class PackingMainWindow(QMainWindow):
         enable_3d: bool = True,
         plc_client_factory: Any = None,
         plc_worker_factory: Any = None,
+        camera_dimension_writer: Any = None,
         **_ignored,
     ) -> None:
         super().__init__()
@@ -76,6 +81,9 @@ class PackingMainWindow(QMainWindow):
         self._state_sync_thread = None  # 兼容旧测试
         self._plc_client_factory = plc_client_factory or create_snap7_client
         self._plc_worker_factory = plc_worker_factory or PlcSendWorker
+        self._camera_dimension_writer = (
+            camera_dimension_writer or update_camera_dimensions
+        )
         self._plc_probe = None
         self._plc_connected = False
         self._plc_thread: QThread | None = None
@@ -564,6 +572,16 @@ class PackingMainWindow(QMainWindow):
             sequences=sequences,
             row_loader=lambda box_uid, seq: fetch_plc_row(
                 box_uid, seq, config_path=self._config_path
+            ),
+            camera_writer=lambda box_uid, seq, length, width, height: (
+                self._camera_dimension_writer(
+                    box_uid,
+                    seq,
+                    length,
+                    width,
+                    height,
+                    config_path=self._config_path,
+                )
             ),
             client_factory=self._plc_client_factory,
         )

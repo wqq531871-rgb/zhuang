@@ -43,8 +43,12 @@ MySQL 参数读取同级 `packing-system/config/packing_config.yaml`；密码不
 
 - PLC 写 `DBW2` 请求当前箱；Python 将它与数据库 `seq` 校验，不一致时零数据
   写入并停止整盘。
-- 大写尺寸 `DBW6/8/10` 来自 `camera_length/width/height`。
-- 小写尺寸 `DBW14/16/18` 来自 `raw_length/width/height`。
+- PLC 的 SEND 区 `DBW6/8/10` 提供相机测得长宽高；Python 读取后按
+  `box_unique_id + seq` 写入数据库
+  `camera_length/camera_width/camera_height`，不向这三个偏移写数据。
+- 常驻判态监听发现相机尺寸齐全且 `state` 为空后生成 `state=0/1/2`；
+  当前箱的 PLC 下传线程从相机尺寸写库成功后才开始等待该 `state`。
+- REV 区小写尺寸 `DBW14/16/18` 来自 `raw_length/width/height`。
 - PLC 坐标约定与数据库 XY 对调：`DBW20=pos_y`、`DBW22=pos_x`；
   `DBW24=pos_z`。
 - `DBW26=state`、`DBW28=box_num`、`DBW34=stack_height_before`。
