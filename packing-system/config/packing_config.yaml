@@ -54,6 +54,8 @@ execution_sequence:
   enabled: true
   # 有向空间波从指定托盘角点向外扩散；现场机器人在 x_max_y_max 侧时保持 x_min_y_min。
   # 可选：x_min_y_min / x_min_y_max / x_max_y_min / x_max_y_max
+  # score_only: 下降/斜向推进只记录风险，不参与核心顺序门禁；hard: 使用标定后的严格门禁。
+  path_gate_mode: score_only
   origin: x_min_y_min
   # 几何比较容差，用于判断接触、重合和同一高度。
   coordinate_tolerance_mm: 0.000001
@@ -73,7 +75,14 @@ execution_sequence:
   approach_suction_xy_clearance_mm: 0.0
   # true 时每个箱子必须包含完整 suction_rect_* 字段。
   require_suction_pose: true
-  # 放置目标箱时最多允许两条相邻侧面被占用；相对两侧及三/四侧包围始终禁止。
+  # 凹坑判定规则。
+  #   approach_directional（默认，现场使用）：按 origin 推导机械臂接近方向，
+  #     origin=x_min_y_min 时要求 x+ 与 y+ 两侧空闲，x-/y- 可以放满。
+  #     预放偏移、斜向推进和吸盘悬出都只落在 +X/+Y 一侧，因此只有这两侧构成凹坑。
+  #   open_corner：保留旧的无方向规则，只按 max_occupied_directions 限制被占方向数，
+  #     仅用于离线验证或其它机器人站位。
+  pocket_rule: approach_directional
+  # 仅 pocket_rule=open_corner 时生效：最多允许两条相邻侧面被占用，相对两侧及三/四侧包围禁止。
   max_occupied_directions: 2
   # 判断侧面邻箱和局部低层前沿时允许的最大水平间隙；等于该值也纳入依赖。
   side_neighbor_clearance_mm: 5.0
