@@ -57,6 +57,9 @@ class PlcStatus:
     fp: int
     request_seq: int
     fp_over: int
+    camera_length: int
+    camera_width: int
+    camera_height: int
     idle: int
     dh_over: int
 
@@ -64,9 +67,6 @@ class PlcStatus:
 @dataclass(frozen=True)
 class PlcCommand:
     sequence: int
-    camera_length: int
-    camera_width: int
-    camera_height: int
     raw_length: int
     raw_width: int
     raw_height: int
@@ -79,9 +79,6 @@ class PlcCommand:
 
     def words(self) -> dict[int, int]:
         return {
-            CAMERA_LENGTH_OFFSET: self.camera_length,
-            CAMERA_WIDTH_OFFSET: self.camera_width,
-            CAMERA_HEIGHT_OFFSET: self.camera_height,
             RAW_LENGTH_OFFSET: self.raw_length,
             RAW_WIDTH_OFFSET: self.raw_width,
             RAW_HEIGHT_OFFSET: self.raw_height,
@@ -129,9 +126,6 @@ def build_command(row: Mapping[str, Any]) -> PlcCommand:
         raise PlcValidationError("正常下发的 state 必须是 1 或 2")
     return PlcCommand(
         sequence=_plc_int(row.get("seq"), "seq"),
-        camera_length=_plc_int(row.get("camera_length"), "camera_length"),
-        camera_width=_plc_int(row.get("camera_width"), "camera_width"),
-        camera_height=_plc_int(row.get("camera_height"), "camera_height"),
         raw_length=_plc_int(row.get("raw_length"), "raw_length"),
         raw_width=_plc_int(row.get("raw_width"), "raw_width"),
         raw_height=_plc_int(row.get("raw_height"), "raw_height"),
@@ -209,13 +203,16 @@ class S7Client:
                 fp=words[0],
                 request_seq=words[1],
                 fp_over=words[2],
+                camera_length=words[3],
+                camera_width=words[4],
+                camera_height=words[5],
                 idle=words[6],
                 dh_over=_unpack_int(dh_over),
             )
         except Exception as exc:  # noqa: BLE001
             raise PlcCommunicationError(f"读取 DB19 状态失败：{exc}") from exc
 
-    def _wait_ready(self, expected_seq: int) -> PlcStatus:
+    def wait_request(self, expected_seq: int) -> PlcStatus:
         deadline = self._clock() + self.config.handshake_timeout
         while self._clock() < deadline:
             status = self.read_status()
@@ -240,12 +237,12 @@ class S7Client:
             ) from exc
 
     def send_alarm(self, expected_seq: int) -> PlcStatus:
-        status = self._wait_ready(expected_seq)
+        status = self.wait_request(expected_seq)
         self._write_word(ALARM_OFFSET, 1)
         return status
 
     def send_normal(self, command: PlcCommand) -> PlcStatus:
-        last_status = self._wait_ready(command.sequence)
+        last_status = self.wait_request(command.sequence)
         for offset, value in command.words().items():
             self._write_word(offset, value)
         self._write_word(DH_OVER_OFFSET, 1)

@@ -31,11 +31,24 @@ ROW = {
 }
 
 
-def status(*, fp=1, seq=7, fp_over=0, idle=0, dh_over=0):
+def status(
+    *,
+    fp=1,
+    seq=7,
+    fp_over=0,
+    camera_length=401,
+    camera_width=302,
+    camera_height=203,
+    idle=0,
+    dh_over=0,
+):
     return {
         "fp": fp,
         "request_seq": seq,
         "fp_over": fp_over,
+        "camera_length": camera_length,
+        "camera_width": camera_width,
+        "camera_height": camera_height,
         "idle": idle,
         "dh_over": dh_over,
     }
@@ -64,9 +77,9 @@ class FakeSnap7:
                 current["fp"],
                 current["request_seq"],
                 current["fp_over"],
-                0,
-                0,
-                0,
+                current["camera_length"],
+                current["camera_width"],
+                current["camera_height"],
                 current["idle"],
             ]
             return bytearray(struct.pack(">hhhhhhh", *words))
@@ -89,12 +102,21 @@ def test_default_plc_endpoint_matches_site_controller():
     assert value.port == 102
 
 
-def test_command_maps_every_approved_dbw_and_swaps_database_xy():
+def test_wait_request_reads_camera_dimensions_from_send_area():
+    raw = FakeSnap7([status()])
+    received = S7Client(
+        raw, config(), sleep=lambda _seconds: None
+    ).wait_request(7)
+    assert (
+        received.camera_length,
+        received.camera_width,
+        received.camera_height,
+    ) == (401, 302, 203)
+
+
+def test_command_writes_only_rev_fields_and_preserves_dbw34_int():
     command = build_command(ROW)
     assert command.words() == {
-        6: 401,
-        8: 302,
-        10: 203,
         14: 400,
         16: 300,
         18: 200,
@@ -106,6 +128,7 @@ def test_command_maps_every_approved_dbw_and_swaps_database_xy():
         32: 0,
         34: 480,
     }
+    assert {6, 8, 10}.isdisjoint(command.words())
     assert 2 not in command.words()
 
 
