@@ -26,7 +26,13 @@ _ORIGINS = {
     "x_max_y_max",
 }
 _ROBOT_REFERENCES = _ORIGINS | {"x_min", "x_max", "y_min", "y_max"}
+_POCKET_RULES = {"approach_directional", "open_corner"}
+# Spatial rings a supported box waits behind the ground front of its own ring.
+# 1 would let a column rise as soon as its own ring is reached; 2 keeps the
+# lower tier two rings ahead so the pallet spreads before it grows upward.
+_TIER_WAVE_RINGS = 2
 STACK_HEIGHT_BEFORE_FIELD = "stack_height_before"
+EXECUTION_SEQUENCE_DIAGNOSTICS_FIELD = "execution_sequence_diagnostics"
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -47,6 +53,7 @@ def _check_deadline(deadline: Optional[float]) -> None:
 class ExecutionSequenceConfig:
     """Execution-order preferences and geometric tolerances."""
 
+    path_gate_mode: str = "score_only"
     origin: str = "x_min_y_min"
     coordinate_tolerance_mm: float = 1e-6
     box_xy_clearance_mm: float = 0.0
@@ -58,6 +65,7 @@ class ExecutionSequenceConfig:
     approach_box_xy_clearance_mm: float = 0.0
     approach_suction_xy_clearance_mm: float = 0.0
     require_suction_pose: bool = True
+    pocket_rule: str = "approach_directional"
     max_occupied_directions: int = 2
     side_neighbor_clearance_mm: float = 5.0
     side_height_tolerance_mm: float = 2.0
@@ -68,9 +76,18 @@ class ExecutionSequenceConfig:
     scan_column_tolerance_mm: float = 5.0
 
     def __post_init__(self) -> None:
+        if self.path_gate_mode not in ("hard", "score_only"):
+            raise ValueError(
+                "path_gate_mode must be one of: hard, score_only"
+            )
         if self.origin not in _ORIGINS:
             raise ValueError(
                 "origin must be one of: %s" % ", ".join(sorted(_ORIGINS))
+            )
+        if self.pocket_rule not in _POCKET_RULES:
+            raise ValueError(
+                "pocket_rule must be one of: %s"
+                % ", ".join(sorted(_POCKET_RULES))
             )
         numeric_clearances = {
             "coordinate_tolerance_mm": self.coordinate_tolerance_mm,
@@ -261,6 +278,59 @@ def _rects_overlap(
     )
 
 
+def _approach_axis_signs(origin: str) -> Tuple[float, float]:
+    """Return the X/Y sense of the robot approach for an execution origin.
+
+    The wave spreads away from ``origin``, so the robot stands on the opposite
+    corner and every pre-position offset, diagonal push and suction overhang
+    points back toward that corner.
+    """
+
+    return (
+        1.0 if origin.startswith("x_min") else -1.0,
+        1.0 if origin.endswith("y_min") else -1.0,
+    )
+
+
+def _approach_directions(config: ExecutionSequenceConfig) -> Set[str]:
+    """Return the two side directions the end effector sweeps through."""
+
+    sign_x, sign_y = _approach_axis_signs(config.origin)
+    return {
+        "x+" if sign_x > 0 else "x-",
+        "y+" if sign_y > 0 else "y-",
+    }
+
+
+def _outside_approach_envelope(
+    target: Tuple[float, float, float, float, float, float],
+    blocker: Tuple[float, float, float, float, float, float],
+    signs: Tuple[float, float],
+    tolerance: float,
+) -> bool:
+    """Return whether a blocker sits entirely on the target's retreat side.
+
+    The pre-position offset, the diagonal push and the suction overhang all
+    stay inside the target footprint grown toward the approach corner, so a
+    blocker fully beyond the opposite faces is never swept.
+    """
+
+    tx, ty, _tz, target_length, target_width, _th = target
+    bx, by, _bz, blocker_length, blocker_width, _bh = blocker
+    sign_x, sign_y = signs
+    if sign_x > 0:
+        if bx + blocker_length <= tx + tolerance:
+            return True
+    elif bx >= tx + target_length - tolerance:
+        return True
+    if sign_y > 0:
+        if by + blocker_width <= ty + tolerance:
+            return True
+    elif by >= ty + target_width - tolerance:
+        return True
+    return False
+
+
 def _add_edge(
     edges: List[Set[int]], indegree: List[int], source: int, target: int
 ) -> None:
@@ -306,6 +376,7 @@ def _add_clearance_edges(
     config: ExecutionSequenceConfig,
     edges: List[Set[int]],
     indegree: List[int],
+    deadline: Optional[float] = None,
 ) -> None:
     tolerance = config.coordinate_tolerance_mm
     geometry = [_physical_geometry(item) for item in items]
@@ -323,9 +394,11 @@ def _add_clearance_edges(
     ]
 
     for target_idx, target in enumerate(geometry):
+        _check_deadline(deadline)
         _tx, _ty, target_bottom, _tl, _tw, target_height = target
         target_top = target_bottom + target_height
         for blocker_idx, blocker in enumerate(geometry):
+            _check_deadline(deadline)
             if blocker_idx == target_idx:
                 continue
             _bx, _by, blocker_bottom, _bl, _bw, blocker_height = blocker
@@ -372,6 +445,8 @@ def _add_height_egress_edges(
         or _rect(item)
         for item in items
     ]
+    directional = config.pocket_rule == "approach_directional"
+    signs = _approach_axis_signs(config.origin)
     for upper_idx, direct_supports in enumerate(supports):
         _check_deadline(deadline)
         if not direct_supports:
@@ -383,6 +458,13 @@ def _add_height_egress_edges(
             if lower_idx == upper_idx:
                 continue
             if support_tiers[lower_idx] >= support_tiers[upper_idx]:
+                continue
+            if directional and _outside_approach_envelope(
+                geometry[lower_idx],
+                geometry[upper_idx],
+                signs,
+                config.coordinate_tolerance_mm,
+            ):
                 continue
             _lx, _ly, lower_z, _ll, _lw, lower_height = lower
             try:
@@ -398,7 +480,7 @@ def _add_height_egress_edges(
                     height_tolerance=config.side_height_tolerance_mm,
                     tolerance=config.coordinate_tolerance_mm,
                 )
-                if not blocked:
+                if not blocked and config.path_gate_mode == "hard":
                     blocked = local_egress_blocked(
                         corridor_rect=corridor_rects[lower_idx],
                         lower_top=lower_z + lower_height,
@@ -661,6 +743,117 @@ def _assert_approach_replay_safe(
         placed.add(target_idx)
 
 
+def _collect_path_risks(
+    items: List[Dict],
+    config: ExecutionSequenceConfig,
+    pallet_dims: Optional[Dict[str, float]] = None,
+) -> List[Dict]:
+    """Report modeled path conflicts without changing the execution order."""
+
+    if not items:
+        return []
+    tolerance = config.coordinate_tolerance_mm
+    geometry = [_physical_geometry(item) for item in items]
+    blocker_rects = [_rect(item) for item in items]
+    box_sweeps = [
+        _rect(item, config.box_xy_clearance_mm) for item in items
+    ]
+    suction_sweeps = [
+        _suction_rect(
+            item,
+            config.suction_xy_clearance_mm,
+            config.require_suction_pose,
+        )
+        for item in items
+    ]
+    approach_paths = _approach_paths(items, config, pallet_dims)
+    approach_blockers = _approach_blockers(items)
+    risks = []
+    for target_idx, target in enumerate(geometry):
+        _tx, _ty, target_bottom, _tl, _tw, target_height = target
+        target_top = target_bottom + target_height
+        for blocker_idx in range(target_idx):
+            blocker = geometry[blocker_idx]
+            blocker_top = blocker[2] + blocker[5]
+            phase = None
+            if (
+                _rects_overlap(
+                    box_sweeps[target_idx],
+                    blocker_rects[blocker_idx],
+                    tolerance,
+                )
+                and blocker_top > target_bottom + tolerance
+            ):
+                phase = "vertical box descent"
+            elif (
+                suction_sweeps[target_idx] is not None
+                and _rects_overlap(
+                    suction_sweeps[target_idx],
+                    blocker_rects[blocker_idx],
+                    tolerance,
+                )
+                and blocker_top
+                > target_top - config.suction_z_clearance_mm + tolerance
+            ):
+                phase = "vertical suction descent"
+            else:
+                phase = _approach_blocking_phase(
+                    items[target_idx].get("id"),
+                    approach_paths[target_idx],
+                    items[blocker_idx].get("id"),
+                    approach_blockers[blocker_idx],
+                    config,
+                )
+            if phase is not None:
+                risks.append(
+                    {
+                        "target_box_id": items[target_idx].get("id"),
+                        "blocker_box_id": items[blocker_idx].get("id"),
+                        "target_seq": target_idx + 1,
+                        "phase": phase,
+                    }
+                )
+    return risks
+
+
+def _execution_sequence_diagnostics(
+    items: List[Dict],
+    config: ExecutionSequenceConfig,
+    source_items: Optional[List[Dict]] = None,
+) -> Dict:
+    diagnostics = {
+        "path_gate_mode": config.path_gate_mode,
+        "soft_path_risk_count": 0,
+        "soft_path_risks": [],
+        "boundary_clamp_relaxed_count": 0,
+        "boundary_clamp_relaxations": [],
+        "pocket_violation_count": 0,
+        "pocket_violations": [],
+    }
+    try:
+        risks = _collect_path_risks(items, config)
+    except Exception as exc:
+        diagnostics["soft_path_evaluation_error"] = str(exc)
+    else:
+        diagnostics["soft_path_risk_count"] = len(risks)
+        diagnostics["soft_path_risks"] = risks
+    try:
+        diagnostics.update(
+            _boundary_clamp_diagnostics(
+                source_items if source_items is not None else items,
+                items,
+                config,
+            )
+        )
+    except Exception as exc:
+        diagnostics["boundary_clamp_evaluation_error"] = str(exc)
+    try:
+        diagnostics.update(_pocket_diagnostics(items, config))
+    except Exception as exc:
+        diagnostics["pocket_evaluation_error"] = str(exc)
+    return diagnostics
+
+
 def _assert_replay_safe(
     items: List[Dict],
     ordered_indices: List[int],
@@ -892,7 +1085,9 @@ def _assert_final_execution_layout(
         pallet_dims,
         deadline=deadline,
     )
-    _add_clearance_edges(items, config, edges, indegree)
+    _add_clearance_edges(
+        items, config, edges, indegree, deadline=deadline
+    )
     _add_approach_edges(
         items, config, edges, indegree, pallet_dims, deadline=deadline
     )
@@ -1035,7 +1230,7 @@ def _side_directions_between(
 def _direction_blocker_map(
     geometry: List[Tuple[float, float, float, float, float, float]],
     config: ExecutionSequenceConfig,
-    include_lower: bool = False,
+    include_lower: bool = True,
     deadline: Optional[float] = None,
 ) -> List[Dict[str, Set[int]]]:
     result: List[Dict[str, Set[int]]] = [
@@ -1070,9 +1265,20 @@ def _occupied_from_blocker_map(
     }
 
 
-def _is_open_corner_pattern(
+def _is_pocket_free(
     occupied: Set[str], config: ExecutionSequenceConfig
 ) -> bool:
+    """Return whether a placement keeps the robot approach corridor clear.
+
+    ``approach_directional`` requires the two sides the end effector sweeps
+    through to be empty; the opposite two sides may be fully occupied because
+    neither the pre-position offset, the diagonal push nor the suction overhang
+    ever reaches them. ``open_corner`` keeps the earlier direction-agnostic
+    rule for offline studies and other robot stations.
+    """
+
+    if config.pocket_rule == "approach_directional":
+        return occupied.isdisjoint(_approach_directions(config))
     if len(occupied) > config.max_occupied_directions:
         return False
     if {"x-", "x+"}.issubset(occupied):
@@ -1093,13 +1299,20 @@ def _assert_open_direction_replay(
         occupied = _occupied_from_blocker_map(
             target_idx, placed, blockers
         )
-        if not _is_open_corner_pattern(occupied, config):
+        if not _is_pocket_free(occupied, config):
+            rule_detail = (
+                "approach directions=%s"
+                % ",".join(sorted(_approach_directions(config)))
+                if config.pocket_rule == "approach_directional"
+                else "max occupied directions=%d"
+                % config.max_occupied_directions
+            )
             raise ExecutionSequenceError(
-                "box %r does not retain an open corner; occupied "
-                "directions=%s"
+                "box %r is scheduled into a pocket; occupied directions=%s; %s"
                 % (
                     items[target_idx].get("id"),
                     ",".join(sorted(occupied)),
+                    rule_detail,
                 )
             )
         placed.add(target_idx)
@@ -1176,7 +1389,7 @@ def _residual_can_complete(
             idx in remaining
             and idx not in queued
             and successor_count[idx] == 0
-            and _is_open_corner_pattern(occupied, config)
+            and _is_pocket_free(occupied, config)
         ):
             heapq.heappush(eligible, (-preference_rank[idx], idx))
             queued.add(idx)
@@ -1253,6 +1466,435 @@ def _dependency_inherited_forward_keys(
     return inherited_keys
 
 
+def _strongly_connected_component_ids(
+    edges: List[Set[int]], deadline: Optional[float]
+) -> List[int]:
+    reverse_edges: List[Set[int]] = [set() for _targets in edges]
+    for source_idx, targets in enumerate(edges):
+        _check_deadline(deadline)
+        for target_idx in targets:
+            _check_deadline(deadline)
+            reverse_edges[target_idx].add(source_idx)
+
+    visited: Set[int] = set()
+    finish_order: List[int] = []
+    for root_idx in range(len(edges)):
+        _check_deadline(deadline)
+        if root_idx in visited:
+            continue
+        visited.add(root_idx)
+        stack = [(root_idx, iter(sorted(edges[root_idx])))]
+        while stack:
+            _check_deadline(deadline)
+            node_idx, successors = stack[-1]
+            try:
+                target_idx = next(successors)
+            except StopIteration:
+                finish_order.append(node_idx)
+                stack.pop()
+                continue
+            if target_idx not in visited:
+                visited.add(target_idx)
+                stack.append(
+                    (target_idx, iter(sorted(edges[target_idx])))
+                )
+
+    component_ids = [-1] * len(edges)
+    component_id = 0
+    for root_idx in reversed(finish_order):
+        _check_deadline(deadline)
+        if component_ids[root_idx] >= 0:
+            continue
+        component_ids[root_idx] = component_id
+        stack = [root_idx]
+        while stack:
+            _check_deadline(deadline)
+            node_idx = stack.pop()
+            for predecessor_idx in sorted(reverse_edges[node_idx]):
+                _check_deadline(deadline)
+                if component_ids[predecessor_idx] >= 0:
+                    continue
+                component_ids[predecessor_idx] = component_id
+                stack.append(predecessor_idx)
+        component_id += 1
+    return component_ids
+
+
+def _path_exists(
+    edges: List[Set[int]],
+    source_idx: int,
+    target_idx: int,
+    deadline: Optional[float],
+) -> bool:
+    if source_idx == target_idx:
+        return True
+    visited = {source_idx}
+    stack = [source_idx]
+    while stack:
+        _check_deadline(deadline)
+        node_idx = stack.pop()
+        for successor_idx in edges[node_idx]:
+            _check_deadline(deadline)
+            if successor_idx == target_idx:
+                return True
+            if successor_idx not in visited:
+                visited.add(successor_idx)
+                stack.append(successor_idx)
+    return False
+
+
+def _is_x_min_clamp_dependency(
+    source_idx: int,
+    blocker_idx: int,
+    geometry: List[Tuple[float, float, float, float, float, float]],
+    config: ExecutionSequenceConfig,
+) -> bool:
+    source = geometry[source_idx]
+    if (
+        source[0]
+        > config.side_neighbor_clearance_mm
+        + config.coordinate_tolerance_mm
+    ):
+        return False
+    return "x+" in _side_directions_between(
+        source,
+        geometry[blocker_idx],
+        config,
+        include_lower=True,
+    )
+
+
+def _far_boundary_clamp_dependencies(
+    items: List[Dict],
+    config: ExecutionSequenceConfig,
+    pallet_dims: Dict[str, float],
+    deadline: Optional[float] = None,
+) -> Set[Tuple[int, int]]:
+    """Require far-boundary boxes before their inward side neighbors."""
+
+    geometry = [_physical_geometry(item) for item in items]
+    blockers = _direction_blocker_map(
+        geometry,
+        config,
+        include_lower=True,
+        deadline=deadline,
+    )
+    threshold = (
+        config.side_neighbor_clearance_mm
+        + config.coordinate_tolerance_mm
+    )
+    dependencies: Set[Tuple[int, int]] = set()
+    for target_idx, (x, y, _z, length, width, _height) in enumerate(
+        geometry
+    ):
+        _check_deadline(deadline)
+        inward_directions = []
+        if config.origin.startswith("x_min") and x <= threshold:
+            inward_directions.append("x+")
+        elif (
+            config.origin.startswith("x_max")
+            and pallet_dims["length"] - (x + length) <= threshold
+        ):
+            inward_directions.append("x-")
+        if config.origin.endswith("y_min") and y <= threshold:
+            inward_directions.append("y+")
+        elif (
+            config.origin.endswith("y_max")
+            and pallet_dims["width"] - (y + width) <= threshold
+        ):
+            inward_directions.append("y-")
+        for direction in inward_directions:
+            _check_deadline(deadline)
+            dependencies.update(
+                (target_idx, blocker_idx)
+                for blocker_idx in blockers[target_idx][direction]
+            )
+    return dependencies
+
+
+def _boundary_clamp_diagnostics(
+    source_items: List[Dict],
+    ordered_items: List[Dict],
+    config: ExecutionSequenceConfig,
+) -> Dict:
+    if not source_items:
+        return {
+            "boundary_clamp_relaxed_count": 0,
+            "boundary_clamp_relaxations": [],
+        }
+    dependencies = _far_boundary_clamp_dependencies(
+        source_items,
+        config,
+        _pallet_dims(source_items),
+    )
+    order_rank = {
+        item.get("id"): position
+        for position, item in enumerate(ordered_items)
+    }
+    relaxations = []
+    for source_idx, blocker_idx in sorted(dependencies):
+        source_id = source_items[source_idx].get("id")
+        blocker_id = source_items[blocker_idx].get("id")
+        if order_rank[source_id] < order_rank[blocker_id]:
+            continue
+        relaxations.append(
+            {
+                "target_box_id": source_id,
+                "blocker_box_id": blocker_id,
+            }
+        )
+    return {
+        "boundary_clamp_relaxed_count": len(relaxations),
+        "boundary_clamp_relaxations": relaxations,
+    }
+
+
+def _pocket_diagnostics(
+    ordered_items: List[Dict], config: ExecutionSequenceConfig
+) -> Dict:
+    geometry = [_physical_geometry(item) for item in ordered_items]
+    blockers = _direction_blocker_map(
+        geometry,
+        config,
+        include_lower=True,
+    )
+    placed: Set[int] = set()
+    violations = []
+    for target_idx, item in enumerate(ordered_items):
+        occupied = _occupied_from_blocker_map(
+            target_idx, placed, blockers
+        )
+        if not _is_pocket_free(occupied, config):
+            violations.append(
+                {
+                    "target_box_id": item.get("id"),
+                    "target_seq": target_idx + 1,
+                    "occupied_directions": sorted(occupied),
+                }
+            )
+        placed.add(target_idx)
+    return {
+        "pocket_violation_count": len(violations),
+        "pocket_violations": violations,
+    }
+
+
+def _select_feasible_safety_edges(
+    base_edges: List[Set[int]],
+    full_edges: List[Set[int]],
+    forward_keys: List[Tuple],
+    items: List[Dict],
+    config: ExecutionSequenceConfig,
+    blockers: Optional[List[Dict[str, Set[int]]]],
+    deadline: Optional[float],
+    priority_safety_edges: Optional[Set[Tuple[int, int]]] = None,
+    pallet_id=None,
+) -> Tuple[List[Set[int]], List[int], Optional[List[int]], int]:
+    """Keep safety edges without displacing the primary wavefront seed."""
+
+    if not (
+        len(base_edges) == len(full_edges) == len(forward_keys)
+    ):
+        raise ValueError("dependency graph sizes must match")
+    component_ids = _strongly_connected_component_ids(
+        full_edges, deadline
+    )
+    candidates = [
+        (source_idx, target_idx)
+        for source_idx, targets in enumerate(full_edges)
+        for target_idx in targets.difference(base_edges[source_idx])
+    ]
+    retained_edges = [set(targets) for targets in base_edges]
+    deviations: List[Tuple[int, int, str, bool]] = []
+    ordered_indices = _stable_forward_order(
+        items,
+        retained_edges,
+        config,
+        forward_keys,
+        blockers,
+        deadline,
+        emit_deviation_log=False,
+        deviation_sink=deviations,
+    )
+    if ordered_indices is None:
+        return retained_edges, _indegree(retained_edges), None, len(candidates)
+    geometry = [_physical_geometry(item) for item in items]
+    pallet_dims = _pallet_dims(items)
+    origin_progress = [
+        _origin_progress(entry, config.origin, pallet_dims)
+        for entry in geometry
+    ]
+    strict_origin_keys = [
+        (
+            max(origin_progress[idx]),
+            origin_progress[idx][0],
+            origin_progress[idx][1],
+            geometry[idx][2],
+            forward_keys[idx],
+            idx,
+        )
+        for idx in range(len(items))
+    ]
+    strict_origin_order = _stable_forward_order(
+        items,
+        retained_edges,
+        config,
+        strict_origin_keys,
+        blockers,
+        deadline,
+        emit_deviation_log=False,
+    )
+    if strict_origin_order is None:
+        return retained_edges, _indegree(retained_edges), None, len(candidates)
+    primary_wave_seed = (
+        ordered_indices[0]
+        if ordered_indices[0] == strict_origin_order[0]
+        else None
+    )
+    selection_forward_keys = (
+        [
+            (0 if idx == primary_wave_seed else 1, forward_keys[idx])
+            for idx in range(len(items))
+        ]
+        if primary_wave_seed is not None
+        else forward_keys
+    )
+    initial_rank = {
+        item_idx: position
+        for position, item_idx in enumerate(ordered_indices)
+    }
+    if priority_safety_edges is None:
+        clamp_dependencies = {
+            edge
+            for edge in candidates
+            if _is_x_min_clamp_dependency(
+                edge[0], edge[1], geometry, config
+            )
+        }
+    else:
+        clamp_dependencies = set(candidates).intersection(
+            priority_safety_edges
+        )
+    elevated_path_dependencies = {
+        edge
+        for edge in candidates
+        if geometry[edge[0]][2]
+        > geometry[edge[1]][2] + config.coordinate_tolerance_mm
+    }
+    candidates.sort(
+        key=lambda edge: (
+            # Do not install a lower wall before an elevated target whose
+            # descent/approach path depends on that wall still being absent.
+            0 if edge in elevated_path_dependencies else 1,
+            0 if edge in clamp_dependencies else 1,
+            0
+            if edge in clamp_dependencies
+            and initial_rank[edge[0]] > initial_rank[edge[1]]
+            else 1,
+            0
+            if component_ids[edge[0]] != component_ids[edge[1]]
+            else 1,
+            1 if edge[0] in full_edges[edge[1]] else 0,
+            0 if forward_keys[edge[0]] > forward_keys[edge[1]] else 1,
+            forward_keys[edge[1]],
+            forward_keys[edge[0]],
+            edge,
+        )
+    )
+
+    relaxed_count = 0
+    for candidate_index, (source_idx, target_idx) in enumerate(candidates):
+        try:
+            _check_deadline(deadline)
+            rank = {
+                item_idx: position
+                for position, item_idx in enumerate(ordered_indices)
+            }
+            if rank[source_idx] < rank[target_idx]:
+                retained_edges[source_idx].add(target_idx)
+                continue
+            if _path_exists(
+                retained_edges, target_idx, source_idx, deadline
+            ):
+                relaxed_count += 1
+                continue
+            trial_edges = [set(targets) for targets in retained_edges]
+            trial_edges[source_idx].add(target_idx)
+            trial_deviations: List[Tuple[int, int, str, bool]] = []
+            trial_order = _stable_forward_order(
+                items,
+                trial_edges,
+                config,
+                selection_forward_keys,
+                blockers,
+                deadline,
+                emit_deviation_log=False,
+                deviation_sink=trial_deviations,
+            )
+            if trial_order is None:
+                relaxed_count += 1
+                continue
+            if (
+                primary_wave_seed is not None
+                and trial_order[0] != primary_wave_seed
+            ):
+                relaxed_count += 1
+                continue
+            retained_edges = trial_edges
+            ordered_indices = trial_order
+            deviations = trial_deviations
+        except _ExecutionSequenceDeadlineExceeded:
+            relaxed_count += len(candidates) - candidate_index
+            break
+
+    _emit_scan_deviation_log(items, deviations, pallet_id)
+    return (
+        retained_edges,
+        _indegree(retained_edges),
+        ordered_indices,
+        relaxed_count,
+    )
+
+
+def _indegree(edges: List[Set[int]]) -> List[int]:
+    result = [0] * len(edges)
+    for targets in edges:
+        for target_idx in targets:
+            result[target_idx] += 1
+    return result
+
+
+def _emit_scan_deviation_log(
+    items: List[Dict],
+    deviations: List[Tuple[int, int, str, bool]],
+    pallet_id,
+) -> None:
+    if not deviations:
+        return
+    preview_entries = []
+    for expected_idx, selected_idx, reason, lookahead in deviations[:8]:
+        expected_id = items[expected_idx].get("id")
+        selected_id = items[selected_idx].get("id")
+        preview_entries.append(
+            "expected=%r selected=%r box=%r after=%r reason=%s%s"
+            % (
+                expected_id,
+                selected_id,
+                expected_id,
+                selected_id,
+                reason,
+                " lookahead=true" if lookahead else "",
+            )
+        )
+    _LOGGER.warning(
+        "execution scan deviations pallet=%r count=%d: %s%s",
+        pallet_id,
+        len(deviations),
+        "; ".join(preview_entries),
+        "; ..." if len(deviations) > 8 else "",
+    )
+
+
 def _stable_forward_order(
     items: List[Dict],
     edges: List[Set[int]],
@@ -1261,9 +1903,13 @@ def _stable_forward_order(
     blockers: Optional[List[Dict[str, Set[int]]]],
     deadline: Optional[float],
     pallet_id=None,
+    emit_deviation_log: bool = True,
+    deviation_sink: Optional[List[Tuple[int, int, str, bool]]] = None,
 ) -> Optional[List[int]]:
     """Choose the lexicographically earliest completable forward schedule."""
 
+    if deviation_sink is not None:
+        deviation_sink.clear()
     if len(forward_keys) != len(items):
         raise ValueError("forward_keys must match items length")
     _check_deadline(deadline)
@@ -1311,7 +1957,7 @@ def _stable_forward_order(
                 occupied = _occupied_from_blocker_map(
                     candidate_idx, placed, blockers
                 )
-                if not _is_open_corner_pattern(occupied, config):
+                if not _is_pocket_free(occupied, config):
                     if first_rejected is None:
                         first_rejected = (
                             candidate_idx,
@@ -1355,29 +2001,10 @@ def _stable_forward_order(
         remaining.remove(selected_idx)
         placed.add(selected_idx)
         ordered.append(selected_idx)
-    if deviations:
-        preview_entries = []
-        for expected_idx, selected_idx, reason, lookahead in deviations[:8]:
-            expected_id = items[expected_idx].get("id")
-            selected_id = items[selected_idx].get("id")
-            preview_entries.append(
-                "expected=%r selected=%r box=%r after=%r reason=%s%s"
-                % (
-                    expected_id,
-                    selected_id,
-                    expected_id,
-                    selected_id,
-                    reason,
-                    " lookahead=true" if lookahead else "",
-                )
-            )
-        _LOGGER.warning(
-            "execution scan deviations pallet=%r count=%d: %s%s",
-            pallet_id,
-            len(deviations),
-            "; ".join(preview_entries),
-            "; ..." if len(deviations) > 8 else "",
-        )
+    if deviation_sink is not None:
+        deviation_sink.extend(deviations)
+    if emit_deviation_log:
+        _emit_scan_deviation_log(items, deviations, pallet_id)
     return ordered
 
 
@@ -1456,14 +2083,14 @@ def _directed_wave_keys(
         _check_deadline(deadline)
         spatial_ring = max(x_rank, y_rank)
         support_tier = support_tiers[stable_index]
-        wave = spatial_ring + support_tier
+        wave = spatial_ring + _TIER_WAVE_RINGS * support_tier
         keys.append(
             (
                 wave,
+                support_tier,
                 spatial_ring,
                 x_rank,
                 y_rank,
-                support_tier,
                 stable_index,
             )
         )
@@ -1503,6 +2130,16 @@ def _raise_no_execution_order(
     pallet: Dict, config: ExecutionSequenceConfig
 ) -> None:
     if config.preserve_open_direction:
+        if config.pocket_rule == "approach_directional":
+            raise ExecutionSequenceError(
+                "pallet %r has no execution order keeping the %s approach "
+                "directions free within %.3fs"
+                % (
+                    pallet.get("pallet_id"),
+                    "/".join(sorted(_approach_directions(config))),
+                    config.max_sequence_search_seconds_per_pallet,
+                )
+            )
         raise ExecutionSequenceError(
             "pallet %r has no execution order preserving at least %d open "
             "directions within %.3fs"
@@ -1671,30 +2308,85 @@ def _force_sequence_pallet_items(
             dims,
             deadline=deadline,
         )
-        _assert_dependency_graph_acyclic(
-            pallet, source_items, edges, indegree
+        full_edges = [set(targets) for targets in edges]
+        full_indegree = list(indegree)
+        priority_safety_edges = _far_boundary_clamp_dependencies(
+            source_items,
+            forced_config,
+            dims,
+            deadline=deadline,
         )
+        for source_idx, target_idx in priority_safety_edges:
+            _add_edge(
+                full_edges,
+                full_indegree,
+                source_idx,
+                target_idx,
+            )
+        if forced_config.path_gate_mode == "hard":
+            _add_clearance_edges(
+                source_items,
+                forced_config,
+                full_edges,
+                full_indegree,
+                deadline=deadline,
+            )
+            _add_approach_edges(
+                source_items,
+                forced_config,
+                full_edges,
+                full_indegree,
+                dims,
+                deadline=deadline,
+            )
         geometry = [_physical_geometry(item) for item in source_items]
+        forward_keys = _directed_wave_keys(
+            geometry,
+            supports,
+            forced_config,
+            dims,
+            deadline=deadline,
+        )
         blockers = _direction_blocker_map(
             geometry,
             forced_config,
             deadline=deadline,
         )
-        ordered_indices = _stable_directed_wave_order(
-            source_items,
+        selection_deadline = deadline - min(
+            0.25,
+            forced_config.forced_sequence_search_seconds_per_pallet * 0.05,
+        )
+        (
             edges,
-            supports,
+            indegree,
+            ordered_indices,
+            relaxed_count,
+        ) = _select_feasible_safety_edges(
+            edges,
+            full_edges,
+            forward_keys,
+            source_items,
             forced_config,
-            dims,
-            geometry,
             blockers,
-            deadline,
-            pallet.get("pallet_id"),
+            selection_deadline,
+            priority_safety_edges=priority_safety_edges,
+            pallet_id=pallet.get("pallet_id"),
+        )
+        if relaxed_count:
+            _LOGGER.warning(
+                "forced execution relaxed %d boundary/path safety "
+                "dependencies conflicting with an executable order "
+                "pallet=%r",
+                relaxed_count,
+                pallet.get("pallet_id"),
+            )
+        _assert_dependency_graph_acyclic(
+            pallet, source_items, edges, indegree
         )
         if ordered_indices is None:
             raise ExecutionSequenceError(
                 "pallet %r has no forced execution order preserving support, "
-                "height egress, and an open corner"
+                "height egress, and a pocket-free approach"
                 % pallet.get("pallet_id")
             )
         _assert_dependency_order(source_items, ordered_indices, edges)
@@ -1713,7 +2405,7 @@ def _force_sequence_pallet_items(
     except _ExecutionSequenceDeadlineExceeded as exc:
         raise ExecutionSequenceError(
             "pallet %r forced execution order exceeded %.3fs while "
-            "preserving support, height egress, and an open corner"
+            "preserving support, height egress, and a pocket-free approach"
             % (
                 pallet.get("pallet_id"),
                 forced_config.forced_sequence_search_seconds_per_pallet,
@@ -1735,6 +2427,8 @@ def sequence_pallet_items(
     ids = [item.get("id") for item in source_items]
     if any(box_id is None for box_id in ids) or len(set(ids)) != len(ids):
         raise ExecutionSequenceError("box ids must be present and unique")
+    for item in source_items:
+        _suction_rect(item, 0.0, cfg.require_suction_pose)
 
     dims = _pallet_dims(source_items)
     _validate_bounds(source_items, dims, cfg.coordinate_tolerance_mm)
@@ -1754,21 +2448,24 @@ def sequence_pallet_items(
         )
     except _ExecutionSequenceDeadlineExceeded:
         _raise_no_execution_order(pallet, cfg)
-    _add_clearance_edges(source_items, cfg, edges, indegree)
-    try:
-        _add_approach_edges(
-            source_items,
-            cfg,
-            edges,
-            indegree,
-            dims,
-            deadline=deadline,
+    if cfg.path_gate_mode == "hard":
+        try:
+            _add_clearance_edges(
+                source_items, cfg, edges, indegree, deadline=deadline
+            )
+            _add_approach_edges(
+                source_items,
+                cfg,
+                edges,
+                indegree,
+                dims,
+                deadline=deadline,
+            )
+        except _ExecutionSequenceDeadlineExceeded:
+            _raise_no_execution_order(pallet, cfg)
+        _assert_dependency_graph_acyclic(
+            pallet, source_items, edges, indegree
         )
-    except _ExecutionSequenceDeadlineExceeded:
-        _raise_no_execution_order(pallet, cfg)
-    _assert_dependency_graph_acyclic(
-        pallet, source_items, edges, indegree
-    )
     geometry = [_physical_geometry(item) for item in source_items]
     blockers: Optional[List[Dict[str, Set[int]]]] = None
     try:
@@ -1778,32 +2475,69 @@ def sequence_pallet_items(
                 cfg,
                 deadline=deadline,
             )
-        ordered_indices = _stable_directed_wave_order(
-            source_items,
-            edges,
-            supports,
-            cfg,
-            dims,
+        forward_keys = _directed_wave_keys(
             geometry,
-            blockers,
-            deadline,
-            pallet.get("pallet_id"),
-        )
-    except _ExecutionSequenceDeadlineExceeded:
-        ordered_indices = None
-    if ordered_indices is None:
-        _raise_no_execution_order(pallet, cfg)
-    _assert_replay_safe(source_items, ordered_indices, supports, cfg)
-    try:
-        _assert_approach_replay_safe(
-            source_items,
-            ordered_indices,
+            supports,
             cfg,
             dims,
             deadline=deadline,
         )
+        clamp_dependencies = _far_boundary_clamp_dependencies(
+            source_items,
+            cfg,
+            dims,
+            deadline=deadline,
+        )
+        full_edges = [set(targets) for targets in edges]
+        full_indegree = list(indegree)
+        for source_idx, target_idx in clamp_dependencies:
+            _add_edge(
+                full_edges,
+                full_indegree,
+                source_idx,
+                target_idx,
+            )
+        edges, indegree, ordered_indices, relaxed_count = (
+            _select_feasible_safety_edges(
+                edges,
+                full_edges,
+                forward_keys,
+                source_items,
+                cfg,
+                blockers,
+                deadline,
+                priority_safety_edges=clamp_dependencies,
+                pallet_id=pallet.get("pallet_id"),
+            )
+        )
+        if relaxed_count:
+            _LOGGER.warning(
+                "execution relaxed %d far-boundary clamp dependencies "
+                "pallet=%r",
+                relaxed_count,
+                pallet.get("pallet_id"),
+            )
     except _ExecutionSequenceDeadlineExceeded:
+        ordered_indices = None
+    if ordered_indices is None:
         _raise_no_execution_order(pallet, cfg)
+    _assert_dependency_graph_acyclic(
+        pallet, source_items, edges, indegree
+    )
+    if cfg.path_gate_mode == "hard":
+        _assert_replay_safe(source_items, ordered_indices, supports, cfg)
+        try:
+            _assert_approach_replay_safe(
+                source_items,
+                ordered_indices,
+                cfg,
+                dims,
+                deadline=deadline,
+            )
+        except _ExecutionSequenceDeadlineExceeded:
+            _raise_no_execution_order(pallet, cfg)
+    else:
+        _assert_dependency_order(source_items, ordered_indices, edges)
     if cfg.preserve_open_direction:
         _assert_open_direction_replay(
             source_items, ordered_indices, cfg, blockers
@@ -1816,7 +2550,7 @@ def sequence_pallet_items(
             dims,
             cfg,
             deadline,
-            validate_full_path=True,
+            validate_full_path=cfg.path_gate_mode == "hard",
         )
     except _ExecutionSequenceDeadlineExceeded:
         _raise_no_execution_order(pallet, cfg)
@@ -1854,10 +2588,21 @@ def plan_execution_report(
             ordered_items = _force_sequence_pallet_items(
                 source_pallet, cfg
             )
+            pallet["sequence_status"] = (
+                "FORCED_EXECUTION_AFTER_GATE_FAILURE"
+            )
+            pallet["geometric_sequence_feasible"] = False
             _LOGGER.warning(
                 "forced execution order pallet=%r after gate failure: %s",
                 source_pallet.get("pallet_id"),
                 gate_error,
             )
         pallet["packed_items"] = ordered_items
+        pallet[EXECUTION_SEQUENCE_DIAGNOSTICS_FIELD] = (
+            _execution_sequence_diagnostics(
+                ordered_items,
+                cfg,
+                source_items=list(source_pallet.get("packed_items") or []),
+            )
+        )
     return result

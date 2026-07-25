@@ -10,6 +10,7 @@ class ExecutionSequenceSettings:
     """Enable flag and default values for execution-order planning."""
 
     enabled: bool = False
+    path_gate_mode: str = "score_only"
     origin: str = "x_min_y_min"
     coordinate_tolerance_mm: float = 1e-6
     box_xy_clearance_mm: float = 0.0
@@ -21,6 +22,7 @@ class ExecutionSequenceSettings:
     approach_box_xy_clearance_mm: float = 0.0
     approach_suction_xy_clearance_mm: float = 0.0
     require_suction_pose: bool = True
+    pocket_rule: str = "approach_directional"
     max_occupied_directions: int = 2
     side_neighbor_clearance_mm: float = 5.0
     side_height_tolerance_mm: float = 2.0
@@ -31,6 +33,14 @@ class ExecutionSequenceSettings:
     scan_column_tolerance_mm: float = 5.0
 
     def __post_init__(self) -> None:
+        if self.path_gate_mode not in ("hard", "score_only"):
+            raise ValueError(
+                "path_gate_mode must be one of: hard, score_only"
+            )
+        if self.pocket_rule not in ("approach_directional", "open_corner"):
+            raise ValueError(
+                "pocket_rule must be one of: approach_directional, open_corner"
+            )
         for name in (
             "enabled",
             "require_suction_pose",

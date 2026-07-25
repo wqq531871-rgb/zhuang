@@ -210,12 +210,14 @@ def test_execution_sequence_config():
     loader = ConfigLoader.from_dict({
         'execution_sequence': {
             'enabled': True,
+            'path_gate_mode': 'score_only',
             'origin': 'x_max_y_min',
             'coordinate_tolerance_mm': 0.01,
             'box_xy_clearance_mm': 8.0,
             'suction_xy_clearance_mm': 12.0,
             'suction_z_clearance_mm': 5.0,
             'require_suction_pose': False,
+            'pocket_rule': 'open_corner',
             'max_occupied_directions': 2,
             'side_neighbor_clearance_mm': 6.0,
             'side_height_tolerance_mm': 2.0,
@@ -230,12 +232,14 @@ def test_execution_sequence_config():
     config = loader.load_execution_sequence_config()
 
     assert config.enabled is True
+    assert config.path_gate_mode == 'score_only'
     assert config.origin == 'x_max_y_min'
     assert config.coordinate_tolerance_mm == 0.01
     assert config.box_xy_clearance_mm == 8.0
     assert config.suction_xy_clearance_mm == 12.0
     assert config.suction_z_clearance_mm == 5.0
     assert config.require_suction_pose is False
+    assert config.pocket_rule == 'open_corner'
     assert config.max_occupied_directions == 2
     assert config.side_neighbor_clearance_mm == 6.0
     assert config.side_height_tolerance_mm == 2.0
@@ -277,6 +281,45 @@ def test_execution_sequence_config_rejects_string_force_publish_switch():
     with pytest.raises(
         ValueError,
         match='force_publish_on_gate_failure must be a boolean',
+    ):
+        loader.load_execution_sequence_config()
+
+
+def test_execution_sequence_config_rejects_unknown_path_gate_mode():
+    loader = ConfigLoader.from_dict({
+        'execution_sequence': {
+            'path_gate_mode': 'sometimes',
+        }
+    })
+
+    with pytest.raises(
+        ValueError,
+        match='path_gate_mode must be one of: hard, score_only',
+    ):
+        loader.load_execution_sequence_config()
+
+
+def test_execution_sequence_config_defaults_to_the_directional_pocket_rule():
+    loader = ConfigLoader.from_dict({'execution_sequence': {'enabled': True}})
+
+    assert (
+        loader.load_execution_sequence_config().pocket_rule
+        == 'approach_directional'
+    )
+
+
+def test_execution_sequence_config_rejects_unknown_pocket_rule():
+    loader = ConfigLoader.from_dict({
+        'execution_sequence': {
+            'pocket_rule': 'whatever',
+        }
+    })
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            'pocket_rule must be one of: approach_directional, open_corner'
+        ),
     ):
         loader.load_execution_sequence_config()
 
@@ -343,6 +386,7 @@ def test_generated_default_config_matches_shipped_approach_behavior(tmp_path):
         assert getattr(generated, field) == getattr(shipped, field) == expected
     assert generated.force_publish_on_gate_failure is True
     assert shipped.force_publish_on_gate_failure is True
+    assert generated.path_gate_mode == shipped.path_gate_mode == 'score_only'
     assert generated.forced_sequence_search_seconds_per_pallet == 30.0
     assert shipped.forced_sequence_search_seconds_per_pallet == 30.0
 

@@ -230,6 +230,7 @@ def create_default_config_yaml(output_path: Path) -> None:
         },
         'execution_sequence': {
             'enabled': True,
+            'path_gate_mode': 'score_only',
             'origin': 'x_min_y_min',
             'coordinate_tolerance_mm': 1e-6,
             'box_xy_clearance_mm': 0.0,
@@ -241,6 +242,7 @@ def create_default_config_yaml(output_path: Path) -> None:
             'approach_box_xy_clearance_mm': 0.0,
             'approach_suction_xy_clearance_mm': 0.0,
             'require_suction_pose': True,
+            'pocket_rule': 'approach_directional',
             'max_occupied_directions': 2,
             'side_neighbor_clearance_mm': 5.0,
             'side_height_tolerance_mm': 2.0,
