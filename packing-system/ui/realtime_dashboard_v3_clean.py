@@ -1007,7 +1007,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         live_form.setContentsMargins(12, 10, 12, 10)
         live_form.setSpacing(6)
 
-        self.lbl_live_order = QtWidgets.QLabel("订单：—")
+        self.lbl_live_order = QtWidgets.QLabel("托盘id：—")
         self.lbl_live_order.setObjectName("SmallInfo")
         self.lbl_live_order.setWordWrap(True)
         live_form.addRow("", self.lbl_live_order)
@@ -1207,7 +1207,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self._on_live_plc_selection_changed(self.lst_live_plc.currentItem())
 
         if err:
-            self.lbl_live_order.setText("订单：—")
+            self.lbl_live_order.setText("托盘id：—")
             self.lbl_live_box.setText("进度：—")
             self.lbl_live_rotation.setText("是否旋转：—")
             self.lbl_live_plc.setText("状态：暂时读不到任务，请点刷新重试")
@@ -1216,7 +1216,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             return
 
         if not uid:
-            self.lbl_live_order.setText("订单：—")
+            self.lbl_live_order.setText("托盘id：—")
             self.lbl_live_box.setText("进度：—")
             self.lbl_live_rotation.setText("是否旋转：—")
             self.lbl_live_plc.setText("状态：等待 WCS 选定托盘（或重新计算后需重新选定）…")
@@ -1224,12 +1224,19 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
                 self.step_live_stack.set_state("idle", "等待选定托盘")
             return
 
+        # 只展示业务订单号；绝不把 box_unique_id 填到「托盘id」
         if not order_id and rows:
             cmd0 = (rows[-1].get("command") or {}) if rows else {}
             if isinstance(cmd0, dict):
-                order_id = str(cmd0.get("order_id") or "")
+                order_id = str(cmd0.get("order_id") or "").strip()
+        if not order_id or order_id == uid:
+            looked = self._lookup_order_id_for_uid(uid)
+            if looked and looked != uid:
+                order_id = looked
+            elif order_id == uid:
+                order_id = ""
 
-        self.lbl_live_order.setText(f"订单：{order_id or '—'}")
+        self.lbl_live_order.setText(f"托盘id：{order_id or '—'}")
 
         current = self.lst_live_plc.currentItem()
         current_row = current.data(QtCore.Qt.UserRole + 2) if current else None
@@ -1309,6 +1316,34 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         except (OSError, ValueError, TypeError):
             return {}
         return data if isinstance(data, dict) else {}
+
+    def _lookup_order_id_for_uid(self, box_unique_id: str) -> str:
+        """从 wcs_success_box 取业务 order_id（不是 box_unique_id）。"""
+        uid = str(box_unique_id or "").strip()
+        if not uid:
+            return ""
+        try:
+            self._ensure_packing_import_path()
+            from src.service.plc_queue_db import get_plc_queue_repo
+
+            config_path = Path(self.project_dir) / DEFAULT_CONFIG_REL
+            repo = get_plc_queue_repo(config_path=config_path)
+            for seq in (1, 0, 2):
+                row = repo.fetch_success_box_row(uid, seq)
+                if not row:
+                    continue
+                oid = str(row.get("order_id") or "").strip()
+                if oid:
+                    return oid
+            for row in repo.list_for_pallet(uid) or []:
+                cmd = row.get("command") or {}
+                if isinstance(cmd, dict):
+                    oid = str(cmd.get("order_id") or "").strip()
+                    if oid:
+                        return oid
+        except Exception:
+            return ""
+        return ""
 
     def _find_plan_map_for_uid(self, box_unique_id: str) -> Optional[Path]:
         """在 workspace output 中查找包含该托盘的最新 plan map。"""
@@ -1450,13 +1485,19 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         except Exception as exc:
             QtWidgets.QMessageBox.critical(self, "现场码垛", f"校验顺序失败：{exc}")
             return
-        order_id = (cmd or {}).get("order_id") or "—"
+        order_id = str((cmd or {}).get("order_id") or "").strip()
+        if not order_id or order_id == uid:
+            looked = self._lookup_order_id_for_uid(uid)
+            if looked and looked != uid:
+                order_id = looked
+            else:
+                order_id = "—"
         rotate = "需要旋转" if int(row.get("state") or 0) == 2 else "不旋转"
         confirm = QtWidgets.QMessageBox.question(
             self,
             "应急补发",
             (
-                f"订单：{order_id}\n"
+                f"托盘id：{order_id}\n"
                 f"箱子：第 {seq} 箱（按顺序）\n"
                 f"动作：{rotate}\n\n"
                 "正常流程会自动下传。\n"

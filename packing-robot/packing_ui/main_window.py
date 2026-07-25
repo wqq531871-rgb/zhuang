@@ -123,8 +123,8 @@ class PackingMainWindow(QMainWindow):
 
         form = QFormLayout()
         form.setVerticalSpacing(10)
-        form.addRow("托盘 ID", self.pallet_combo)
-        form.addRow("订单编号", self.order_label)
+        form.addRow("托盘", self.pallet_combo)
+        form.addRow("托盘id", self.order_label)
         form.addRow("托盘类型", self.type_label)
         form.addRow("所选箱传送带姿态", self.orientation_combo)
         form.addRow("传送带平面 Z", self.conveyor_z_spin)
@@ -274,9 +274,13 @@ class PackingMainWindow(QMainWindow):
                 continue
             status = str(entry.get("stack_status") or "active")
             tag = "进行中" if status == "active" else "已完成"
-            uid_label = uid or plan.source_key
+            order = str(
+                entry.get("order_id") or plan.sales_order_no or ""
+            ).strip()
+            # 下拉显示订单号，不显示自生成的 box_unique_id
+            label = order if order and order != uid else (uid[:8] + "…" if uid else "—")
             idx = self.pallet_combo.count()
-            self.pallet_combo.addItem(f"{uid_label} · {tag}", plan)
+            self.pallet_combo.addItem(f"{label} · {tag}", plan)
             if prefer_uid and uid == prefer_uid:
                 select_index = idx
                 found_prefer = True
