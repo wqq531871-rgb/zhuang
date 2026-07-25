@@ -25,6 +25,7 @@ class PlcSendWorker(QObject):
         box_unique_id: str,
         sequences: Iterable[int],
         row_loader: Callable[[str, int], dict[str, Any] | None],
+        camera_writer: Callable[[str, int, int, int, int], int],
         client_factory: Callable[[], Any] = create_snap7_client,
         protocol_factory: Callable[..., Any] = S7Client,
         sleep: Callable[[float], None] = time.sleep,
@@ -35,6 +36,7 @@ class PlcSendWorker(QObject):
         self.box_unique_id = str(box_unique_id)
         self.sequences = tuple(int(value) for value in sequences)
         self._row_loader = row_loader
+        self._camera_writer = camera_writer
         self._client_factory = client_factory
         self._protocol_factory = protocol_factory
         self._sleep = sleep
@@ -59,6 +61,39 @@ class PlcSendWorker(QObject):
                 if self._stop_requested:
                     self.status.emit("已停止")
                     return
+
+                inbound = protocol.wait_request(seq)
+                self.plc_status.emit(inbound)
+                dimensions = (
+                    int(inbound.camera_length),
+                    int(inbound.camera_width),
+                    int(inbound.camera_height),
+                )
+                if any(value <= 0 for value in dimensions):
+                    raise ValueError(
+                        f"seq={seq} 的 PLC 相机尺寸无效："
+                        f"DBW6={dimensions[0]}，"
+                        f"DBW8={dimensions[1]}，"
+                        f"DBW10={dimensions[2]}"
+                    )
+                written = int(
+                    self._camera_writer(
+                        self.box_unique_id,
+                        seq,
+                        *dimensions,
+                    )
+                )
+                if written <= 0:
+                    raise ValueError(
+                        f"数据库中找不到 box_unique_id={self.box_unique_id} "
+                        f"seq={seq}"
+                    )
+                self.status.emit(
+                    f"seq={seq} 相机尺寸已写库 "
+                    f"{dimensions[0]}×{dimensions[1]}×{dimensions[2]}，"
+                    "等待数据库 state"
+                )
+
                 while not self._stop_requested:
                     row = self._row_loader(self.box_unique_id, seq)
                     if row is None:
