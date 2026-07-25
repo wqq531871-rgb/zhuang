@@ -69,6 +69,9 @@ def test_success_returns_all_execution_artifact_paths(tmp_path):
     assert outcome.wcs_map_path == out_root / "success" / (
         plan.stem + "_execution_wcs_map.json"
     )
+    # 方案 A：规划成功后删除不带 execution 的原方案
+    assert not plan.exists()
+    assert outcome.report_path.exists()
 
 
 def test_no_success_pallets_go_to_fail_bucket(tmp_path):
@@ -86,6 +89,8 @@ def test_no_success_pallets_go_to_fail_bucket(tmp_path):
 
     assert outcome.succeeded is True
     assert outcome.report_path.parent == out_root / "fail"
+    assert not plan.exists()
+    assert outcome.report_path.exists()
 
 
 def test_failure_falls_back_to_original_report_and_no_wcs_artifacts(tmp_path):
@@ -104,6 +109,7 @@ def test_failure_falls_back_to_original_report_and_no_wcs_artifacts(tmp_path):
     assert outcome.report_path == plan.resolve()
     assert outcome.wcs_path is None
     assert outcome.wcs_map_path is None
+    assert plan.exists()
 
 
 def test_zero_exit_without_complete_artifacts_is_treated_as_failure(tmp_path):
@@ -120,6 +126,7 @@ def test_zero_exit_without_complete_artifacts_is_treated_as_failure(tmp_path):
 
     assert outcome.succeeded is False
     assert outcome.report_path == plan.resolve()
+    assert plan.exists()
 
 
 def test_mismatched_wcs_case_and_map_ids_are_treated_as_failure(tmp_path):
@@ -151,6 +158,9 @@ wcs_map.write_text(json.dumps({}), encoding='utf-8')
 
     assert outcome.succeeded is False
     assert outcome.report_path == plan.resolve()
+    assert plan.exists()
+    # 不完整的 execution 产物应被清理
+    assert not (tmp_path / "output" / "success" / (plan.stem + "_execution.json")).exists()
 
 
 def test_plan_has_success_and_bucket_helpers(tmp_path):

@@ -1,8 +1,8 @@
 """
 Packing report persisters.
 
-The local persister writes success / fail pallet reports under
-output/success and output/fail, plus pallet-level Excel summaries.
+Writes one full packing_plan JSON (+ Excel summary) per run under
+output/success or output/fail: any SUCCESS pallet → success, else fail.
 """
 
 import json
@@ -11,10 +11,7 @@ from typing import Callable, Dict
 
 import pandas as pd
 
-from src.main.output_split import (
-    ensure_success_fail_dirs,
-    split_report_by_status,
-)
+from src.main.output_split import resolve_report_bucket_dir
 
 
 class JsonFileReportPersister:
@@ -25,34 +22,20 @@ class JsonFileReportPersister:
         self._timestamp_fn = timestamp_fn
 
     def persist(self, report: Dict, total_runtime: float) -> None:
-        """Save success/fail JSON (+ Excel) under output/success and output/fail."""
+        """Save one full JSON (+ Excel) under output/success or output/fail."""
         timestamp = self._timestamp_fn("%Y%m%d_%H%M%S")
-        success_dir, fail_dir = ensure_success_fail_dirs(self._output_dir)
-        success_report, fail_report = split_report_by_status(report)
+        bucket = resolve_report_bucket_dir(self._output_dir, report)
+        bucket_label = bucket.name
 
-        written = []
-        if success_report.get("pallets"):
-            json_path = success_dir / f"packing_plan_{timestamp}.json"
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(success_report, f, indent=2, ensure_ascii=False)
-            excel_path = success_dir / f"packing_plan_summary_{timestamp}.xlsx"
-            self._write_pallet_summary_excel(success_report, excel_path)
-            written.append(("success", json_path, excel_path))
-
-        if fail_report.get("pallets"):
-            json_path = fail_dir / f"packing_plan_{timestamp}.json"
-            with open(json_path, "w", encoding="utf-8") as f:
-                json.dump(fail_report, f, indent=2, ensure_ascii=False)
-            excel_path = fail_dir / f"packing_plan_summary_{timestamp}.xlsx"
-            self._write_pallet_summary_excel(fail_report, excel_path)
-            written.append(("fail", json_path, excel_path))
+        json_path = bucket / f"packing_plan_{timestamp}.json"
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2, ensure_ascii=False)
+        excel_path = bucket / f"packing_plan_summary_{timestamp}.xlsx"
+        self._write_pallet_summary_excel(report, excel_path)
 
         print("=" * 40)
-        if not written:
-            print("本轮无托盘结果可写（success/fail 均为空）。")
-        for bucket, json_path, excel_path in written:
-            print(f"[{bucket}] 装箱方案：{json_path}")
-            print(f"[{bucket}] 托盘统计：{excel_path}")
+        print(f"[{bucket_label}] 装箱方案：{json_path}")
+        print(f"[{bucket_label}] 托盘统计：{excel_path}")
         print("=" * 40)
         print(f"算法总运行时间：{total_runtime:.2f} 秒")
         print("=" * 40)

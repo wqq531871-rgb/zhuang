@@ -206,12 +206,17 @@ def run_execution_planning_for_plan(
 
     if completed.returncode != 0:
         log(f"[执行规划] 失败，退出码：{completed.returncode}；使用原方案。")
+        _cleanup_incomplete_execution_artifacts(execution_paths, before, log)
         _persist_original_plan_to_db(plan_path, config_path, log)
         return fallback
     if not _complete_fresh_bundle(execution_paths, before):
         log("[执行规划] 未生成完整且有效的执行文件；使用原方案。")
+        _cleanup_incomplete_execution_artifacts(execution_paths, before, log)
         _persist_original_plan_to_db(plan_path, config_path, log)
         return fallback
+
+    # 方案 A：规划成功只保留带 execution 的主 JSON，删除不带 execution 的原方案。
+    _remove_non_execution_source_plan(plan_path, execution_report, log)
 
     log(f"[执行规划] 完成；统一使用：{execution_report}")
     return ExecutionPlanningOutcome(
@@ -220,6 +225,46 @@ def run_execution_planning_for_plan(
         wcs_output,
         wcs_map_output,
     )
+
+
+def _remove_non_execution_source_plan(
+    plan_path: Path,
+    execution_report: Path,
+    log: Callable[[str], None],
+) -> None:
+    """Delete the pre-execution packing_plan JSON so only *_execution.json remains."""
+    src = Path(plan_path).resolve()
+    dst = Path(execution_report).resolve()
+    if src == dst:
+        return
+    stem = src.stem.lower()
+    if stem.endswith("_execution"):
+        return
+    if not src.is_file():
+        return
+    try:
+        src.unlink()
+        log(f"[执行规划] 已删除原方案（仅保留 execution）：{src.name}")
+    except OSError as exc:
+        log(f"[执行规划] 删除原方案失败：{exc}")
+
+
+def _cleanup_incomplete_execution_artifacts(
+    paths: Tuple[Path, Path, Path],
+    before: Tuple[Optional[Tuple[int, int]], ...],
+    log: Callable[[str], None],
+) -> None:
+    """Remove partially written execution files after a failed planning run."""
+    for path, old in zip(paths, before):
+        if old is not None:
+            continue
+        if not path.is_file():
+            continue
+        try:
+            path.unlink()
+            log(f"[执行规划] 已清理不完整产物：{path.name}")
+        except OSError as exc:
+            log(f"[执行规划] 清理失败 {path.name}：{exc}")
 
 
 def _persist_original_plan_to_db(

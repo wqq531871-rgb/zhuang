@@ -47,8 +47,8 @@ from src.config import (
 )
 from src.main.report_persister import NullReportPersister
 from src.main.output_split import (
-    ensure_success_fail_dirs,
-    split_report_by_status,
+    report_has_success_pallets,
+    resolve_report_bucket_dir,
 )
 from src.service.stock_db import (
     WcsStockRepository,
@@ -434,35 +434,17 @@ class WcsPackingService:
         )
         print("[WCS-装] 本轮结束；等待下一次「新插入」再开算。")
 
-        success_dir, fail_dir = ensure_success_fail_dirs(self._ds.output_dir)
-        success_report, fail_report = split_report_by_status(report)
+        # 一次计算只写一份完整 JSON（成功+失败托盘都在内）；
+        # 有任一达标盘 → success/，否则 → fail/。
+        bucket = resolve_report_bucket_dir(self._ds.output_dir, report)
+        report_path = bucket / f"packing_plan_{ts}.json"
+        _save_json(report_path, report)
+        print(f"[WCS-装] 本轮方案已保存（{bucket.name}）：{report_path}")
 
-        report_path = None
-        if success_report.get("pallets"):
-            report_path = success_dir / f"packing_plan_{ts}.json"
-            _save_json(report_path, success_report)
-            print(f"[WCS-装] 达标方案已保存：{report_path}")
-        else:
-            print("[WCS-装] 本轮无达标托盘，跳过 success 目录写入。")
-
-        if fail_report.get("pallets"):
-            fail_path = fail_dir / f"packing_plan_{ts}.json"
-            _save_json(fail_path, fail_report)
-            print(f"[WCS-装] 未达标方案已保存：{fail_path}")
-        else:
-            print("[WCS-装] 本轮无未达标托盘，跳过 fail 目录写入。")
-
-        if report_path is None:
-            # 仅失败时仍给 UI 一个可加载路径
-            if fail_report.get("pallets"):
-                report_path = fail_dir / f"packing_plan_{ts}.json"
-            else:
-                report_path = success_dir / f"packing_plan_{ts}.json"
-                _save_json(report_path, success_report)
-
+        has_success = report_has_success_pallets(report)
         execution_outcome = None
-        plan = report_to_plan_result(success_report)
-        if success_report.get("pallets"):
+        plan = report_to_plan_result(report)
+        if has_success:
             try:
                 from src.postprocess.execution_planning_hook import (
                     run_execution_planning_for_plan,
@@ -479,26 +461,26 @@ class WcsPackingService:
                 print(f"[执行规划] 调用异常，统一回退原方案：{exc}")
 
             try:
-                plan = select_wcs_plan_result(success_report, execution_outcome)
+                plan = select_wcs_plan_result(report, execution_outcome)
             except (OSError, json.JSONDecodeError, TypeError, ValueError) as exc:
                 print(f"[执行规划] 执行文件读取失败，统一回退原方案：{exc}")
                 execution_outcome = None
-                plan = report_to_plan_result(success_report)
+                plan = report_to_plan_result(report)
 
         execution_used = bool(
             execution_outcome is not None
             and getattr(execution_outcome, "succeeded", False)
         )
         selected_label = "执行顺序方案" if execution_used else "原装箱方案"
-        if success_report.get("pallets"):
-            plan_path = success_dir / f"wcs_plan_{ts}.json"
+        if has_success:
+            plan_path = bucket / f"wcs_plan_{ts}.json"
             _save_json(plan_path, plan.cases)
             print(
                 f"[WCS-装] 接口 2 使用{selected_label}，发送体已保存："
                 f"{plan_path}（{len(plan.cases)} 个 case）"
             )
 
-            map_path = success_dir / f"wcs_plan_map_{ts}.json"
+            map_path = bucket / f"wcs_plan_map_{ts}.json"
             _save_json(
                 map_path,
                 {uid: pallet for uid, pallet in plan.plan_by_unique_id.items()},

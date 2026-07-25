@@ -5,6 +5,7 @@
 的接口与基本行为。装箱原语通过 stub 注入，避免依赖真实 Excel 数据。
 """
 
+import json
 import sys
 import tempfile
 from pathlib import Path
@@ -74,18 +75,32 @@ def test_report_persister_writes_pallet_excel_summary():
             lambda fmt: "20260522_120000",
         )
         report = {
-            "pallets": [{
-                "pallet_id": "P1",
-                "packed_items": [{
-                    "id": "B1",
-                    "pallet_dims": {"length": 1440, "width": 2240, "height": 720},
-                }],
-                "stability_checks": {"status": "SUCCESS"},
-                "mpm_total": 192.0,
-                "mpm_target": 192.0,
-                "mpm_gap": 0.0,
-                "mpm_status": "SUCCESS",
-            }]
+            "pallets": [
+                {
+                    "pallet_id": "P1",
+                    "packed_items": [{
+                        "id": "B1",
+                        "pallet_dims": {"length": 1440, "width": 2240, "height": 720},
+                    }],
+                    "stability_checks": {"status": "SUCCESS"},
+                    "mpm_total": 192.0,
+                    "mpm_target": 192.0,
+                    "mpm_gap": 0.0,
+                    "mpm_status": "SUCCESS",
+                },
+                {
+                    "pallet_id": "P2",
+                    "packed_items": [{
+                        "id": "B2",
+                        "pallet_dims": {"length": 1440, "width": 2240, "height": 720},
+                    }],
+                    "stability_checks": {"status": "FAILED"},
+                    "mpm_total": 100.0,
+                    "mpm_target": 192.0,
+                    "mpm_gap": 92.0,
+                    "mpm_status": "FAILED",
+                },
+            ]
         }
 
         persister.persist(report, 1.23)
@@ -94,8 +109,12 @@ def test_report_persister_writes_pallet_excel_summary():
             Path(tmpdir) / "success" / "packing_plan_summary_20260522_120000.xlsx"
         )
         json_path = Path(tmpdir) / "success" / "packing_plan_20260522_120000.json"
+        fail_json = Path(tmpdir) / "fail" / "packing_plan_20260522_120000.json"
         assert excel_path.exists()
         assert json_path.exists()
+        assert not fail_json.exists()
+        saved = json.loads(json_path.read_text(encoding="utf-8"))
+        assert [p["pallet_id"] for p in saved["pallets"]] == ["P1", "P2"]
         df = pd.read_excel(excel_path)
         assert list(df.columns) == [
             "托盘ID",
@@ -107,6 +126,7 @@ def test_report_persister_writes_pallet_excel_summary():
             "指数缺口",
             "指数状态",
         ]
+        assert len(df) == 2
         assert df.iloc[0]["托盘ID"] == "P1"
         assert df.iloc[0]["托盘尺寸(mm)"] == "1440x2240x720"
         assert int(df.iloc[0]["箱子数量"]) == 1
