@@ -192,6 +192,7 @@ def load_execution_planner_config(config_path=None):
         if not settings.enabled:
             return None
         return ExecutionSequenceConfig(
+            path_gate_mode=settings.path_gate_mode,
             origin=settings.origin,
             coordinate_tolerance_mm=settings.coordinate_tolerance_mm,
             box_xy_clearance_mm=settings.box_xy_clearance_mm,
@@ -207,6 +208,7 @@ def load_execution_planner_config(config_path=None):
                 settings.approach_suction_xy_clearance_mm
             ),
             require_suction_pose=settings.require_suction_pose,
+            pocket_rule=settings.pocket_rule,
             max_occupied_directions=settings.max_occupied_directions,
             side_neighbor_clearance_mm=settings.side_neighbor_clearance_mm,
             side_height_tolerance_mm=settings.side_height_tolerance_mm,

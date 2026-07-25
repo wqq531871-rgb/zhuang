@@ -176,6 +176,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             else settings.suction_xy_clearance_mm
         )
         config = ExecutionSequenceConfig(
+            path_gate_mode=settings.path_gate_mode,
             origin=args.origin or settings.origin,
             coordinate_tolerance_mm=(
                 args.coordinate_tolerance_mm
@@ -203,6 +204,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 if args.require_suction_pose is not None
                 else settings.require_suction_pose
             ),
+            pocket_rule=settings.pocket_rule,
             max_occupied_directions=settings.max_occupied_directions,
             side_neighbor_clearance_mm=settings.side_neighbor_clearance_mm,
             side_height_tolerance_mm=settings.side_height_tolerance_mm,

@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Tuple
 from src.adapter.wcs_adapter import WcsPlanResult, report_to_plan_result
 
 from .sequence_planner import (
+    EXECUTION_SEQUENCE_DIAGNOSTICS_FIELD,
     STACK_HEIGHT_BEFORE_FIELD,
     ExecutionSequenceConfig,
     plan_execution_report,
@@ -89,6 +90,7 @@ def execution_report_to_plan_result(
         case["total_height"] = total_height
     plan_by_unique_id = deepcopy(base_result.plan_by_unique_id)
     for pallet in plan_by_unique_id.values():
+        pallet.pop(EXECUTION_SEQUENCE_DIAGNOSTICS_FIELD, None)
         for item in pallet.get("packed_items") or []:
             item.pop(STACK_HEIGHT_BEFORE_FIELD, None)
     return WcsPlanResult(

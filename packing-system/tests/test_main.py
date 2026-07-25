@@ -204,6 +204,7 @@ def test_report_persister_keeps_original_when_execution_planning_fails(tmp_path)
         tmp_path,
         lambda fmt: "20260721_120000",
         execution_sequence_config=ExecutionSequenceConfig(
+            path_gate_mode="hard",
             box_xy_clearance_mm=1.0,
         ),
     )
@@ -235,6 +236,7 @@ def test_run_packing_loads_execution_planner_config(tmp_path, enabled, expected)
     config_path.write_text(
         "execution_sequence:\n"
         "  enabled: %s\n"
+        "  path_gate_mode: hard\n"
         "  origin: x_max_y_min\n"
         "  approach_offset_x_mm: 41\n"
         "  approach_offset_y_mm: 42\n"
@@ -252,6 +254,7 @@ def test_run_packing_loads_execution_planner_config(tmp_path, enabled, expected)
         assert config is None
     else:
         assert isinstance(config, ExecutionSequenceConfig)
+        assert config.path_gate_mode == "hard"
         assert config.origin == expected
         assert config.approach_offset_x_mm == 41.0
         assert config.approach_offset_y_mm == 42.0

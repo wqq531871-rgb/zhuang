@@ -61,6 +61,12 @@ wave = spatial_ring + support_tier
 (wave, spatial_ring, x_rank, y_rank, support_tier, stable_index)
 ```
 
+> 本节记录 2026-07-23 的初始设计。2026-07-25 已改为
+> `wave = spatial_ring + 2 * support_tier`、排序键
+> `(wave, support_tier, spatial_ring, x_rank, y_rank, stable_index)`，让地面层先铺开
+> 再升高。当前公式与理由见 `docs/独立执行顺序规划说明.md` 的“有向空间阶梯波”段落
+> 和变更记录，本文不再同步。
+
 支撑、垂直扫掠和斜向扫掠依赖始终优先。相同 `wave` 时先完成更靠近远端的空间环，
 因此先抬高远端，再向 `x_max_y_max` 方向铺设较低外圈。第一层的 `support_tier=0`，
 自然按二维空间环严格向外扩散，不再使用足迹邻接图 BFS。
