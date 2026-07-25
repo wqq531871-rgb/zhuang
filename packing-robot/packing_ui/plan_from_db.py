@@ -78,6 +78,18 @@ _PLC_ROW_SQL = (
     "LIMIT 1"
 )
 
+_CAMERA_ROW_EXISTS_SQL = (
+    "SELECT 1 AS found FROM wcs_success_box "
+    "WHERE box_unique_id = %s AND seq = %s "
+    "LIMIT 1"
+)
+
+_UPDATE_CAMERA_DIMENSIONS_SQL = (
+    "UPDATE wcs_success_box SET "
+    "camera_length = %s, camera_width = %s, camera_height = %s "
+    "WHERE box_unique_id = %s AND seq = %s"
+)
+
 
 def fetch_plc_row(
     box_unique_id: str,
@@ -110,6 +122,57 @@ def fetch_plc_row(
             cur.execute(_PLC_ROW_SQL, (uid, seq_i))
             row = cur.fetchone()
             return dict(row) if row is not None else None
+    finally:
+        conn.close()
+
+
+def update_camera_dimensions(
+    box_unique_id: str,
+    seq: int,
+    camera_length: float,
+    camera_width: float,
+    camera_height: float,
+    *,
+    config_path: Path | None = None,
+    settings: Mapping[str, Any] | None = None,
+    connect_factory: Any = pymysql.connect,
+) -> int:
+    """Persist PLC camera dimensions for one exact pallet box."""
+    uid = str(box_unique_id or "").strip()
+    if not uid:
+        raise ValueError("缺少 box_unique_id")
+    seq_i = int(seq)
+    if seq_i < 1:
+        raise ValueError("seq 必须从 1 开始")
+    dimensions = (
+        float(camera_length),
+        float(camera_width),
+        float(camera_height),
+    )
+    if any(value <= 0 for value in dimensions):
+        raise ValueError("相机长宽高必须大于 0")
+
+    cfg = dict(settings) if settings is not None else load_mysql_settings(config_path)
+    conn = connect_factory(
+        host=cfg["host"],
+        port=int(cfg["port"]),
+        user=cfg["user"],
+        password=cfg["password"],
+        database=cfg["database"],
+        charset=cfg.get("charset", "utf8mb4"),
+        cursorclass=DictCursor,
+        autocommit=True,
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(_CAMERA_ROW_EXISTS_SQL, (uid, seq_i))
+            if cur.fetchone() is None:
+                return 0
+            cur.execute(
+                _UPDATE_CAMERA_DIMENSIONS_SQL,
+                (*dimensions, uid, seq_i),
+            )
+            return 1
     finally:
         conn.close()
 
