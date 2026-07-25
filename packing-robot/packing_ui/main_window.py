@@ -29,6 +29,13 @@ from PySide6.QtWidgets import (
 
 from .data import PackedItem, PalletPlan, build_action, load_plan_file, target_orientation
 from .integration import CameraBoxData
+from .layout_state import (
+    STATE_PATH_CAMERA,
+    STATE_PATH_LAYOUT,
+    LayoutStateAssignment,
+    assign_pallet_layout_states,
+    normalize_state_path,
+)
 from .live_command import (
     default_command_path,
     default_history_path,
@@ -58,6 +65,7 @@ class PackingMainWindow(QMainWindow):
         plc_client_factory: Any = None,
         plc_worker_factory: Any = None,
         camera_dimension_writer: Any = None,
+        layout_state_writer: Any = None,
         **_ignored,
     ) -> None:
         super().__init__()
@@ -83,6 +91,9 @@ class PackingMainWindow(QMainWindow):
         self._plc_worker_factory = plc_worker_factory or PlcSendWorker
         self._camera_dimension_writer = (
             camera_dimension_writer or update_camera_dimensions
+        )
+        self._layout_state_writer = (
+            layout_state_writer or assign_pallet_layout_states
         )
         self._plc_probe = None
         self._plc_connected = False
@@ -136,6 +147,14 @@ class PackingMainWindow(QMainWindow):
         self.pallet_combo = QComboBox()
         self.order_label = QLabel("—")
         self.type_label = QLabel("—")
+        self.state_path_combo = QComboBox()
+        self.state_path_combo.addItem("相机判态", STATE_PATH_CAMERA)
+        self.state_path_combo.addItem(
+            "垛型直判（无相机）", STATE_PATH_LAYOUT
+        )
+        self.apply_state_path_button = QPushButton("应用到当前托盘")
+        self.state_path_status_label = QLabel("当前：相机判态")
+        self.state_path_status_label.setWordWrap(True)
         self.orientation_combo = QComboBox()
         self.orientation_combo.addItem("0°", 0)
         self.orientation_combo.addItem("90°", 90)
@@ -149,6 +168,9 @@ class PackingMainWindow(QMainWindow):
         form.addRow("托盘 ID", self.pallet_combo)
         form.addRow("订单编号", self.order_label)
         form.addRow("托盘类型", self.type_label)
+        form.addRow("判态路径", self.state_path_combo)
+        form.addRow("路径操作", self.apply_state_path_button)
+        form.addRow("路径状态", self.state_path_status_label)
         form.addRow("所选箱传送带姿态", self.orientation_combo)
         form.addRow("传送带平面 Z", self.conveyor_z_spin)
         self.selector_group = QGroupBox("托盘选择")
@@ -161,6 +183,12 @@ class PackingMainWindow(QMainWindow):
         outer.addWidget(self.box_list, 1)
 
         self.pallet_combo.currentIndexChanged.connect(self._select_current_plan)
+        self.state_path_combo.currentIndexChanged.connect(
+            self._on_state_path_changed
+        )
+        self.apply_state_path_button.clicked.connect(
+            self._apply_selected_state_path
+        )
         self.orientation_combo.currentIndexChanged.connect(
             self._change_selected_orientation
         )
@@ -284,6 +312,85 @@ class PackingMainWindow(QMainWindow):
 
     def _load_plan_for_uid(self, box_unique_id: str) -> PalletPlan:
         return load_plan_from_db(box_unique_id, config_path=self._config_path)
+
+    def current_state_path(self) -> str:
+        return normalize_state_path(self.state_path_combo.currentData())
+
+    def _on_state_path_changed(self, _index: int) -> None:
+        if self.current_state_path() == STATE_PATH_LAYOUT:
+            self.state_path_status_label.setText(
+                "当前：垛型直判（无相机）；请应用到当前托盘"
+            )
+        else:
+            self.state_path_status_label.setText(
+                "当前：相机判态；已有 state 不会自动清空"
+            )
+        self._rebuild_actions()
+
+    def _apply_selected_state_path(self, _checked: bool = False) -> None:
+        del _checked
+        if self._plc_thread is not None and self._plc_thread.isRunning():
+            message = "PLC 任务运行中，禁止改写当前托盘 state"
+            self.state_path_status_label.setText(message)
+            self._append_plc_log(message)
+            return
+        if self.current_state_path() == STATE_PATH_CAMERA:
+            message = "已切换相机判态；未改写或清空当前托盘 state"
+            self.state_path_status_label.setText(message)
+            self._append_plc_log(message)
+            return
+        try:
+            self._apply_layout_state_to_current_plan(automatic=False)
+        except Exception as exc:  # noqa: BLE001
+            message = f"垛型直判失败：{exc}"
+            self.state_path_status_label.setText(message)
+            self._append_plc_log(message)
+
+    def _apply_layout_state_to_current_plan(
+        self, *, automatic: bool
+    ) -> LayoutStateAssignment:
+        if self.current_plan is None or not self.current_plan.items:
+            raise ValueError("尚未加载可判态托盘")
+        uid = str(self.current_plan.source_key or "").strip()
+        if not uid:
+            raise ValueError("当前托盘缺少 box_unique_id")
+
+        result = self._layout_state_writer(
+            uid,
+            config_path=self._config_path,
+        )
+        try:
+            refreshed = self._load_plan_for_uid(uid)
+        except Exception as exc:
+            raise ValueError(
+                f"state 已写入，但重新加载托盘 {uid} 失败：{exc}"
+            ) from exc
+        if refreshed.source_key != uid:
+            raise ValueError(
+                f"state 已写入，但刷新返回了错误托盘 {refreshed.source_key}"
+            )
+
+        self.all_plans = [
+            refreshed if plan.source_key == uid else plan
+            for plan in self.all_plans
+        ]
+        self.filtered_plans = [
+            refreshed if plan.source_key == uid else plan
+            for plan in self.filtered_plans
+        ]
+        current_index = self.pallet_combo.currentIndex()
+        if current_index >= 0:
+            self.pallet_combo.setItemData(current_index, refreshed)
+        self._select_current_plan(current_index)
+
+        prefix = "自动" if automatic else "手动"
+        message = (
+            f"{prefix}垛型直判已写入 {result.box_count} 箱"
+            f"（变化 {result.changed_count} 箱）"
+        )
+        self.state_path_status_label.setText(message)
+        self._append_plc_log(message)
+        return result
 
     def load_path(self, path: str | Path) -> None:
         """测试/调试：仍可从 JSON 灌入方案；正式界面不提供导入按钮。"""
@@ -445,6 +552,7 @@ class PackingMainWindow(QMainWindow):
                 self._orientation_for_item(item.id),
                 conveyor_z,
                 camera_data=self._camera_for_item(item.id),
+                state_source=self.current_state_path(),
             )
             for item in self.current_plan.items
         ]
@@ -458,7 +566,7 @@ class PackingMainWindow(QMainWindow):
                 1: "不转",
                 2: "转",
             }.get(int(action.rotation_state), "?")
-            ready_txt = "已就绪" if action.show_on_conveyor else "待相机"
+            ready_txt = "已就绪" if action.show_on_conveyor else "待判态"
             self.box_list.addItem(
                 f"{row}. seq={action.sequence}  {item.raw_length:g}×{item.raw_width:g}×"
                 f"{item.raw_height:g}  目标{action.target_orientation_deg}° / "
@@ -564,6 +672,14 @@ class PackingMainWindow(QMainWindow):
             self._append_plc_log("尚未加载可发送托盘")
             return
 
+        state_source = self.current_state_path()
+        if state_source == STATE_PATH_LAYOUT:
+            try:
+                self._apply_layout_state_to_current_plan(automatic=True)
+            except Exception as exc:  # noqa: BLE001
+                self._append_plc_log(f"垛型直判失败，未启动 PLC：{exc}")
+                return
+
         uid = str(self.current_plan.source_key)
         sequences = tuple(int(item.sequence) for item in self.current_plan.items)
         worker = self._plc_worker_factory(
@@ -583,6 +699,7 @@ class PackingMainWindow(QMainWindow):
                     config_path=self._config_path,
                 )
             ),
+            state_source=state_source,
             client_factory=self._plc_client_factory,
         )
         thread = QThread(self)
@@ -720,6 +837,8 @@ class PackingMainWindow(QMainWindow):
         if self.current_plan is None:
             raise ValueError("尚未加载托盘方案")
         self._live_pallet_uid = prefer_uid
+        if self.current_state_path() == STATE_PATH_LAYOUT:
+            self._apply_layout_state_to_current_plan(automatic=True)
         order = str(cmd.get("order_id") or self.current_plan.sales_order_no or "")
         n = len(self.current_plan.items)
         self.setWindowTitle(f"现场码垛演示 — 订单 {order or '—'}（共 {n} 箱）")

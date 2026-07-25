@@ -34,6 +34,24 @@ MySQL 参数读取同级 `packing-system/config/packing_config.yaml`；密码不
 5. 当前箱 `state` 为空时持续等待；`state=0` 只发送报警；
    `state=1/2` 才发送完整箱体数据。
 
+## 判态路径切换
+
+左侧“判态路径”支持两条互斥流程，每次启动默认选择“相机判态”：
+
+- **相机判态**：保持原流程，读取 PLC DBW6/8/10 的相机长宽高，写入
+  `camera_*` 后等待后台监听生成 `state`。
+- **垛型直判（无相机）**：按当前托盘每箱的落位尺寸直接写数据库；
+  `raw_width >= raw_length` 写 `state=1`，否则写 `state=2`。正方形箱按
+  `state=1` 处理。
+
+切换下拉框后，点击“应用到当前托盘”即可处理当前盘。垛型模式收到新的 WCS
+活动托盘时也会在播放和 PLC 自动下发前自动写入整盘 `state`；手动发送前会再次
+幂等校验。该模式不读取、不校验、不写入 `camera_length/camera_width/
+camera_height`，PLC 下发会忽略 DBW6/8/10。
+
+切回相机路径不会自动清空已有 `state`，避免误清历史或正在执行的托盘；需要
+重新相机判态时应使用现有现场复位流程清理目标托盘。
+
 ## PLC 与数据库交接
 
 本系统直接连接 Siemens PLC 的 DB19，并根据数据库最新状态逐箱下发：
@@ -43,11 +61,11 @@ MySQL 参数读取同级 `packing-system/config/packing_config.yaml`；密码不
 
 - PLC 写 `DBW2` 请求当前箱；Python 将它与数据库 `seq` 校验，不一致时零数据
   写入并停止整盘。
-- PLC 的 SEND 区 `DBW6/8/10` 提供相机测得长宽高；Python 读取后按
-  `box_unique_id + seq` 写入数据库
+- 相机路径中，PLC 的 SEND 区 `DBW6/8/10` 提供相机测得长宽高；Python
+  读取后按 `box_unique_id + seq` 写入数据库
   `camera_length/camera_width/camera_height`，不向这三个偏移写数据。
-- 常驻判态监听发现相机尺寸齐全且 `state` 为空后生成 `state=0/1/2`；
-  当前箱的 PLC 下传线程从相机尺寸写库成功后才开始等待该 `state`。
+- 相机路径的常驻监听发现相机尺寸齐全且 `state` 为空后生成
+  `state=0/1/2`；垛型路径则跳过相机字段，直接读取已按垛型写入的 `state`。
 - REV 区小写尺寸 `DBW14/16/18` 来自 `raw_length/width/height`。
 - PLC 坐标约定与数据库 XY 对调：`DBW20=pos_y`、`DBW22=pos_x`；
   `DBW24=pos_z`。
