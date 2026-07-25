@@ -1,4 +1,4 @@
-"""wcs_stock_box 同步 / wcs_stock_box_all 追加 单元测试（无真实 MySQL）。"""
+"""wcs_stock_box 全量替换 / wcs_stock_box_all 追加 单元测试（无真实 MySQL）。"""
 
 from __future__ import annotations
 
@@ -57,8 +57,8 @@ def test_prepare_stock_rows_dedupes_and_skips_invalid():
     assert samples
 
 
-def _patch_stock_repo(repo, store: dict, *, with_standard: bool):
-    """store: product_code -> up_to_standard(str) 或 None（all 表）。"""
+def _patch_stock_repo(repo, store: dict):
+    """store: product_code -> row tuple or None."""
 
     def existing(codes, table):
         return {int(c) for c in codes if int(c) in store}
@@ -66,29 +66,22 @@ def _patch_stock_repo(repo, store: dict, *, with_standard: bool):
     def all_codes(table):
         return set(store)
 
-    def delete(codes, table):
-        n = 0
-        for c in list(codes):
-            c = int(c)
-            if c in store:
-                del store[c]
-                n += 1
-        return n
-
     class FakeCur:
+        def __init__(self):
+            self._last = None
+
+        def execute(self, sql, args=None):
+            text = str(sql).upper()
+            if text.startswith("DELETE FROM"):
+                store.clear()
+            self._last = ("execute", sql, args)
+
         def executemany(self, sql, rows):
             for row in rows:
-                pc = int(row[5])
-                if with_standard:
-                    store[pc] = row[7]
-                else:
-                    store[pc] = None
-
-        def execute(self, *a, **k):
-            return None
+                store[int(row[5])] = row
 
         def fetchall(self):
-            return []
+            return [{"product_code": pc} for pc in store]
 
     @contextmanager
     def fake_cursor():
@@ -96,42 +89,53 @@ def _patch_stock_repo(repo, store: dict, *, with_standard: bool):
 
     repo._existing_product_codes = existing  # type: ignore[method-assign]
     repo._all_product_codes = all_codes  # type: ignore[method-assign]
-    repo._delete_product_codes = delete  # type: ignore[method-assign]
     repo._cursor = fake_cursor  # type: ignore[method-assign]
     return store
 
 
-def test_wcs_stock_box_sync_inserts_skips_deletes_preserves_standard():
+def test_wcs_stock_box_unchanged_when_codes_match():
     repo = WcsStockRepository(DatabaseConfig())
-    store = {100: "1", 200: "0"}
-    _patch_stock_repo(repo, store, with_standard=True)
+    store = {100: None, 200: None}
+    _patch_stock_repo(repo, store)
+
+    stats = repo.sync_stock_entries([_entry(100), _entry(200)])
+
+    assert stats.unchanged is True
+    assert stats.changed is False
+    assert stats.wake_packing is False
+    assert set(store) == {100, 200}
+
+
+def test_wcs_stock_box_replace_all_when_codes_differ():
+    repo = WcsStockRepository(DatabaseConfig())
+    store = {100: None, 200: None}
+    _patch_stock_repo(repo, store)
 
     stats = repo.sync_stock_entries([_entry(100), _entry(300)])
 
-    assert stats.inserted == 1
-    assert stats.skipped_existing == 1
-    assert stats.deleted == 1
-    assert store[100] == "1"  # 已达标保留
-    assert store[300] == "0"  # 新行未达标
-    assert 200 not in store
+    assert stats.changed is True
+    assert stats.wake_packing is True
+    assert stats.deleted == 2
+    assert stats.inserted == 2
+    assert set(store) == {100, 300}
 
 
 def test_wcs_stock_box_empty_pull_does_not_wipe():
     repo = WcsStockRepository(DatabaseConfig())
-    store = {100: "0", 200: "1"}
-    _patch_stock_repo(repo, store, with_standard=True)
+    store = {100: None, 200: None}
+    _patch_stock_repo(repo, store)
 
     stats = repo.sync_stock_entries([])
 
-    assert stats.inserted == 0
-    assert stats.deleted == 0
+    assert stats.unchanged is True
+    assert stats.changed is False
     assert set(store) == {100, 200}
 
 
 def test_wcs_stock_box_all_appends_without_delete():
     repo = WcsStockAllRepository(DatabaseConfig())
     store = {100: None, 200: None}
-    _patch_stock_repo(repo, store, with_standard=False)
+    _patch_stock_repo(repo, store)
 
     stats = repo.insert_new_stock_entries([_entry(100), _entry(300)])
 

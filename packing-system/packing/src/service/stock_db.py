@@ -1,14 +1,15 @@
 """WCS 库存表 ``wcs_stock_box`` / ``wcs_stock_box_all`` 的读写（MySQL / pymysql）。
 
-- ``wcs_stock_box``：当前立库快照（插入新码、跳过已有、删除本次没有的）+ 达标状态
-- ``wcs_stock_box_all``：历史全量（只插入新码、跳过已有，不删除）无达标字段
+- ``wcs_stock_box``：当前立库快照。按 ``product_code`` 集合对比，有差异则
+  整表清空后全量插入；完全一致则不动。无达标字段。
+- ``wcs_stock_box_all``：历史全量（只插入新码、跳过已有，不删除）。
 """
 
 from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import pymysql
 from pymysql.cursors import DictCursor
@@ -30,15 +31,17 @@ class DatabaseConfig:
 class StockSyncStats:
     """一次库存同步/追加的统计。"""
 
+    changed: bool = False
     inserted: int = 0
-    skipped_existing: int = 0
     deleted: int = 0
+    skipped_existing: int = 0
     skipped_invalid: int = 0
+    unchanged: bool = False
 
     @property
     def wake_packing(self) -> bool:
-        """有新插入才应唤醒装箱。"""
-        return self.inserted > 0
+        """库存有变化才应唤醒装箱。"""
+        return bool(self.changed)
 
 
 def load_database_config(raw: Optional[Dict] = None) -> DatabaseConfig:
@@ -82,7 +85,7 @@ def parse_box_spec(spec: str) -> Dict:
 def prepare_stock_rows(
     entries: Sequence[Dict],
 ) -> Tuple[List[Tuple], int, List[str]]:
-    """接口条目 → 入库行（不含 up_to_standard）。
+    """接口条目 → 入库行。
 
     返回 ``(rows, skipped_invalid, invalid_samples)``。
     每行：(box_spec, case_type, target_num, order_id, case_group, product_code, priority)
@@ -122,6 +125,10 @@ def prepare_stock_rows(
             int(entry.get("priority") or 0),
         ))
     return prepared, skipped_invalid, invalid_samples
+
+
+def product_codes_from_prepared(prepared: Sequence[Tuple]) -> Set[int]:
+    return {int(row[5]) for row in prepared}
 
 
 class _BaseStockRepository:
@@ -177,34 +184,19 @@ class _BaseStockRepository:
             cur.execute(f"SELECT product_code FROM {table}")
             return {int(row["product_code"]) for row in cur.fetchall()}
 
-    def _delete_product_codes(self, codes: Sequence[int], table: str) -> int:
-        if not codes:
-            return 0
-        uniq = list({int(c) for c in codes})
-        deleted = 0
-        chunk = 500
-        with self._cursor() as (_conn, cur):
-            for i in range(0, len(uniq), chunk):
-                part = uniq[i:i + chunk]
-                placeholders = ",".join(["%s"] * len(part))
-                cur.execute(
-                    f"DELETE FROM {table} WHERE product_code IN ({placeholders})",
-                    part,
-                )
-                deleted += int(cur.rowcount or 0)
-        return deleted
-
 
 class WcsStockRepository(_BaseStockRepository):
-    """``zhuangdb.wcs_stock_box``：当前立库快照 + 达标状态。"""
+    """``zhuangdb.wcs_stock_box``：当前立库快照（无达标字段）。"""
 
     TABLE = "wcs_stock_box"
 
-    def sync_stock_entries(self, entries: Sequence[Dict]) -> StockSyncStats:
-        """同步为本次拉取快照：插入新码、跳过已有、删除本次没有的。
+    def load_product_code_set(self) -> Set[int]:
+        return self._all_product_codes(self.TABLE)
 
-        已有行不更新字段（保留 ``up_to_standard``）。
-        本次无任何合法 product_code 时不删除，避免空包洗库。
+    def sync_stock_entries(self, entries: Sequence[Dict]) -> StockSyncStats:
+        """按 product_code 集合对比；有差异则整表替换，一致则不动。
+
+        本次无任何合法 product_code 时不洗库（防空包）。
         """
         prepared, skipped_invalid, invalid_samples = prepare_stock_rows(entries)
         if skipped_invalid:
@@ -214,90 +206,56 @@ class WcsStockRepository(_BaseStockRepository):
             )
 
         if not prepared:
-            return StockSyncStats(skipped_invalid=skipped_invalid)
-
-        codes = [row[5] for row in prepared]
-        code_set = set(codes)
-        existing_in_batch = self._existing_product_codes(codes, self.TABLE)
-        to_insert_rows = [
-            row + ("0",) for row in prepared if row[5] not in existing_in_batch
-        ]
-        skipped_existing = len(prepared) - len(to_insert_rows)
-
-        inserted = 0
-        if to_insert_rows:
-            sql = (
-                f"INSERT IGNORE INTO {self.TABLE} "
-                "(box_spec, case_type, target_num, order_id, case_group, "
-                "product_code, priority, up_to_standard) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)"
+            return StockSyncStats(
+                skipped_invalid=skipped_invalid,
+                unchanged=True,
             )
-            with self._cursor() as (_conn, cur):
-                cur.executemany(sql, to_insert_rows)
-            after = self._existing_product_codes(codes, self.TABLE)
-            inserted = max(0, len(after) - len(existing_in_batch))
 
-        if skipped_existing:
+        new_codes = product_codes_from_prepared(prepared)
+        old_codes = self.load_product_code_set()
+        if new_codes == old_codes:
             print(
-                f"[WCS-DB] {self.TABLE} product_code 已存在、跳过 "
-                f"{skipped_existing} 条"
+                f"[WCS-DB] {self.TABLE} product_code 集合未变"
+                f"（{len(new_codes)} 个），跳过替换"
+            )
+            return StockSyncStats(
+                skipped_invalid=skipped_invalid,
+                unchanged=True,
             )
 
-        all_existing = self._all_product_codes(self.TABLE)
-        to_delete = sorted(all_existing - code_set)
-        deleted = self._delete_product_codes(to_delete, self.TABLE)
-        if deleted:
-            print(
-                f"[WCS-DB] {self.TABLE} 删除本次立库未出现的 product_code "
-                f"{deleted} 条"
-            )
+        deleted = len(old_codes)
+        inserted = len(prepared)
+        sql = (
+            f"INSERT INTO {self.TABLE} "
+            "(box_spec, case_type, target_num, order_id, case_group, "
+            "product_code, priority) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)"
+        )
+        with self._cursor() as (_conn, cur):
+            cur.execute(f"DELETE FROM {self.TABLE}")
+            cur.executemany(sql, prepared)
 
+        print(
+            f"[WCS-DB] {self.TABLE} 已全量替换："
+            f"清空 {deleted} → 插入 {inserted}"
+        )
         return StockSyncStats(
+            changed=True,
             inserted=inserted,
-            skipped_existing=skipped_existing,
             deleted=deleted,
             skipped_invalid=skipped_invalid,
         )
 
-    def insert_new_stock_entries(self, entries: Sequence[Dict]) -> int:
-        """兼容旧接口：同步后返回新插入行数。"""
-        return self.sync_stock_entries(entries).inserted
-
-    def fetch_unmet_rows(self) -> List[Dict]:
-        """读取当前所有未达标行（up_to_standard='0'）。"""
+    def fetch_all_rows(self) -> List[Dict]:
+        """读取当前表全部行（装箱输入）。"""
         with self._cursor() as (_conn, cur):
             cur.execute(
                 "SELECT id, box_spec, case_type, target_num, order_id, "
-                "case_group, product_code, priority, up_to_standard "
-                f"FROM {self.TABLE} WHERE up_to_standard = '0' "
+                "case_group, product_code, priority "
+                f"FROM {self.TABLE} "
                 "ORDER BY id ASC"
             )
             return list(cur.fetchall())
-
-    def mark_standard_by_product_codes(self, product_codes: Iterable) -> int:
-        """将达标箱子的 up_to_standard 更新为 '1'。返回影响行数。"""
-        codes = []
-        for pc in product_codes:
-            coerced = coerce_product_code(pc)
-            if coerced is not None:
-                codes.append(coerced)
-        codes = list({c for c in codes})
-        if not codes:
-            return 0
-        updated = 0
-        chunk = 500
-        with self._cursor() as (_conn, cur):
-            for i in range(0, len(codes), chunk):
-                part = codes[i:i + chunk]
-                placeholders = ",".join(["%s"] * len(part))
-                cur.execute(
-                    f"UPDATE {self.TABLE} SET up_to_standard = '1' "
-                    f"WHERE product_code IN ({placeholders}) "
-                    f"AND up_to_standard = '0'",
-                    part,
-                )
-                updated += int(cur.rowcount or 0)
-        return updated
 
     def rows_to_stock_entries(self, rows: Sequence[Dict]) -> List[Dict]:
         """DB 行 → 接口库存条目结构（供 stock_to_boxes）。"""

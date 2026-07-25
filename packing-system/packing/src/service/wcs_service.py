@@ -1,18 +1,16 @@
 """WCS 接口装箱常驻服务（HTTP 服务壳）。
 
-两条独立流水线（互不等待）：
+两条独立流水线（互不等待，装箱严格串行）：
 
 1. 拉取器：每 download_interval 秒 POST 接口 1；
-   原始 JSON → ``input/raw/``（本地仅保留此目录）；
+   原始 JSON → ``input/raw/``；
    过滤 MH423C 后：
-   - ``wcs_stock_box``：同步为当前立库快照（新码插入、已有跳过、
-     本次没有的删除；新行 ``up_to_standard=0``，已有行保留达标状态）；
+   - ``wcs_stock_box``：按 product_code 集合对比；有差异则整表清空后全量插入，
+     并置位 ``need_repack``；完全一致则不动、不置位；
    - ``wcs_stock_box_all``：历史全量追加（新码插入、已有跳过，不删除）。
-   仅当 ``wcs_stock_box`` 有新插入时唤醒装箱。
 
-2. 装箱器：被新插入唤醒后，读取库中全部未达标行作为算法输入；
-   算完把 SUCCESS 盘箱子的 ``up_to_standard`` 更新为 1；未达标保持 0。
-   无新插入则暂停，避免未达标箱反复空转。
+2. 装箱器：监听 ``need_repack``；置位后开算前先清除标志，读取当前表全部行计算；
+   算完再读标志——仍为真则立刻再算，否则继续等待。保证一次算完再开下一次。
 
 可选：装箱结果推送接口 2（由 ``_PUSH_PLAN_TO_WCS`` 控制）。
 """
@@ -293,8 +291,8 @@ class WcsPackingService:
         self._build_workflow = build_workflow
         self._bms_map: Dict[str, float] = {}
         self._stop = threading.Event()
-        # 仅有新插入时置位，装箱线程据此开算
-        self._db_insert_wake = threading.Event()
+        # 立库相对库表有变化时置位；装箱线程据此开算（算完再读）
+        self._need_repack = threading.Event()
         # use_real_api 开且接口失败时置位；UI 据此按「停止」处理
         self.stopped_by_api_failure = False
         self._ensure_dirs()
@@ -305,7 +303,7 @@ class WcsPackingService:
         self.stopped_by_api_failure = True
         print(f"{WCS_STOP_MARKER} {reason}")
         self._stop.set()
-        self._db_insert_wake.set()
+        self._need_repack.set()
 
     def _handle_fetch_error(self, exc: Exception, context: str) -> bool:
         """处理拉取异常。返回 True 表示应结束当前循环/模式。"""
@@ -349,9 +347,9 @@ class WcsPackingService:
 
     # ------------------------------------------------------------------ fetch
     def fetch_once(self) -> int:
-        """拉一次接口 1：原始 JSON 落 raw/，同步当前表并追加历史表。
+        """拉一次接口 1：原始 JSON 落 raw/；库存有变则全量替换并置 need_repack。
 
-        返回 ``wcs_stock_box`` 新插入行数（用于是否唤醒装箱）。
+        返回 1 表示 wcs_stock_box 已变化并已请求装箱；0 表示无变化。
         """
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         print(f"\n{'=' * 60}")
@@ -375,12 +373,16 @@ class WcsPackingService:
             print(f"[WCS-拉] 库存品类数：{len(kept)}（均为 {_SUPPORTED_CASE_TYPE}）")
 
         sync_stats = self._repo.sync_stock_entries(kept)
-        print(
-            f"[WCS-拉] wcs_stock_box 同步：候选 {len(kept)}，"
-            f"新插入 {sync_stats.inserted}，跳过已有 {sync_stats.skipped_existing}，"
-            f"删除过期 {sync_stats.deleted}"
-            f"（新行 up_to_standard=0）。"
-        )
+        if sync_stats.unchanged:
+            print(
+                f"[WCS-拉] wcs_stock_box 与本次立库 product_code 一致"
+                f"（候选 {len(kept)}），不替换、不触发装箱。"
+            )
+        else:
+            print(
+                f"[WCS-拉] wcs_stock_box 已全量替换："
+                f"删 {sync_stats.deleted}，插 {sync_stats.inserted}。"
+            )
 
         all_stats = self._repo_all.insert_new_stock_entries(kept)
         print(
@@ -388,29 +390,29 @@ class WcsPackingService:
             f"跳过已有 {all_stats.skipped_existing}（历史不删）。"
         )
 
-        inserted = sync_stats.inserted
-        if inserted > 0:
-            self._db_insert_wake.set()
-            print("[WCS-拉] 有新插入 → 唤醒装箱线程。")
-        else:
-            print("[WCS-拉] 无新插入 → 不触发装箱。")
-        return inserted
+        if sync_stats.changed:
+            self._need_repack.set()
+            print("[WCS-拉] 库存有变化 → need_repack=True，唤醒装箱。")
+            return 1
+
+        print("[WCS-拉] 库存无变化 → need_repack 不变。")
+        return 0
 
     # ------------------------------------------------------------------ pack
     def pack_once(self) -> PackRunResult:
-        """从 DB 读全部未达标箱子装箱；达标行回写 up_to_standard=1。
+        """从 DB 读当前表全部箱子装箱（无达标过滤 / 无达标回写）。
 
         Returns:
             本轮是否计算、成功托盘数与报告路径。
         """
-        rows = self._repo.fetch_unmet_rows()
+        rows = self._repo.fetch_all_rows()
         if not rows:
-            print("[WCS-装] 库中无未达标箱子，跳过。")
+            print("[WCS-装] 库中无库存行，跳过。")
             return PackRunResult(executed=False)
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         print(f"\n{'=' * 60}")
-        print(f"[WCS-装] {ts}：未达标行 {len(rows)} 条，开始装箱 …")
+        print(f"[WCS-装] {ts}：库存行 {len(rows)} 条，开始装箱 …")
 
         stock_entries = self._repo.rows_to_stock_entries(rows)
         pallet_dims = default_pallet_dims_map(self._config_path)
@@ -440,7 +442,6 @@ class WcsPackingService:
             if str(pallet.get("mpm_status") or "").upper() == "SUCCESS"
         )
         success_codes = _success_product_codes(report)
-        updated = self._repo.mark_standard_by_product_codes(success_codes)
         failed_pallets = sum(
             1
             for p in (report.get("pallets") or [])
@@ -448,9 +449,9 @@ class WcsPackingService:
         )
         print(
             f"[WCS-装] SUCCESS 产品码 {len(success_codes)} 个，"
-            f"DB 更新达标 {updated} 行；FAILED 盘 {failed_pallets} 个保持未达标。"
+            f"SUCCESS 盘 {success_pallets}，FAILED 盘 {failed_pallets}。"
         )
-        print("[WCS-装] 本轮结束；等待下一次「新插入」再开算。")
+        print("[WCS-装] 本轮结束；将检查 need_repack 决定是否再算。")
 
         # 一次计算只写一份完整 JSON（成功+失败托盘都在内）；
         # 有任一达标盘 → success/，否则 → fail/。
@@ -549,30 +550,34 @@ class WcsPackingService:
                 break
 
     def _pack_loop(self) -> None:
-        """仅在有新插入时装箱；算完后暂停直到下一次插入。"""
+        """监听 need_repack；一次算完后再决定是否连算。"""
         idle_announced = False
         while not self._stop.is_set():
-            # 等待「有新插入」信号
-            if not self._db_insert_wake.is_set():
+            if not self._need_repack.is_set():
                 if not idle_announced:
                     print(
-                        "[WCS-装] 等待数据库新插入（有新 product_code 才开算）…"
+                        "[WCS-装] 等待 need_repack"
+                        "（立库相对库表有变化才开算）…"
                     )
                     idle_announced = True
-                self._db_insert_wake.wait(timeout=_PACK_IDLE_POLL_SEC)
+                self._need_repack.wait(timeout=_PACK_IDLE_POLL_SEC)
                 if self._stop.is_set():
                     break
-                if not self._db_insert_wake.is_set():
+                if not self._need_repack.is_set():
                     continue
 
             idle_announced = False
-            self._db_insert_wake.clear()
+            # 开算前清除：算中拉取再变会重新 set，算完可再开一轮
+            self._need_repack.clear()
             try:
                 self._reload_reference_data()
                 self.pack_once()
             except Exception as exc:
                 print(f"[WCS-装] 循环异常：{exc}")
-            # 算完不自动连算；若装箱期间又有新插入，wake 会被再次 set，下一圈继续
+            if self._need_repack.is_set():
+                print("[WCS-装] 算完后 need_repack 仍为 True → 立即再算。")
+            else:
+                print("[WCS-装] 算完后 need_repack=False → 继续等待。")
 
     def run_loop(self) -> None:
         print("=" * 60)
@@ -594,8 +599,8 @@ class WcsPackingService:
         print(f"  BMS 参考：{self._ds.bms_reference_file}")
         print(f"  输出目录：{self._ds.output_dir}")
         print(
-            "  触发：wcs_stock_box 有「新插入」开算；"
-            "达标回写 up_to_standard=1；历史表只追加"
+            "  触发：wcs_stock_box 的 product_code 集合相对立库有变化才全量替换并开算；"
+            "装箱用当前全表；算完再读 need_repack；历史表只追加"
         )
         if self._config_path:
             print(f"  约束配置：{self._config_path}")
@@ -617,21 +622,21 @@ class WcsPackingService:
         except KeyboardInterrupt:
             print("[WCS] 收到停止信号，正在结束 …")
             self._stop.set()
-            self._db_insert_wake.set()
+            self._need_repack.set()
             fetch_thread.join(timeout=5)
             pack_thread.join(timeout=5)
             print("[WCS] 服务已结束。")
 
     def run_once(self) -> bool:
-        """调试：拉一次 + 若有新插入则装一次。"""
+        """调试：拉一次 + 若库存有变化则装一次。"""
         try:
-            inserted = self.fetch_once()
+            changed = self.fetch_once()
         except Exception as exc:
             if self._handle_fetch_error(exc, "run_once 拉取"):
                 return False
             return False
-        if inserted <= 0:
-            print("[WCS] run_once：无新插入，不装箱。")
+        if changed <= 0:
+            print("[WCS] run_once：库存无变化，不装箱。")
             return True
         return self.pack_once().executed
 
@@ -643,8 +648,8 @@ class WcsPackingService:
             round_no += 1
             print(f"[WCS] 成功等待模式：第 {round_no} 轮拉取。")
             try:
-                inserted = self.fetch_once()
-                if inserted > 0:
+                changed = self.fetch_once()
+                if changed > 0:
                     self._reload_reference_data()
                     outcome = self.pack_once()
                     if outcome.success_pallets > 0:

@@ -126,7 +126,7 @@ def test_effective_url_switches_with_use_real_api():
 def test_handle_fetch_error_stops_only_when_use_real_api():
     service = object.__new__(WcsPackingService)
     service._stop = _NeverStoppingEvent()
-    service._db_insert_wake = Mock()
+    service._need_repack = Mock()
     service.stopped_by_api_failure = False
     service._ds = SimpleNamespace(use_real_api=True)
 
@@ -135,7 +135,7 @@ def test_handle_fetch_error_stops_only_when_use_real_api():
 
     service2 = object.__new__(WcsPackingService)
     service2._stop = _NeverStoppingEvent()
-    service2._db_insert_wake = Mock()
+    service2._need_repack = Mock()
     service2.stopped_by_api_failure = False
     service2._ds = SimpleNamespace(use_real_api=False)
     assert service2._handle_fetch_error(RuntimeError("boom"), "test") is False

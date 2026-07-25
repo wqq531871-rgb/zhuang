@@ -911,7 +911,16 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.btn_excel_run.clicked.connect(self.start_excel_packing)
         layout.addWidget(self.btn_excel_run)
 
+        self.btn_api_maintain = QtWidgets.QPushButton("接口维护")
+        self.btn_api_maintain.setObjectName("GhostButton")
+        self.btn_api_maintain.setToolTip(
+            "维护本地接收端对外回复；重点可改 4.7 的 data.status（0/1/99）。"
+        )
+        self.btn_api_maintain.clicked.connect(self.open_api_maintain_dialog)
+        layout.addWidget(self.btn_api_maintain)
+
         self.btn_algo_settings = QtWidgets.QPushButton("算法设置")
+
         self.btn_algo_settings.setObjectName("GhostButton")
         self.btn_algo_settings.setToolTip("高级功能：切换算法目录、配置文件，或按当前配置复跑算法。日常使用通常不用点。")
         algo_menu = QtWidgets.QMenu(self.btn_algo_settings)
@@ -1593,6 +1602,13 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         super().populate_after_load()
         self._refresh_push_pallet_combo()
         self._refresh_live_stack_panel()
+
+    def open_api_maintain_dialog(self) -> None:
+        """打开接口维护弹窗（重点改 4.7 data.status）。"""
+        from wcs_api_maintain_dialog import WcsApiMaintainDialog
+
+        dlg = WcsApiMaintainDialog(self, project_dir=Path(self.project_dir))
+        dlg.exec_()
 
     def open_wcs_push_dialog(self) -> None:
         """弹窗多选库中未下传达标托盘，确认后整盘下传到 WCS。"""
