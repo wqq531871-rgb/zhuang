@@ -4,8 +4,11 @@
 
 1. 拉取器：每 download_interval 秒 POST 接口 1；
    原始 JSON → ``input/raw/``（本地仅保留此目录）；
-   过滤 MH423C 后按 ``product_code`` 插入 ``zhuangdb.wcs_stock_box``
-   （已存在则跳过；新行 ``up_to_standard=0``）。仅当有新插入时唤醒装箱。
+   过滤 MH423C 后：
+   - ``wcs_stock_box``：同步为当前立库快照（新码插入、已有跳过、
+     本次没有的删除；新行 ``up_to_standard=0``，已有行保留达标状态）；
+   - ``wcs_stock_box_all``：历史全量追加（新码插入、已有跳过，不删除）。
+   仅当 ``wcs_stock_box`` 有新插入时唤醒装箱。
 
 2. 装箱器：被新插入唤醒后，读取库中全部未达标行作为算法输入；
    算完把 SUCCESS 盘箱子的 ``up_to_standard`` 更新为 1；未达标保持 0。
@@ -51,6 +54,7 @@ from src.main.output_split import (
     resolve_report_bucket_dir,
 )
 from src.service.stock_db import (
+    WcsStockAllRepository,
     WcsStockRepository,
     load_database_config,
 )
@@ -283,6 +287,7 @@ class WcsPackingService:
         self._ds = load_data_source_config(self._config_path)
         self._db_cfg = _load_db_config_from_yaml(self._config_path)
         self._repo = WcsStockRepository(self._db_cfg)
+        self._repo_all = WcsStockAllRepository(self._db_cfg)
         self._safe_compare = safe_compare
         self._constraint_config = load_constraint_config(self._config_path)
         self._build_workflow = build_workflow
@@ -344,7 +349,10 @@ class WcsPackingService:
 
     # ------------------------------------------------------------------ fetch
     def fetch_once(self) -> int:
-        """拉一次接口 1：原始 JSON 落 raw/，新箱子插入 DB。返回新插入行数。"""
+        """拉一次接口 1：原始 JSON 落 raw/，同步当前表并追加历史表。
+
+        返回 ``wcs_stock_box`` 新插入行数（用于是否唤醒装箱）。
+        """
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         print(f"\n{'=' * 60}")
         print(f"[WCS-拉] {ts}：拉取接口 1 …")
@@ -366,11 +374,21 @@ class WcsPackingService:
         else:
             print(f"[WCS-拉] 库存品类数：{len(kept)}（均为 {_SUPPORTED_CASE_TYPE}）")
 
-        inserted = self._repo.insert_new_stock_entries(kept)
+        sync_stats = self._repo.sync_stock_entries(kept)
         print(
-            f"[WCS-拉] 落库完成：候选 {len(kept)} 条，新插入 {inserted} 条"
+            f"[WCS-拉] wcs_stock_box 同步：候选 {len(kept)}，"
+            f"新插入 {sync_stats.inserted}，跳过已有 {sync_stats.skipped_existing}，"
+            f"删除过期 {sync_stats.deleted}"
             f"（新行 up_to_standard=0）。"
         )
+
+        all_stats = self._repo_all.insert_new_stock_entries(kept)
+        print(
+            f"[WCS-拉] wcs_stock_box_all 追加：新插入 {all_stats.inserted}，"
+            f"跳过已有 {all_stats.skipped_existing}（历史不删）。"
+        )
+
+        inserted = sync_stats.inserted
         if inserted > 0:
             self._db_insert_wake.set()
             print("[WCS-拉] 有新插入 → 唤醒装箱线程。")
@@ -570,11 +588,15 @@ class WcsPackingService:
         print(f"  原始 JSON：{self.raw_dir}")
         print(
             f"  数据库：{self._db_cfg.host}:{self._db_cfg.port}/"
-            f"{self._db_cfg.database} 表 wcs_stock_box"
+            f"{self._db_cfg.database} 表 wcs_stock_box（当前）"
+            f" / wcs_stock_box_all（历史）"
         )
         print(f"  BMS 参考：{self._ds.bms_reference_file}")
         print(f"  输出目录：{self._ds.output_dir}")
-        print("  触发：仅「新插入」开算；达标回写 up_to_standard=1")
+        print(
+            "  触发：wcs_stock_box 有「新插入」开算；"
+            "达标回写 up_to_standard=1；历史表只追加"
+        )
         if self._config_path:
             print(f"  约束配置：{self._config_path}")
         print("  按 Ctrl+C 或由 UI 停止按钮结束进程")
