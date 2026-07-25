@@ -2,9 +2,11 @@
 
 当前约定（联调阶段）：
 - 4.3 sendcasetask：记录 WCS 选定托盘（现场码垛「托盘已选定」依赖此写入）。
-- 4.4 boxarrive / 4.6 palletarrive：对方请求后按示例回成功，暂不做业务处理。
+- 4.4 boxarrive：对方请求后按示例回成功，暂不做业务处理。
+- 4.6 palletarrive：回成功，并将 4.7 data.status 置为 1（执行中）。
 - 4.5 reqpallet：我方→WCS 出站，暂不实现。
-- 4.7 /api/status：返回配置中的 device_status。
+- 4.7 /api/status：返回 data.status（0 就绪 / 1 执行中 / 99 异常）；
+  PLC KONGXIAN==0 时由控序侧写 0，本服务只读共享状态文件。
 """
 
 from __future__ import annotations
@@ -115,8 +117,17 @@ def handle_boxarrive(
 def handle_palletarrive(
     settings: ReceiverSettings, body: Dict[str, Any]
 ) -> Dict[str, Any]:
-    """4.6 托盘到达：仅回成功示例，暂不驱动站台状态机。"""
-    resp = ok({})
+    """4.6 托盘到达：回成功，并将 4.7 data.status 置为 1（执行中）。"""
+    status_info: Dict[str, Any] = {}
+    try:
+        _ensure_packing_system_import()
+        from src.service.device_status_store import mark_busy_on_palletarrive
+
+        status_info = mark_busy_on_palletarrive()
+    except Exception as exc:
+        print(f"[4.6-状态] 写入 data.status=1 失败：{exc}")
+        status_info = {"ok": False, "error": str(exc)}
+    resp = ok({"device_status": status_info})
     log_request(
         log_dir=settings.log_dir,
         save_requests=settings.save_requests,
@@ -129,10 +140,20 @@ def handle_palletarrive(
 
 
 def handle_status(settings: ReceiverSettings) -> Dict[str, Any]:
+    """4.7：顶层 code 恒为 0；data.status 读共享状态（缺省回退配置）。"""
+    fallback = int(settings.device_status)
+    try:
+        _ensure_packing_system_import()
+        from src.service.device_status_store import read_device_status
+
+        status = read_device_status(default=fallback)
+    except Exception as exc:
+        print(f"[4.7-状态] 读取失败，回退配置 device_status={fallback}：{exc}")
+        status = fallback
     resp = {
         "code": 0,
         "msg": "success",
-        "data": {"status": int(settings.device_status)},
+        "data": {"status": int(status)},
     }
     log_request(
         log_dir=settings.log_dir,

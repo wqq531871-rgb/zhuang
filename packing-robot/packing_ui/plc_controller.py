@@ -310,6 +310,13 @@ class PlcController(QObject):
         self.task_changed.emit(
             f"托盘：{uid}　数据库 seq：—　PLC seq：{status.request_seq}"
         )
+        # DBW12 KONGXIAN==0 → 接口 4.7 data.status=0（就绪）
+        try:
+            from .device_status import mark_ready_on_kongxian_idle
+
+            mark_ready_on_kongxian_idle(getattr(status, "idle", None))
+        except Exception as exc:
+            self.log.emit(f"[4.7-状态] 写就绪失败：{exc}")
 
     def _on_plc_thread_finished(self) -> None:
         self._plc_worker = None
