@@ -160,7 +160,20 @@ def test_action_to_dict_exposes_robot_output_contract():
 
 
 def test_camera_data_overrides_manual_orientation_and_is_exported_for_plc():
-    parsed_item = normalize_document({"k": plan()})[0].items[0]
+    parsed_item = normalize_document(
+        {
+            "k": plan(
+                items=[
+                    item(
+                        state=1,
+                        camera_length=700.0,
+                        camera_width=530.0,
+                        camera_height=480.0,
+                    )
+                ]
+            )
+        }
+    )[0].items[0]
     camera = CameraBoxData(
         box_id="box-1",
         x=420.0,
