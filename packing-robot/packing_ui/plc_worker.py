@@ -7,6 +7,10 @@ from typing import Any, Callable, Iterable
 
 from PySide6.QtCore import QObject, Signal, Slot
 
+from .layout_state import (
+    STATE_PATH_CAMERA,
+    normalize_state_path,
+)
 from .plc_protocol import S7Client, S7Config, build_command, create_snap7_client
 
 
@@ -26,6 +30,7 @@ class PlcSendWorker(QObject):
         sequences: Iterable[int],
         row_loader: Callable[[str, int], dict[str, Any] | None],
         camera_writer: Callable[[str, int, int, int, int], int],
+        state_source: str = STATE_PATH_CAMERA,
         client_factory: Callable[[], Any] = create_snap7_client,
         protocol_factory: Callable[..., Any] = S7Client,
         sleep: Callable[[float], None] = time.sleep,
@@ -37,6 +42,7 @@ class PlcSendWorker(QObject):
         self.sequences = tuple(int(value) for value in sequences)
         self._row_loader = row_loader
         self._camera_writer = camera_writer
+        self.state_source = normalize_state_path(state_source)
         self._client_factory = client_factory
         self._protocol_factory = protocol_factory
         self._sleep = sleep
@@ -64,35 +70,41 @@ class PlcSendWorker(QObject):
 
                 inbound = protocol.wait_request(seq)
                 self.plc_status.emit(inbound)
-                dimensions = (
-                    int(inbound.camera_length),
-                    int(inbound.camera_width),
-                    int(inbound.camera_height),
-                )
-                if any(value <= 0 for value in dimensions):
-                    raise ValueError(
-                        f"seq={seq} 的 PLC 相机尺寸无效："
-                        f"DBW6={dimensions[0]}，"
-                        f"DBW8={dimensions[1]}，"
-                        f"DBW10={dimensions[2]}"
+                if self.state_source == STATE_PATH_CAMERA:
+                    dimensions = (
+                        int(inbound.camera_length),
+                        int(inbound.camera_width),
+                        int(inbound.camera_height),
                     )
-                written = int(
-                    self._camera_writer(
-                        self.box_unique_id,
-                        seq,
-                        *dimensions,
+                    if any(value <= 0 for value in dimensions):
+                        raise ValueError(
+                            f"seq={seq} 的 PLC 相机尺寸无效："
+                            f"DBW6={dimensions[0]}，"
+                            f"DBW8={dimensions[1]}，"
+                            f"DBW10={dimensions[2]}"
+                        )
+                    written = int(
+                        self._camera_writer(
+                            self.box_unique_id,
+                            seq,
+                            *dimensions,
+                        )
                     )
-                )
-                if written <= 0:
-                    raise ValueError(
-                        f"数据库中找不到 box_unique_id={self.box_unique_id} "
-                        f"seq={seq}"
+                    if written <= 0:
+                        raise ValueError(
+                            f"数据库中找不到 box_unique_id={self.box_unique_id} "
+                            f"seq={seq}"
+                        )
+                    self.status.emit(
+                        f"seq={seq} 相机尺寸已写库 "
+                        f"{dimensions[0]}×{dimensions[1]}×{dimensions[2]}，"
+                        "等待数据库 state"
                     )
-                self.status.emit(
-                    f"seq={seq} 相机尺寸已写库 "
-                    f"{dimensions[0]}×{dimensions[1]}×{dimensions[2]}，"
-                    "等待数据库 state"
-                )
+                else:
+                    self.status.emit(
+                        f"seq={seq} 使用垛型直判，"
+                        "跳过相机尺寸并读取数据库 state"
+                    )
 
                 while not self._stop_requested:
                     row = self._row_loader(self.box_unique_id, seq)

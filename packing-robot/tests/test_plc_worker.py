@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from packing_ui.plc_protocol import PlcSequenceMismatch
 from packing_ui.plc_worker import PlcSendWorker
+from packing_ui.layout_state import STATE_PATH_CAMERA, STATE_PATH_LAYOUT
 
 
 ROW = {
@@ -53,13 +54,20 @@ class FakeProtocol:
         self.alarms.append(expected_seq)
 
 
-def make_worker(*, protocol, row_loader, camera_writer):
+def make_worker(
+    *,
+    protocol,
+    row_loader,
+    camera_writer,
+    state_source=STATE_PATH_CAMERA,
+):
     return PlcSendWorker(
         config=object(),
         box_unique_id="a" * 32,
         sequences=(7,),
         row_loader=row_loader,
         camera_writer=camera_writer,
+        state_source=state_source,
         client_factory=lambda: object(),
         protocol_factory=lambda *_args, **_kwargs: protocol,
         sleep=lambda _seconds: None,
@@ -100,6 +108,40 @@ def test_worker_writes_camera_dimensions_before_polling_state():
         ("camera_write", "a" * 32, 7, 401, 302, 203),
         ("state_read", "a" * 32, 7),
     ]
+    assert [command.sequence for command in protocol.normal] == [7]
+
+
+def test_layout_path_skips_camera_dimensions_and_reads_state_directly():
+    events = []
+    protocol = FakeProtocol(
+        events=events,
+        inbound=SimpleNamespace(
+            camera_length=0,
+            camera_width=0,
+            camera_height=0,
+        ),
+    )
+
+    def row_loader(uid, seq):
+        events.append(("state_read", uid, seq))
+        return ROW
+
+    target = make_worker(
+        protocol=protocol,
+        row_loader=row_loader,
+        camera_writer=lambda *_args: events.append(("camera_write",)),
+        state_source=STATE_PATH_LAYOUT,
+    )
+    errors = []
+    target.failed.connect(errors.append)
+
+    target.run()
+
+    assert events == [
+        ("wait_request", 7),
+        ("state_read", "a" * 32, 7),
+    ]
+    assert errors == []
     assert [command.sequence for command in protocol.normal] == [7]
 
 
