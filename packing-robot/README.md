@@ -67,8 +67,8 @@ camera_height`，PLC 下发会忽略 DBW6/8/10。
 - 相机路径的常驻监听发现相机尺寸齐全且 `state` 为空后生成
   `state=0/1/2`；垛型路径则跳过相机字段，直接读取已按垛型写入的 `state`。
 - REV 区小写尺寸 `DBW14/16/18` 来自 `raw_length/width/height`。
-- PLC 坐标约定与数据库 XY 对调：`DBW20=pos_y`、`DBW22=pos_x`；
-  `DBW24=pos_z`。
+- PLC 坐标与数据库一致：`DBW20=pos_x`、`DBW22=pos_y`；
+  `DBW24=pos_z+raw_height`（箱顶高度）。
 - `DBW26=state`、`DBW28=box_num`、`DBW34=stack_height_before`。
 - 正常数据全部写完后最后置 `DBW30 DH_OVER=1`；观察到
   `DBW4 FP_OVER=1` 后才清 `DBW0 FP` 和 `DBW30 DH_OVER`。

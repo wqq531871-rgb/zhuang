@@ -1,46 +1,14 @@
 [
   {
-    "box_unique_id": "2140840e24e7445aaf404a3921d5c29c",
-    "order_id": "PAIN25450MN01S",
-    "robot_id": "001",
-    "plan_path": "E:\\Homework\\AA装箱\\A装箱和可视化\\zhuang\\packing-workspace\\output\\success\\wcs_plan_map_20260724_013331.json",
-    "source": "sendcasetask",
-    "updated_at": "2026-07-24 01:35:15",
-    "stack_status": "done",
-    "received_at": "2026-07-24 01:35:15",
-    "completed_at": "2026-07-24 01:51:54"
-  },
-  {
-    "box_unique_id": "022920c02ffa4c3bb78acffcba4b43d4",
-    "order_id": "PAIN25450MN01S",
-    "robot_id": "001",
-    "plan_path": "E:\\Homework\\AA装箱\\A装箱和可视化\\zhuang\\packing-workspace\\output\\success\\wcs_plan_map_20260724_015325.json",
-    "source": "sendcasetask",
-    "updated_at": "2026-07-24 01:54:12",
-    "received_at": "2026-07-24 01:54:12",
-    "stack_status": "done",
-    "completed_at": "2026-07-24 02:28:00"
-  },
-  {
-    "box_unique_id": "0ab7505300bc4447bacf5d7ee279c279",
-    "order_id": "ANALYSIS_001",
-    "robot_id": "001",
-    "plan_path": null,
-    "source": "sendcasetask",
-    "updated_at": "2026-07-24 02:28:00",
-    "received_at": "2026-07-24 02:28:00",
-    "stack_status": "done",
-    "completed_at": "2026-07-24 14:47:25"
-  },
-  {
     "box_unique_id": "068e80576d66478b8ff72b419bc14026",
     "order_id": "LFEG16300IN02S",
-    "robot_id": "001",
+    "robot_id": "5",
     "plan_path": null,
     "source": "sendcasetask",
     "last_arrived_seq": null,
-    "updated_at": "2026-07-24 17:52:01",
-    "received_at": "2026-07-24 17:52:01",
-    "stack_status": "active"
+    "updated_at": "2026-07-25 14:20:15",
+    "received_at": "2026-07-25 14:20:15",
+    "stack_status": "done",
+    "completed_at": "2026-07-25 16:21:19"
   }
 ]

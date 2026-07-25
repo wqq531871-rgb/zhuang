@@ -32,7 +32,7 @@ CREATE TABLE `wcs_success_box`  (
   `pos_y` double NOT NULL COMMENT '放置坐标 y mm',
   `pos_z` double NOT NULL COMMENT '放置坐标 z mm',
   `stack_height_before` double NOT NULL DEFAULT 0 COMMENT '放置当前箱之前的垛型最高顶面 mm',
-  `state` tinyint(0) UNSIGNED NULL DEFAULT NULL COMMENT '朝向：初始空；接口4后写1=不转/2=转90°',
+  `state` tinyint(0) UNSIGNED NULL DEFAULT NULL COMMENT '朝向：插入时按垛型写1=不转/2=转90°（无相机）；有相机时另议',
   `pallet_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '算法内部托盘编号（可选，便于人对账）',
   `order_id` varchar(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '销售订单号 sales_order_no',
   `case_type` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL DEFAULT NULL COMMENT '托盘类型 pallet_type，如 MH423C',

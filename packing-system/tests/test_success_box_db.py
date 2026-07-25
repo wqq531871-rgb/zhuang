@@ -6,6 +6,7 @@ from src.adapter.wcs_adapter import WcsPlanResult
 from src.service.success_box_db import (
     build_success_box_rows,
     build_wcs_case_from_box_rows,
+    layout_state_from_raw_dims,
 )
 
 
@@ -114,14 +115,23 @@ def test_build_success_box_rows_joins_stack_height_and_filters_failed():
     assert r1[2:5] == (100.0, 50.0, 40.0)
     assert r1[5:8] == (1.0, 2.0, 0.0)
     assert r1[8] == 12.5
-    assert r1[9] is None
+    # raw 100x50 → width < length → state=2；110x60 同理
+    assert r1[9] == 2
     assert r1[10:14] == ("P1", "SO1", "MH423C", "0")
     assert r1[14] == "9001"
     assert r1[15] == 2
     assert r2[1] == 2
     assert r2[8] == 40.0
+    assert r2[9] == 2
     assert r2[14] == "9002"
     assert r2[15] == 2
+
+
+def test_layout_state_from_raw_dims_matches_robot_rule():
+    assert layout_state_from_raw_dims(100, 50) == 2
+    assert layout_state_from_raw_dims(50, 100) == 1
+    assert layout_state_from_raw_dims(80, 80) == 1
+    assert layout_state_from_raw_dims(0, 10) == 1
 
 
 def test_build_success_box_rows_treats_zero_product_code_as_null():

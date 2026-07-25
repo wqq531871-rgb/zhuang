@@ -1,6 +1,5 @@
 from types import SimpleNamespace
 
-from packing_ui.plc_protocol import PlcSequenceMismatch
 from packing_ui.plc_worker import PlcSendWorker
 from packing_ui.layout_state import STATE_PATH_CAMERA, STATE_PATH_LAYOUT
 
@@ -23,14 +22,23 @@ ROW = {
 
 
 class FakeProtocol:
-    def __init__(self, *, events=None, inbound=None, request_error=None):
+    def __init__(
+        self,
+        *,
+        events=None,
+        inbound=None,
+        request_error=None,
+        request_queue=None,
+    ):
         self.events = events if events is not None else []
         self.inbound = inbound or SimpleNamespace(
+            request_seq=7,
             camera_length=401,
             camera_width=302,
             camera_height=203,
         )
         self.request_error = request_error
+        self.request_queue = list(request_queue or [])
         self.normal = []
         self.alarms = []
         self.disconnected = False
@@ -45,6 +53,8 @@ class FakeProtocol:
         self.events.append(("wait_request", expected_seq))
         if self.request_error is not None:
             raise self.request_error
+        if self.request_queue:
+            return self.request_queue.pop(0)
         return self.inbound
 
     def send_normal(self, command):
@@ -60,11 +70,12 @@ def make_worker(
     row_loader,
     camera_writer,
     state_source=STATE_PATH_CAMERA,
+    sequences=(7,),
 ):
     return PlcSendWorker(
         config=object(),
         box_unique_id="a" * 32,
-        sequences=(7,),
+        sequences=sequences,
         row_loader=row_loader,
         camera_writer=camera_writer,
         state_source=state_source,
@@ -104,7 +115,7 @@ def test_worker_writes_camera_dimensions_before_polling_state():
     target.run()
 
     assert events[:3] == [
-        ("wait_request", 7),
+        ("wait_request", None),
         ("camera_write", "a" * 32, 7, 401, 302, 203),
         ("state_read", "a" * 32, 7),
     ]
@@ -116,6 +127,7 @@ def test_layout_path_skips_camera_dimensions_and_reads_state_directly():
     protocol = FakeProtocol(
         events=events,
         inbound=SimpleNamespace(
+            request_seq=7,
             camera_length=0,
             camera_width=0,
             camera_height=0,
@@ -138,11 +150,63 @@ def test_layout_path_skips_camera_dimensions_and_reads_state_directly():
     target.run()
 
     assert events == [
-        ("wait_request", 7),
+        ("wait_request", None),
         ("state_read", "a" * 32, 7),
     ]
     assert errors == []
     assert [command.sequence for command in protocol.normal] == [7]
+
+
+def test_worker_follows_plc_requested_seq_not_preload_order():
+    events = []
+    row2 = {**ROW, "seq": 2, "state": 1}
+    protocol = FakeProtocol(
+        events=events,
+        request_queue=[
+            SimpleNamespace(
+                request_seq=2,
+                camera_length=0,
+                camera_width=0,
+                camera_height=0,
+            ),
+            SimpleNamespace(
+                request_seq=1,
+                camera_length=0,
+                camera_width=0,
+                camera_height=0,
+            ),
+        ],
+    )
+
+    def row_loader(_uid, seq):
+        events.append(("state_read", seq))
+        if seq == 2:
+            return row2
+        return {**ROW, "seq": 1, "state": 1}
+
+    target = make_worker(
+        protocol=protocol,
+        row_loader=row_loader,
+        camera_writer=lambda *_a: 1,
+        state_source=STATE_PATH_LAYOUT,
+        sequences=(1, 2),
+    )
+    completed = []
+    target.box_finished.connect(completed.append)
+    errors = []
+    target.failed.connect(errors.append)
+
+    target.run()
+
+    assert errors == []
+    assert events[:4] == [
+        ("wait_request", None),
+        ("state_read", 2),
+        ("wait_request", None),
+        ("state_read", 1),
+    ]
+    assert [c.sequence for c in protocol.normal] == [2, 1]
+    assert completed == [2, 1]
 
 
 def test_worker_waits_for_null_state_then_sends_latest_row():
@@ -176,6 +240,7 @@ def test_worker_rejects_nonpositive_camera_dimensions_before_db_or_rev_write():
     calls = []
     protocol = FakeProtocol(
         inbound=SimpleNamespace(
+            request_seq=7,
             camera_length=0,
             camera_width=302,
             camera_height=203,
@@ -220,27 +285,30 @@ def test_worker_stops_when_camera_database_row_is_missing():
     assert protocol.normal == []
 
 
-def test_worker_sequence_mismatch_never_writes_camera_or_rev():
-    calls = []
+def test_worker_fails_when_plc_seq_missing_in_database():
     protocol = FakeProtocol(
-        request_error=PlcSequenceMismatch(
-            "PLC请求 seq=8，当前数据库箱子 seq=7"
+        inbound=SimpleNamespace(
+            request_seq=99,
+            camera_length=0,
+            camera_width=0,
+            camera_height=0,
         )
     )
     target = make_worker(
         protocol=protocol,
-        row_loader=lambda *_args: calls.append("state_read"),
-        camera_writer=lambda *_args: calls.append("camera_write"),
+        row_loader=lambda *_args: None,
+        camera_writer=lambda *_args: 1,
+        state_source=STATE_PATH_LAYOUT,
+        sequences=(1, 2),
     )
     errors = []
     target.failed.connect(errors.append)
 
     target.run()
 
-    assert errors == ["PLC请求 seq=8，当前数据库箱子 seq=7"]
-    assert calls == []
-    assert protocol.alarms == []
-    assert protocol.normal == []
+    assert errors == [
+        f"PLC请求 seq=99，托盘 {'a' * 32} 数据库中无此箱"
+    ]
 
 
 def test_worker_rejects_illegal_state_without_plc_write():

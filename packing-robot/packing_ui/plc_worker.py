@@ -11,7 +11,13 @@ from .layout_state import (
     STATE_PATH_CAMERA,
     normalize_state_path,
 )
-from .plc_protocol import S7Client, S7Config, build_command, create_snap7_client
+from .plc_protocol import (
+    PlcStoppedError,
+    S7Client,
+    S7Config,
+    build_command,
+    create_snap7_client,
+)
 
 
 class PlcSendWorker(QObject):
@@ -53,6 +59,82 @@ class PlcSendWorker(QObject):
     def request_stop(self) -> None:
         self._stop_requested = True
 
+    def _process_one_box(self, protocol: Any, seq: int, inbound: Any) -> bool:
+        """处理 PLC 请求的一箱。返回 False 表示报警后应结束整盘任务。"""
+        if self.state_source == STATE_PATH_CAMERA:
+            dimensions = (
+                int(inbound.camera_length),
+                int(inbound.camera_width),
+                int(inbound.camera_height),
+            )
+            if any(value <= 0 for value in dimensions):
+                raise ValueError(
+                    f"seq={seq} 的 PLC 相机尺寸无效："
+                    f"DBW6={dimensions[0]}，"
+                    f"DBW8={dimensions[1]}，"
+                    f"DBW10={dimensions[2]}"
+                )
+            written = int(
+                self._camera_writer(
+                    self.box_unique_id,
+                    seq,
+                    *dimensions,
+                )
+            )
+            if written <= 0:
+                raise ValueError(
+                    f"数据库中找不到 box_unique_id={self.box_unique_id} "
+                    f"seq={seq}"
+                )
+            self.status.emit(
+                f"seq={seq} 相机尺寸已写库 "
+                f"{dimensions[0]}×{dimensions[1]}×{dimensions[2]}，"
+                "等待数据库 state"
+            )
+        else:
+            self.status.emit(
+                f"seq={seq} 使用垛型直判，跳过相机尺寸并读取数据库 state"
+            )
+
+        while not self._stop_requested:
+            row = self._row_loader(self.box_unique_id, seq)
+            if row is None:
+                raise ValueError(
+                    f"数据库中找不到 box_unique_id={self.box_unique_id} "
+                    f"seq={seq}"
+                )
+            state = row.get("state")
+            if state is None or state == "":
+                self.status.emit(f"seq={seq} 等待数据库 state")
+                self._sleep(self._state_poll_interval)
+                continue
+            try:
+                state_i = int(state)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"seq={seq} 的 state={state!r} 非法，只允许空值、0、1、2"
+                ) from exc
+            if state_i == 0:
+                self.status.emit(f"seq={seq} state=0，仅发送报警")
+                plc_state = protocol.send_alarm(seq)
+                self.plc_status.emit(plc_state)
+                self.alarm.emit(seq)
+                return False
+            if state_i not in (1, 2):
+                raise ValueError(
+                    f"seq={seq} 的 state={state_i} 非法，只允许空值、0、1、2"
+                )
+            command_row = dict(row)
+            command_row["seq"] = seq
+            command_row["state"] = state_i
+            command = build_command(command_row)
+            self.status.emit(f"seq={seq} 正在下发")
+            plc_state = protocol.send_normal(command)
+            self.plc_status.emit(plc_state)
+            self.box_finished.emit(seq)
+            return True
+        return True
+
     @Slot()
     def run(self) -> None:
         protocol = None
@@ -61,87 +143,41 @@ class PlcSendWorker(QObject):
                 self._client_factory(),
                 self.config,
                 sleep=self._sleep,
+                should_stop=lambda: self._stop_requested,
             )
             protocol.connect()
-            for seq in self.sequences:
-                if self._stop_requested:
-                    self.status.emit("已停止")
-                    return
-
-                inbound = protocol.wait_request(seq)
+            remaining = set(self.sequences)
+            known = frozenset(self.sequences)
+            while remaining and not self._stop_requested:
+                # 不校验期望 seq：以 PLC 请求序号为准，再查库下发
+                inbound = protocol.wait_request(None)
                 self.plc_status.emit(inbound)
-                if self.state_source == STATE_PATH_CAMERA:
-                    dimensions = (
-                        int(inbound.camera_length),
-                        int(inbound.camera_width),
-                        int(inbound.camera_height),
-                    )
-                    if any(value <= 0 for value in dimensions):
+                seq = int(inbound.request_seq)
+                self.status.emit(
+                    f"收到 PLC 请求 seq={seq}，按该序号查库下发"
+                )
+                if seq not in known:
+                    probe = self._row_loader(self.box_unique_id, seq)
+                    if probe is None:
                         raise ValueError(
-                            f"seq={seq} 的 PLC 相机尺寸无效："
-                            f"DBW6={dimensions[0]}，"
-                            f"DBW8={dimensions[1]}，"
-                            f"DBW10={dimensions[2]}"
-                        )
-                    written = int(
-                        self._camera_writer(
-                            self.box_unique_id,
-                            seq,
-                            *dimensions,
-                        )
-                    )
-                    if written <= 0:
-                        raise ValueError(
-                            f"数据库中找不到 box_unique_id={self.box_unique_id} "
-                            f"seq={seq}"
+                            f"PLC请求 seq={seq}，"
+                            f"托盘 {self.box_unique_id} 数据库中无此箱"
                         )
                     self.status.emit(
-                        f"seq={seq} 相机尺寸已写库 "
-                        f"{dimensions[0]}×{dimensions[1]}×{dimensions[2]}，"
-                        "等待数据库 state"
-                    )
-                else:
-                    self.status.emit(
-                        f"seq={seq} 使用垛型直判，"
-                        "跳过相机尺寸并读取数据库 state"
+                        f"seq={seq} 不在预加载顺序中，仍按数据库行下发"
                     )
 
-                while not self._stop_requested:
-                    row = self._row_loader(self.box_unique_id, seq)
-                    if row is None:
-                        raise ValueError(
-                            f"数据库中找不到 box_unique_id={self.box_unique_id} "
-                            f"seq={seq}"
-                        )
-                    state = row.get("state")
-                    if state is None or state == "":
-                        self.status.emit(f"seq={seq} 等待数据库 state")
-                        self._sleep(self._state_poll_interval)
-                        continue
-                    try:
-                        state_i = int(state)
-                    except (TypeError, ValueError) as exc:
-                        raise ValueError(
-                            f"seq={seq} 的 state={state!r} 非法，只允许空值、0、1、2"
-                        ) from exc
-                    if state_i == 0:
-                        self.status.emit(f"seq={seq} state=0，仅发送报警")
-                        plc_state = protocol.send_alarm(seq)
-                        self.plc_status.emit(plc_state)
-                        self.alarm.emit(seq)
-                        return
-                    if state_i not in (1, 2):
-                        raise ValueError(
-                            f"seq={seq} 的 state={state_i} 非法，只允许空值、0、1、2"
-                        )
-                    command_row = dict(row)
-                    command_row["state"] = state_i
-                    command = build_command(command_row)
-                    self.status.emit(f"seq={seq} 正在下发")
-                    plc_state = protocol.send_normal(command)
-                    self.plc_status.emit(plc_state)
-                    self.box_finished.emit(seq)
-                    break
+                cont = self._process_one_box(protocol, seq, inbound)
+                if not cont:
+                    return
+                remaining.discard(seq)
+
+            if self._stop_requested:
+                self.status.emit("已停止")
+            elif not remaining:
+                self.status.emit("本托盘全部序号已下发完成")
+        except PlcStoppedError:
+            self.status.emit("已停止")
         except Exception as exc:  # noqa: BLE001
             self.failed.emit(str(exc))
         finally:

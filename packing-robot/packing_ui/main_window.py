@@ -5,37 +5,25 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QSignalBlocker, QThread, QTimer, Qt
+from PySide6.QtCore import QSignalBlocker, QTimer, Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QComboBox,
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
-    QHBoxLayout,
     QLabel,
-    QLineEdit,
     QListWidget,
     QMainWindow,
-    QPlainTextEdit,
-    QPushButton,
     QSplitter,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 from .data import PackedItem, PalletPlan, build_action, load_plan_file, target_orientation
 from .integration import CameraBoxData
-from .layout_state import (
-    STATE_PATH_CAMERA,
-    STATE_PATH_LAYOUT,
-    LayoutStateAssignment,
-    assign_pallet_layout_states,
-    normalize_state_path,
-)
+from .layout_state import STATE_PATH_LAYOUT
 from .live_command import (
     default_command_path,
     default_history_path,
@@ -44,14 +32,8 @@ from .live_command import (
     read_live_command,
     read_live_session,
 )
-from .plan_from_db import (
-    fetch_plc_row,
-    load_plan_from_db,
-    update_camera_dimensions,
-)
+from .plan_from_db import load_plan_from_db
 from .playback import PlaybackController, PlaybackPanel
-from .plc_protocol import S7Client, S7Config, create_snap7_client
-from .plc_worker import PlcSendWorker
 
 
 class PackingMainWindow(QMainWindow):
@@ -62,10 +44,6 @@ class PackingMainWindow(QMainWindow):
         config_path: str | None = None,
         autoload: bool = True,
         enable_3d: bool = True,
-        plc_client_factory: Any = None,
-        plc_worker_factory: Any = None,
-        camera_dimension_writer: Any = None,
-        layout_state_writer: Any = None,
         **_ignored,
     ) -> None:
         super().__init__()
@@ -87,18 +65,6 @@ class PackingMainWindow(QMainWindow):
         self._enable_3d = enable_3d
         self.scene = None
         self._state_sync_thread = None  # 兼容旧测试
-        self._plc_client_factory = plc_client_factory or create_snap7_client
-        self._plc_worker_factory = plc_worker_factory or PlcSendWorker
-        self._camera_dimension_writer = (
-            camera_dimension_writer or update_camera_dimensions
-        )
-        self._layout_state_writer = (
-            layout_state_writer or assign_pallet_layout_states
-        )
-        self._plc_probe = None
-        self._plc_connected = False
-        self._plc_thread: QThread | None = None
-        self._plc_worker = None
 
         self.playback_controller = PlaybackController(self)
         self.playback_panel = PlaybackPanel(self.playback_controller)
@@ -147,14 +113,6 @@ class PackingMainWindow(QMainWindow):
         self.pallet_combo = QComboBox()
         self.order_label = QLabel("—")
         self.type_label = QLabel("—")
-        self.state_path_combo = QComboBox()
-        self.state_path_combo.addItem("相机判态", STATE_PATH_CAMERA)
-        self.state_path_combo.addItem(
-            "垛型直判（无相机）", STATE_PATH_LAYOUT
-        )
-        self.apply_state_path_button = QPushButton("应用到当前托盘")
-        self.state_path_status_label = QLabel("当前：相机判态")
-        self.state_path_status_label.setWordWrap(True)
         self.orientation_combo = QComboBox()
         self.orientation_combo.addItem("0°", 0)
         self.orientation_combo.addItem("90°", 90)
@@ -168,9 +126,6 @@ class PackingMainWindow(QMainWindow):
         form.addRow("托盘 ID", self.pallet_combo)
         form.addRow("订单编号", self.order_label)
         form.addRow("托盘类型", self.type_label)
-        form.addRow("判态路径", self.state_path_combo)
-        form.addRow("路径操作", self.apply_state_path_button)
-        form.addRow("路径状态", self.state_path_status_label)
         form.addRow("所选箱传送带姿态", self.orientation_combo)
         form.addRow("传送带平面 Z", self.conveyor_z_spin)
         self.selector_group = QGroupBox("托盘选择")
@@ -183,12 +138,6 @@ class PackingMainWindow(QMainWindow):
         outer.addWidget(self.box_list, 1)
 
         self.pallet_combo.currentIndexChanged.connect(self._select_current_plan)
-        self.state_path_combo.currentIndexChanged.connect(
-            self._on_state_path_changed
-        )
-        self.apply_state_path_button.clicked.connect(
-            self._apply_selected_state_path
-        )
         self.orientation_combo.currentIndexChanged.connect(
             self._change_selected_orientation
         )
@@ -228,63 +177,13 @@ class PackingMainWindow(QMainWindow):
         )
         layout = QVBoxLayout(group)
         layout.addWidget(self.details)
-
-        plc_group = QGroupBox("PLC 通讯")
-        plc_layout = QVBoxLayout(plc_group)
-        form = QFormLayout()
-        self.plc_ip_edit = QLineEdit("10.19.40.70")
-        self.plc_rack_spin = QSpinBox()
-        self.plc_rack_spin.setRange(0, 10)
-        self.plc_slot_spin = QSpinBox()
-        self.plc_slot_spin.setRange(0, 10)
-        self.plc_slot_spin.setValue(1)
-        self.plc_db_spin = QSpinBox()
-        self.plc_db_spin.setRange(1, 9999)
-        self.plc_db_spin.setValue(19)
-        form.addRow("IP", self.plc_ip_edit)
-        form.addRow("Rack", self.plc_rack_spin)
-        form.addRow("Slot", self.plc_slot_spin)
-        form.addRow("DB", self.plc_db_spin)
-        plc_layout.addLayout(form)
-
-        self.auto_plc_checkbox = QCheckBox("自动下发")
-        self.auto_plc_checkbox.setChecked(False)
-        plc_layout.addWidget(self.auto_plc_checkbox)
-
-        buttons = QHBoxLayout()
-        self.connect_plc_button = QPushButton("连接 PLC")
-        self.manual_plc_button = QPushButton("手动发送当前托盘")
-        self.stop_plc_button = QPushButton("停止")
-        self.stop_plc_button.setEnabled(False)
-        buttons.addWidget(self.connect_plc_button)
-        buttons.addWidget(self.manual_plc_button)
-        buttons.addWidget(self.stop_plc_button)
-        plc_layout.addLayout(buttons)
-
-        self.plc_connection_label = QLabel("未连接")
-        self.plc_task_label = QLabel("托盘：—　数据库 seq：—　PLC seq：—")
-        self.plc_words_label = QLabel(
-            "FP：—　FP_OVER：—　KONGXIAN：—　DH_OVER：—"
-        )
-        self.plc_log = QPlainTextEdit()
-        self.plc_log.setReadOnly(True)
-        self.plc_log.setMaximumBlockCount(500)
-        self.plc_log.setMinimumHeight(130)
-        plc_layout.addWidget(self.plc_connection_label)
-        plc_layout.addWidget(self.plc_task_label)
-        plc_layout.addWidget(self.plc_words_label)
-        plc_layout.addWidget(self.plc_log)
-        layout.addWidget(plc_group)
         layout.addStretch(1)
-        hint = QLabel("鼠标操作\n左键：旋转视角\n滚轮：缩放\n中键：平移")
+        hint = QLabel(
+            "鼠标操作\n左键：旋转视角\n滚轮：缩放\n中键：平移\n\n"
+            "PLC 通讯请在控序界面点「连接 PLC」打开独立窗口。"
+        )
         hint.setObjectName("hint")
         layout.addWidget(hint)
-
-        self.connect_plc_button.clicked.connect(self._connect_plc)
-        self.manual_plc_button.clicked.connect(
-            lambda: self._start_current_pallet_send("manual")
-        )
-        self.stop_plc_button.clicked.connect(self._stop_plc_send)
         return group
 
     def _apply_style(self) -> None:
@@ -312,85 +211,6 @@ class PackingMainWindow(QMainWindow):
 
     def _load_plan_for_uid(self, box_unique_id: str) -> PalletPlan:
         return load_plan_from_db(box_unique_id, config_path=self._config_path)
-
-    def current_state_path(self) -> str:
-        return normalize_state_path(self.state_path_combo.currentData())
-
-    def _on_state_path_changed(self, _index: int) -> None:
-        if self.current_state_path() == STATE_PATH_LAYOUT:
-            self.state_path_status_label.setText(
-                "当前：垛型直判（无相机）；请应用到当前托盘"
-            )
-        else:
-            self.state_path_status_label.setText(
-                "当前：相机判态；已有 state 不会自动清空"
-            )
-        self._rebuild_actions()
-
-    def _apply_selected_state_path(self, _checked: bool = False) -> None:
-        del _checked
-        if self._plc_thread is not None and self._plc_thread.isRunning():
-            message = "PLC 任务运行中，禁止改写当前托盘 state"
-            self.state_path_status_label.setText(message)
-            self._append_plc_log(message)
-            return
-        if self.current_state_path() == STATE_PATH_CAMERA:
-            message = "已切换相机判态；未改写或清空当前托盘 state"
-            self.state_path_status_label.setText(message)
-            self._append_plc_log(message)
-            return
-        try:
-            self._apply_layout_state_to_current_plan(automatic=False)
-        except Exception as exc:  # noqa: BLE001
-            message = f"垛型直判失败：{exc}"
-            self.state_path_status_label.setText(message)
-            self._append_plc_log(message)
-
-    def _apply_layout_state_to_current_plan(
-        self, *, automatic: bool
-    ) -> LayoutStateAssignment:
-        if self.current_plan is None or not self.current_plan.items:
-            raise ValueError("尚未加载可判态托盘")
-        uid = str(self.current_plan.source_key or "").strip()
-        if not uid:
-            raise ValueError("当前托盘缺少 box_unique_id")
-
-        result = self._layout_state_writer(
-            uid,
-            config_path=self._config_path,
-        )
-        try:
-            refreshed = self._load_plan_for_uid(uid)
-        except Exception as exc:
-            raise ValueError(
-                f"state 已写入，但重新加载托盘 {uid} 失败：{exc}"
-            ) from exc
-        if refreshed.source_key != uid:
-            raise ValueError(
-                f"state 已写入，但刷新返回了错误托盘 {refreshed.source_key}"
-            )
-
-        self.all_plans = [
-            refreshed if plan.source_key == uid else plan
-            for plan in self.all_plans
-        ]
-        self.filtered_plans = [
-            refreshed if plan.source_key == uid else plan
-            for plan in self.filtered_plans
-        ]
-        current_index = self.pallet_combo.currentIndex()
-        if current_index >= 0:
-            self.pallet_combo.setItemData(current_index, refreshed)
-        self._select_current_plan(current_index)
-
-        prefix = "自动" if automatic else "手动"
-        message = (
-            f"{prefix}垛型直判已写入 {result.box_count} 箱"
-            f"（变化 {result.changed_count} 箱）"
-        )
-        self.state_path_status_label.setText(message)
-        self._append_plc_log(message)
-        return result
 
     def load_path(self, path: str | Path) -> None:
         """测试/调试：仍可从 JSON 灌入方案；正式界面不提供导入按钮。"""
@@ -482,7 +302,6 @@ class PackingMainWindow(QMainWindow):
         self.order_label.setText(self.current_plan.sales_order_no or "—")
         self.type_label.setText(self.current_plan.pallet_type or "—")
         self._live_pallet_uid = self.current_plan.source_key
-        # 默认用库里的目标姿态作为预览传送带角（无相机时）
         for item in self.current_plan.items:
             key = self._orientation_key(item.id)
             if key not in self._orientation_by_item:
@@ -546,13 +365,14 @@ class PackingMainWindow(QMainWindow):
         if selected_index is None:
             selected_index = max(0, self.box_list.currentRow())
         conveyor_z = self.conveyor_z_spin.value()
+        # 三维仅展示：有 DB state 即可上传送带（不强制相机尺寸）
         self.actions = [
             build_action(
                 item,
                 self._orientation_for_item(item.id),
                 conveyor_z,
                 camera_data=self._camera_for_item(item.id),
-                state_source=self.current_state_path(),
+                state_source=STATE_PATH_LAYOUT,
             )
             for item in self.current_plan.items
         ]
@@ -617,163 +437,10 @@ class PackingMainWindow(QMainWindow):
             f"（{'旋转90°' if action.rotation_state == 2 else '不旋转'}）"
         )
 
-    def _plc_config(self) -> S7Config:
-        return S7Config(
-            ip=self.plc_ip_edit.text().strip(),
-            rack=self.plc_rack_spin.value(),
-            slot=self.plc_slot_spin.value(),
-            db_number=self.plc_db_spin.value(),
-        )
-
-    def _append_plc_log(self, message: str) -> None:
-        self.plc_log.appendPlainText(str(message))
-        self.statusBar().showMessage(str(message))
-
-    def _connect_plc(self) -> None:
-        if self._plc_connected:
-            try:
-                if self._plc_probe is not None:
-                    self._plc_probe.disconnect()
-            finally:
-                self._plc_probe = None
-                self._plc_connected = False
-                self.plc_connection_label.setText("未连接")
-                self.connect_plc_button.setText("连接 PLC")
-            return
-        try:
-            probe = S7Client(self._plc_client_factory(), self._plc_config())
-            probe.connect()
-            self._plc_probe = probe
-            self._plc_connected = True
-            self.plc_connection_label.setText(
-                f"已连接 {self.plc_ip_edit.text().strip()} / DB{self.plc_db_spin.value()}"
-            )
-            self.connect_plc_button.setText("断开 PLC")
-            self._append_plc_log("PLC 连接成功")
-        except Exception as exc:  # noqa: BLE001
-            self._append_plc_log(f"PLC 连接失败：{exc}")
-
-    def _maybe_auto_start_plc(self) -> None:
-        if not self.auto_plc_checkbox.isChecked():
-            return
-        if not self._plc_connected:
-            self._append_plc_log("WCS 已加载托盘，等待 PLC 连接")
-            return
-        self._start_current_pallet_send("wcs")
-
-    def _start_current_pallet_send(self, source: str) -> None:
-        if self._plc_thread is not None and self._plc_thread.isRunning():
-            self._append_plc_log("已有托盘正在下发，拒绝重复启动")
-            return
-        if not self._plc_connected:
-            self._append_plc_log("PLC 尚未连接")
-            return
-        if self.current_plan is None or not self.current_plan.items:
-            self._append_plc_log("尚未加载可发送托盘")
-            return
-
-        state_source = self.current_state_path()
-        if state_source == STATE_PATH_LAYOUT:
-            try:
-                self._apply_layout_state_to_current_plan(automatic=True)
-            except Exception as exc:  # noqa: BLE001
-                self._append_plc_log(f"垛型直判失败，未启动 PLC：{exc}")
-                return
-
-        uid = str(self.current_plan.source_key)
-        sequences = tuple(int(item.sequence) for item in self.current_plan.items)
-        worker = self._plc_worker_factory(
-            config=self._plc_config(),
-            box_unique_id=uid,
-            sequences=sequences,
-            row_loader=lambda box_uid, seq: fetch_plc_row(
-                box_uid, seq, config_path=self._config_path
-            ),
-            camera_writer=lambda box_uid, seq, length, width, height: (
-                self._camera_dimension_writer(
-                    box_uid,
-                    seq,
-                    length,
-                    width,
-                    height,
-                    config_path=self._config_path,
-                )
-            ),
-            state_source=state_source,
-            client_factory=self._plc_client_factory,
-        )
-        thread = QThread(self)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.status.connect(self._append_plc_log)
-        worker.plc_status.connect(self._on_plc_status)
-        worker.box_finished.connect(self._on_plc_box_finished)
-        worker.alarm.connect(
-            lambda seq: self._append_plc_log(
-                f"报警：seq={seq} state=0，仅写入 DBW32=1"
-            )
-        )
-        worker.failed.connect(lambda error: self._append_plc_log(f"PLC任务失败：{error}"))
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        thread.finished.connect(self._on_plc_thread_finished)
-        thread.finished.connect(thread.deleteLater)
-        self._plc_worker = worker
-        self._plc_thread = thread
-        self.stop_plc_button.setEnabled(True)
-        self.manual_plc_button.setEnabled(False)
-        self.plc_task_label.setText(
-            f"托盘：{uid}　数据库 seq：{sequences[0]}　PLC seq：—"
-        )
-        self._append_plc_log(
-            f"{'WCS自动' if source == 'wcs' else '手动'}启动托盘下发：{uid}"
-        )
-        thread.start()
-
-    def _on_plc_status(self, status: Any) -> None:
-        if status is None:
-            return
-        self.plc_words_label.setText(
-            f"FP：{status.fp}　FP_OVER：{status.fp_over}　"
-            f"KONGXIAN：{status.idle}　DH_OVER：{status.dh_over}"
-        )
-        uid = self.current_plan.source_key if self.current_plan else "—"
-        self.plc_task_label.setText(
-            f"托盘：{uid}　数据库 seq：—　PLC seq：{status.request_seq}"
-        )
-
-    def _on_plc_box_finished(self, seq: int) -> None:
-        self._append_plc_log(f"seq={seq} 下发并握手完成")
-
-    def _on_plc_thread_finished(self) -> None:
-        self.stop_plc_button.setEnabled(False)
-        self.manual_plc_button.setEnabled(True)
-        self._plc_worker = None
-        self._plc_thread = None
-        self._append_plc_log("PLC 托盘任务结束")
-
-    def _stop_plc_send(self) -> None:
-        if self._plc_worker is not None:
-            self._plc_worker.request_stop()
-            self._append_plc_log("已请求安全停止")
-
     def closeEvent(self, event) -> None:  # noqa: N802
         self.playback_controller.pause()
         if hasattr(self, "_command_timer"):
             self._command_timer.stop()
-        self._stop_plc_send()
-        thread = self._plc_thread
-        if thread is not None and thread.isRunning() and not thread.wait(3000):
-            self._append_plc_log("PLC 正在安全结束当前握手，请稍后再次关闭")
-            if hasattr(self, "_command_timer"):
-                self._command_timer.start()
-            event.ignore()
-            return
-        if self._plc_probe is not None:
-            try:
-                self._plc_probe.disconnect()
-            except Exception:
-                pass
         super().closeEvent(event)
 
     def _poll_live_command(self) -> None:
@@ -810,7 +477,6 @@ class PackingMainWindow(QMainWindow):
         prefer_uid = str(cmd.get("box_unique_id") or "").strip()
         if not prefer_uid:
             raise ValueError("指令缺少 box_unique_id")
-        # 确保该盘在列表里（查库）
         try:
             plan = self._load_plan_for_uid(prefer_uid)
         except Exception as exc:
@@ -827,7 +493,6 @@ class PackingMainWindow(QMainWindow):
             self.pallet_combo.setCurrentIndex(0)
             self._select_current_plan()
         elif not self.select_plan_by_unique_id(prefer_uid):
-            # 历史里没有，直接加一项
             blocker = QSignalBlocker(self.pallet_combo)
             self.pallet_combo.insertItem(0, f"{prefer_uid} · 进行中", plan)
             del blocker
@@ -837,8 +502,6 @@ class PackingMainWindow(QMainWindow):
         if self.current_plan is None:
             raise ValueError("尚未加载托盘方案")
         self._live_pallet_uid = prefer_uid
-        if self.current_state_path() == STATE_PATH_LAYOUT:
-            self._apply_layout_state_to_current_plan(automatic=True)
         order = str(cmd.get("order_id") or self.current_plan.sales_order_no or "")
         n = len(self.current_plan.items)
         self.setWindowTitle(f"现场码垛演示 — 订单 {order or '—'}（共 {n} 箱）")
@@ -849,7 +512,6 @@ class PackingMainWindow(QMainWindow):
         )
         if bool(cmd.get("auto_play")):
             self.playback_controller.play()
-        self._maybe_auto_start_plc()
         self.raise_()
         self.activateWindow()
 
@@ -883,7 +545,6 @@ class PackingMainWindow(QMainWindow):
             raise ValueError(f"找不到箱子 seq={seq} item_id={item_id}")
 
         item = self.current_plan.items[index]
-        # 用指令里的 camera_* / state 刷新 item.original（避免必须整盘重载库）
         original = dict(item.original or {})
         for key in ("camera_length", "camera_width", "camera_height"):
             if cmd.get(key) is not None:
@@ -896,7 +557,6 @@ class PackingMainWindow(QMainWindow):
                 original["state"] = int(cmd.get("state"))
             except (TypeError, ValueError):
                 pass
-        # PackedItem 是 frozen；用替换 items 元组的方式更新
         updated = PackedItem(
             id=item.id,
             box_type=item.box_type,
@@ -987,7 +647,7 @@ def run(
     command_file: str | None = None,
     config_path: str | None = None,
 ) -> int:
-    del plan_path  # 不再从外部 JSON 加载
+    del plan_path
     app = QApplication.instance() or QApplication([])
     window = PackingMainWindow(command_file=command_file, config_path=config_path)
     window.show()

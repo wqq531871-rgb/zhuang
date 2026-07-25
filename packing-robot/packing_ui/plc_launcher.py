@@ -1,27 +1,32 @@
-"""Launch the existing PLC/MySQL desktop application as a separate process."""
+"""Launch the standalone PLC communication window as a separate process."""
 
 from __future__ import annotations
 
-from pathlib import Path
 import subprocess
 import sys
-from typing import Any, Callable
+from pathlib import Path
+from typing import Any, Callable, Optional
 
 
-DEFAULT_PLC_UI_DIRECTORY = Path(r"D:\research_code\tongxun")
+def default_robot_directory() -> Path:
+    return Path(__file__).resolve().parents[1]
 
 
 def launch_plc_ui(
     *,
-    directory: str | Path = DEFAULT_PLC_UI_DIRECTORY,
+    directory: Optional[str | Path] = None,
     python_executable: str | Path = sys.executable,
     popen_factory: Callable[..., Any] = subprocess.Popen,
+    config_path: Optional[str | Path] = None,
 ) -> Any:
-    directory = Path(directory)
-    script = directory / "plc_gui.py"
+    directory = Path(directory) if directory is not None else default_robot_directory()
+    script = directory / "main.py"
     if not script.is_file():
         raise FileNotFoundError(f"PLC 通讯程序不存在：{script}")
+    cmd = [str(Path(python_executable)), str(script), "--plc-window", "--auto-connect"]
+    if config_path:
+        cmd.extend(["--config", str(config_path)])
     return popen_factory(
-        [str(Path(python_executable)), str(script)],
+        cmd,
         cwd=str(directory),
     )

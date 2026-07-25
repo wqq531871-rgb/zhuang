@@ -48,6 +48,10 @@ class PlcTimeoutError(PlcError):
     """The PLC did not finish a handshake in time."""
 
 
+class PlcStoppedError(PlcError):
+    """User requested stop while waiting on the PLC."""
+
+
 class PlcSequenceMismatch(PlcError):
     """The PLC requested a different database sequence."""
 
@@ -101,7 +105,8 @@ class S7Config:
     db_number: int = 19
     connect_retries: int = 3
     retry_interval: float = 1.0
-    handshake_timeout: float = 30.0
+    # <=0：一直等到 PLC 信号（现场联调默认）；>0：秒级超时
+    handshake_timeout: float = 0.0
     poll_interval: float = 0.1
 
 
@@ -129,16 +134,40 @@ def build_command(row: Mapping[str, Any]) -> PlcCommand:
         raw_length=_plc_int(row.get("raw_length"), "raw_length"),
         raw_width=_plc_int(row.get("raw_width"), "raw_width"),
         raw_height=_plc_int(row.get("raw_height"), "raw_height"),
-        # The PLC coordinate convention swaps database X/Y.
-        x=_plc_int(row.get("pos_y"), "pos_y"),
-        y=_plc_int(row.get("pos_x"), "pos_x"),
-        z=_plc_int(row.get("pos_z"), "pos_z"),
+        # 与数据库坐标一致：DBW20=pos_x，DBW22=pos_y
+        x=_plc_int(row.get("pos_x"), "pos_x"),
+        y=_plc_int(row.get("pos_y"), "pos_y"),
+        # DBW24：放置顶面高度 = 箱底 z + 纸箱高度
+        z=_plc_int(
+            float(row.get("pos_z") or 0) + float(row.get("raw_height") or 0),
+            "pos_z+raw_height",
+        ),
         state=state,
         box_num=_plc_int(row.get("box_num"), "box_num"),
         stack_height_before=_plc_int(
             row.get("stack_height_before"), "stack_height_before"
         ),
     )
+
+
+def _format_plc_exc(exc: BaseException) -> str:
+    """把 snap7/ctypes 的含糊异常收成可读说明。"""
+    text = str(exc).strip()
+    if isinstance(exc, bytes):
+        text = exc.decode("utf-8", errors="replace").strip()
+    cause = exc.__cause__ or getattr(exc, "__context__", None)
+    cause_text = str(cause).strip() if cause is not None else ""
+    if (
+        not text
+        or "returned a result with an exception set" in text
+        or text == str(type(exc))
+    ):
+        hint = cause_text or type(exc).__name__
+        return (
+            f"{hint}；常见原因：PLC 已被其它程序占用、上一连接未断开、"
+            f"IP/机架/槽号不对或网络不通。请先点停止并断开后再连。"
+        )
+    return f"{type(exc).__name__}: {text}"
 
 
 def pack_int(value: int) -> bytes:
@@ -159,15 +188,25 @@ class S7Client:
         *,
         clock: Any = time.monotonic,
         sleep: Any = time.sleep,
+        should_stop: Any = None,
     ) -> None:
         self._client = client
         self.config = config
         self._clock = clock
         self._sleep = sleep
+        self._should_stop = should_stop or (lambda: False)
 
     def connect(self) -> None:
-        if bool(self._client.get_connected()):
-            return
+        try:
+            if bool(self._client.get_connected()):
+                return
+        except Exception:
+            # 客户端状态异常时先尝试断开再重建连接
+            try:
+                self._client.disconnect()
+            except Exception:
+                pass
+
         last_error: Exception | None = None
         for attempt in range(self.config.connect_retries):
             try:
@@ -177,17 +216,46 @@ class S7Client:
                     self.config.slot,
                     self.config.port,
                 )
-                if not bool(self._client.get_connected()):
+                try:
+                    connected = bool(self._client.get_connected())
+                except Exception as exc:  # noqa: BLE001
+                    raise OSError(
+                        f"连接后状态异常：{_format_plc_exc(exc)}"
+                    ) from exc
+                if not connected:
                     raise OSError("驱动未报告已连接")
                 return
             except Exception as exc:  # noqa: BLE001
                 last_error = exc
+                try:
+                    self._client.disconnect()
+                except Exception:
+                    pass
                 if attempt + 1 < self.config.connect_retries:
                     self._sleep(self.config.retry_interval)
-        raise PlcCommunicationError(f"连接 PLC 失败：{last_error}") from last_error
+        detail = _format_plc_exc(last_error) if last_error else "未知错误"
+        raise PlcCommunicationError(
+            f"连接 PLC 失败：{detail}"
+        ) from last_error
 
     def disconnect(self) -> None:
-        self._client.disconnect()
+        client = self._client
+        try:
+            try:
+                if bool(client.get_connected()):
+                    client.disconnect()
+            except Exception:
+                try:
+                    client.disconnect()
+                except Exception:
+                    pass
+        finally:
+            destroy = getattr(client, "destroy", None)
+            if callable(destroy):
+                try:
+                    destroy()
+                except Exception:
+                    pass
 
     def read_status(self) -> PlcStatus:
         self.connect()
@@ -212,12 +280,38 @@ class S7Client:
         except Exception as exc:  # noqa: BLE001
             raise PlcCommunicationError(f"读取 DB19 状态失败：{exc}") from exc
 
-    def wait_request(self, expected_seq: int) -> PlcStatus:
-        deadline = self._clock() + self.config.handshake_timeout
-        while self._clock() < deadline:
+    def _stop_requested(self) -> bool:
+        try:
+            return bool(self._should_stop())
+        except Exception:
+            return False
+
+    def _handshake_deadline(self) -> float | None:
+        """返回单调时钟截止时间；None 表示无限等待。"""
+        timeout = float(self.config.handshake_timeout)
+        if timeout <= 0:
+            return None
+        return self._clock() + timeout
+
+    def _timed_out(self, deadline: float | None) -> bool:
+        return deadline is not None and self._clock() >= deadline
+
+    def wait_request(self, expected_seq: int | None = None) -> PlcStatus:
+        """等待 FP 请求。
+
+        ``expected_seq`` 为 None 时：接受 PLC 给出的任意 seq（由上层按 seq 查库）。
+        为具体序号时：必须与 PLC 请求一致（用于写数后的二次确认）。
+        """
+        deadline = self._handshake_deadline()
+        while not self._timed_out(deadline):
+            if self._stop_requested():
+                raise PlcStoppedError("已停止")
             status = self.read_status()
             if status.fp == 1 and status.fp_over == 0 and status.dh_over == 0:
-                if status.request_seq != expected_seq:
+                if (
+                    expected_seq is not None
+                    and status.request_seq != int(expected_seq)
+                ):
                     raise PlcSequenceMismatch(
                         f"PLC请求 seq={status.request_seq}，"
                         f"当前数据库箱子 seq={expected_seq}"
@@ -247,9 +341,11 @@ class S7Client:
             self._write_word(offset, value)
         self._write_word(DH_OVER_OFFSET, 1)
 
-        deadline = self._clock() + self.config.handshake_timeout
+        deadline = self._handshake_deadline()
         acknowledged = False
-        while self._clock() < deadline:
+        while not self._timed_out(deadline):
+            if self._stop_requested():
+                raise PlcStoppedError("已停止")
             last_status = self.read_status()
             if not acknowledged and last_status.fp_over == 1:
                 self._write_word(FP_OFFSET, 0)

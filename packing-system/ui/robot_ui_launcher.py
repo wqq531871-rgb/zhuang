@@ -94,6 +94,8 @@ def launch_robot_ui(
     config_path: Optional[str | Path] = None,
     extra_args: Optional[Sequence[str]] = None,
     check_deps: bool = True,
+    plc_window: bool = False,
+    auto_connect: bool = False,
 ) -> Any:
     directory = Path(directory) if directory is not None else default_robot_directory()
     script = directory / "main.py"
@@ -109,10 +111,35 @@ def launch_robot_ui(
         cmd.extend(["--command-file", str(command_file)])
     if config_path:
         cmd.extend(["--config", str(config_path)])
+    if plc_window:
+        cmd.append("--plc-window")
+    if auto_connect:
+        cmd.append("--auto-connect")
     if extra_args:
         cmd.extend(list(extra_args))
     return popen_factory(
         cmd,
         cwd=str(directory),
         env=env,
+    )
+
+
+def launch_plc_ui(
+    *,
+    directory: Optional[str | Path] = None,
+    python_executable: str | Path = sys.executable,
+    popen_factory: Callable[..., Any] = subprocess.Popen,
+    config_path: Optional[str | Path] = None,
+    check_deps: bool = True,
+    auto_connect: bool = True,
+) -> Any:
+    """Open the standalone PLC communication window (auto-connect by default)."""
+    return launch_robot_ui(
+        directory=directory,
+        python_executable=python_executable,
+        popen_factory=popen_factory,
+        config_path=config_path,
+        check_deps=check_deps,
+        plc_window=True,
+        auto_connect=auto_connect,
     )

@@ -100,6 +100,25 @@ def test_default_plc_endpoint_matches_site_controller():
     value = S7Config()
     assert value.ip == "10.19.40.70"
     assert value.port == 102
+    assert value.handshake_timeout == 0.0
+
+
+def test_wait_request_stops_immediately_when_should_stop():
+    from packing_ui.plc_protocol import PlcStoppedError
+
+    raw = FakeSnap7([status(fp=0)])
+    stop = {"flag": False}
+
+    def sleep(_seconds):
+        stop["flag"] = True
+
+    with pytest.raises(PlcStoppedError, match="已停止"):
+        S7Client(
+            raw,
+            S7Config(handshake_timeout=0, poll_interval=0.001),
+            sleep=sleep,
+            should_stop=lambda: stop["flag"],
+        ).wait_request(None)
 
 
 def test_wait_request_reads_camera_dimensions_from_send_area():
@@ -120,9 +139,9 @@ def test_command_writes_only_rev_fields_and_preserves_dbw34_int():
         14: 400,
         16: 300,
         18: 200,
-        20: 110,
-        22: 100,
-        24: 120,
+        20: 100,  # pos_x
+        22: 110,  # pos_y
+        24: 320,  # pos_z(120) + raw_height(200)
         26: 2,
         28: 12,
         32: 0,

@@ -80,6 +80,22 @@ def _true_dim(item: Dict, axis: str) -> float:
     )
 
 
+def layout_state_from_raw_dims(raw_length: float, raw_width: float) -> int:
+    """无相机垛型直判：与 packing-robot ``state_from_layout_dims`` 一致。
+
+    ``raw_length`` 为 X、``raw_width`` 为 Y；Y>=X → 1（不转），否则 → 2（转90°）。
+    非法尺寸时回退为 1，避免插入失败。
+    """
+    try:
+        x_value = float(raw_length)
+        y_value = float(raw_width)
+    except (TypeError, ValueError):
+        return 1
+    if x_value <= 0 or y_value <= 0:
+        return 1
+    return 1 if y_value >= x_value else 2
+
+
 def _product_code_to_db(value) -> Optional[str]:
     """入库用 varchar；缺码/0 → None（稍后补随机码）。"""
     pc = coerce_product_code(value)
@@ -110,6 +126,7 @@ def build_success_box_rows(
     pos_x, pos_y, pos_z, stack_height_before, state,
     pallet_id, order_id, case_type, case_group, product_code, box_num
 
+    ``state``：按 ``raw_width``/``raw_length`` 垛型直判写入 1/2（无相机，插入即完成）。
     ``box_num``：该托盘箱子总数；同一 ``box_unique_id`` 下所有行相同。
     """
     if not execution_report or not wcs_result:
@@ -149,18 +166,21 @@ def build_success_box_rows(
             pos = item.get("position") or {}
             product_code = _product_code_to_db(item.get("product_code"))
             box_id = item.get("id")
+            raw_length = _true_dim(item, "length")
+            raw_width = _true_dim(item, "width")
             rows.append(
                 (
                     uid,
                     seq,
-                    _true_dim(item, "length"),
-                    _true_dim(item, "width"),
+                    raw_length,
+                    raw_width,
                     _true_dim(item, "height"),
                     float(pos.get("x") or 0.0),
                     float(pos.get("y") or 0.0),
                     float(pos.get("z") or 0.0),
                     float(height_by_box_id.get(box_id, 0.0)),
-                    None,  # state：初始置空，接口4判转后再写入 1/2
+                    # 无相机联调：插入时即按垛型写 state（不经相机覆盖）
+                    layout_state_from_raw_dims(raw_length, raw_width),
                     pallet_id,
                     order_id,
                     case_type,

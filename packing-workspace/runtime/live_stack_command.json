@@ -1,8 +1,15 @@
 {
-  "id": "20260725_104626_084743",
-  "action": "load_pallet",
-  "box_unique_id": "068e80576d66478b8ff72b419bc14026",
-  "order_id": "LFEG16300IN02S",
-  "plan_path": null,
-  "auto_play": false
+  "id": "20260725_162151_148621",
+  "action": "play_box",
+  "box_unique_id": "f700a4c9762c4deeb7c7408c710ee94d",
+  "order_id": "PAID16295BN01S",
+  "seq": 48,
+  "item_id": "",
+  "product_code": "30069519",
+  "state": 1,
+  "camera_length": null,
+  "camera_width": null,
+  "camera_height": null,
+  "auto_play": true,
+  "show_conveyor": true
 }
