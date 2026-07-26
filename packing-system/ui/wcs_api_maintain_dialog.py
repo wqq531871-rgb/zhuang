@@ -29,41 +29,16 @@ def _packing_system_root(project_dir: Optional[Path]) -> Path:
 
 
 def _ensure_device_status_import(project_dir: Optional[Path]) -> Any:
-    """保证能 import packing-system 的 device_status_store（避免被 packing/src 抢占）。"""
+    """通过 packing/src 的桥接模块加载设备状态实现。"""
     root = _packing_system_root(project_dir)
-    root_s = str(root)
-    packing_s = str((root / "packing").resolve())
-    store_file = root / "src" / "service" / "device_status_store.py"
-    if not store_file.is_file():
-        raise FileNotFoundError(f"找不到 device_status_store：{store_file}")
+    packing_root = (root / "packing").resolve()
+    packing_s = str(packing_root)
+    bridge_file = packing_root / "src" / "service" / "device_status_store.py"
+    if not bridge_file.is_file():
+        raise FileNotFoundError(f"找不到 device_status_store 桥接：{bridge_file}")
 
-    # packing 目录也有 src/，须把 packing-system 放最前，并清掉错误的 src 缓存
-    cleaned: list[str] = []
-    for p in sys.path:
-        try:
-            rp = str(Path(p).resolve())
-        except OSError:
-            cleaned.append(p)
-            continue
-        if rp in (root_s, packing_s, str(root / "src")):
-            continue
-        cleaned.append(p)
-    cleaned.insert(0, root_s)
-    sys.path[:] = cleaned
-
-    expected_prefix = (root / "src").resolve()
-    for name in list(sys.modules):
-        if name != "src" and not name.startswith("src."):
-            continue
-        mod = sys.modules.get(name)
-        file = getattr(mod, "__file__", None) if mod is not None else None
-        if not file:
-            del sys.modules[name]
-            continue
-        try:
-            Path(file).resolve().relative_to(expected_prefix)
-        except (OSError, ValueError):
-            del sys.modules[name]
+    sys.path[:] = [p for p in sys.path if p != packing_s]
+    sys.path.insert(0, packing_s)
 
     from src.service import device_status_store as store
 

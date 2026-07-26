@@ -1559,8 +1559,8 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
     def _ensure_packing_import_path(self) -> Path:
         packing_root = Path(self.project_dir).resolve() / "packing"
         root_s = str(packing_root)
-        if root_s not in sys.path:
-            sys.path.insert(0, root_s)
+        sys.path[:] = [p for p in sys.path if p != root_s]
+        sys.path.insert(0, root_s)
         return packing_root
 
     def _refresh_push_pallet_combo(self) -> None:
