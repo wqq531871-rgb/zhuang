@@ -37,6 +37,19 @@ def bundle_root() -> Path:
     return app_root()
 
 
+def _put_existing_paths_first(paths) -> None:
+    """按声明顺序提升已有路径，并去掉这些路径的旧位置。"""
+    ordered = []
+    for path in paths:
+        path = Path(path)
+        if not path.exists():
+            continue
+        value = str(path)
+        if value not in ordered:
+            ordered.append(value)
+    sys.path[:] = ordered + [p for p in sys.path if p not in ordered]
+
+
 def ensure_runtime_env() -> Path:
     """设置工作区与导入路径，返回 app_root。"""
     root = app_root()
@@ -47,31 +60,28 @@ def ensure_runtime_env() -> Path:
     if not os.environ.get("PACKING_WORKSPACE", "").strip():
         os.environ["PACKING_WORKSPACE"] = str(root / "packing-workspace")
 
-    # 导入优先级：packing 算法源码(src) > ui > 本地接收端
-    for p in (
-        bundle / "packing",
-        bundle,  # 冻结后 src/ 在 _MEIPASS/src
-        bundle / "ui",
-        bundle / "local_wcs_receiver",
-    ):
-        if p.exists():
-            s = str(p)
-            if s not in sys.path:
-                sys.path.insert(0, s)
-    root_s = str(root if not is_frozen() else bundle)
-    if not is_frozen():
-        # 开发态：优先 packing/
-        pack = root / "packing"
-        if pack.exists() and str(pack) not in sys.path:
-            sys.path.insert(0, str(pack))
-        if root_s not in sys.path:
-            sys.path.insert(0, root_s)
-        ui = root / "ui"
-        if ui.exists() and str(ui) not in sys.path:
-            sys.path.insert(0, str(ui))
-        recv = root / "local_wcs_receiver"
-        if recv.exists() and str(recv) not in sys.path:
-            sys.path.insert(0, str(recv))
+    if is_frozen():
+        # 冻结态保持现有行为；本次只修源码启动路径。
+        for p in (
+            bundle / "packing",
+            bundle,  # 冻结后 src/ 在 _MEIPASS/src
+            bundle / "ui",
+            bundle / "local_wcs_receiver",
+        ):
+            if p.exists():
+                s = str(p)
+                if s not in sys.path:
+                    sys.path.insert(0, s)
+    else:
+        # 源码态最终顺序：packing 算法源码(src) > ui > 本地接收端 > 根目录。
+        _put_existing_paths_first(
+            (
+                root / "packing",
+                root / "ui",
+                root / "local_wcs_receiver",
+                root,
+            )
+        )
 
     ws = Path(os.environ["PACKING_WORKSPACE"])
     for sub in (
