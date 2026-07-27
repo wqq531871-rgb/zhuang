@@ -7,6 +7,8 @@
 from typing import Dict, List
 from copy import deepcopy
 
+from .dimensions import raw_dims as get_raw_dims
+
 
 def has_box_above(item: Dict, items: List[Dict], eps: float = 1e-9) -> bool:
     """
@@ -169,8 +171,6 @@ def repack_ready_item(item: Dict) -> Dict:
         >>> repack_item['length']
         100.0
     """
-    from .dimensions import raw_dims as get_raw_dims
-
     item_copy = deepcopy(item)
     raw_dimensions = get_raw_dims(item_copy)
 
@@ -214,31 +214,41 @@ def item_volume(item):
     )
 
 
-def passes_small_box_not_on_larger_constraint(item, point, dims, placed_boxes):
-    """小箱不压大箱：若 item 被标记为小箱(is_small_box)且离地放置，其
-    直接支撑层(顶面与本箱底面齐平且 XY 投影重叠的已放置箱)中不得有
-    体积更大的箱子——防止较重的小箱压坏下方的大箱。
+def footprint_area(item) -> float:
+    """箱子的投影面积（原始长 × 原始宽，不含放置容差）。
 
-    地面箱(z<=0)与非小箱不受此约束。
+    刻意用 raw_* 原始尺寸：放置容差是每边 +2mm，对不同长宽比的箱子会引入
+    伪差——300×600 与 400×450 原始等面积，加容差后 302×602 > 402×452，
+    按含容差口径比会误判违例。另外面积对 90° 旋转不变（l×w = w×l），
+    所以 raw 口径同时免疫 layered_oriented 的朝向改写。
+    """
+    raw = get_raw_dims(item)
+    return float(raw['length']) * float(raw['width'])
+
+
+def passes_footprint_area_below_constraint(item, point, dims, placed_boxes):
+    """下方不得有投影面积更大的箱子（对所有箱子生效）。
+
+    离地放置的箱，其直接支撑层(顶面与本箱底面齐平且 XY 投影重叠的已放置箱)
+    中不得有投影面积更大的箱子——即投影面积沿栈自下而上单调不减，小面积在
+    下、大面积在上，避免小底面箱把载荷集中压在大箱顶面中央。
+
+    只比较直接支撑层：支撑链连续时可传递推出「下方所有箱面积都不更大」。
+    地面箱(z<=0)不受约束；面积相等通过（"更大"取严格大于）。
 
     Args:
-        item: 候选箱(需含 'is_small_box' 标记)
+        item: 候选箱
         point: 候选位置 {'x','y','z'}
-        dims: 候选尺寸 {'length','width','height'}（用于体积与 XY 投影）
+        dims: 候选放置尺寸 {'length','width','height'}（含容差，仅用于 XY 投影
+            重叠判定，与其余约束的几何口径保持一致）
         placed_boxes: 已放置箱子列表
 
     Returns:
-        True 表示通过；False 表示违例(小箱压在更大的箱子上)。
+        True 表示通过；False 表示违例(下方压着投影面积更大的箱子)。
     """
-    if not item.get('is_small_box', False):
-        return True
     if point['z'] <= 1e-9:
         return True
-    item_volume_value = (
-        float(dims['length'])
-        * float(dims['width'])
-        * float(dims.get('height', 0) or 0)
-    )
+    item_area = footprint_area(item)
     for placed_box in placed_boxes:
         placed_pos = placed_box.get('position')
         if not placed_pos:
@@ -246,12 +256,15 @@ def passes_small_box_not_on_larger_constraint(item, point, dims, placed_boxes):
         placed_top_z = placed_pos['z'] + placed_box['height']
         if abs(placed_top_z - point['z']) > 1e-5:
             continue
-        if not _has_positive_xy_overlap(point, dims, placed_box):
-            continue
-        placed_volume = (
-            placed_box['length'] * placed_box['width'] * placed_box['height']
+        # 面积就地算，不走 raw_dims()：本谓词在 beam 候选过滤的内层循环里按
+        # (候选点 × 已放置箱) 调用，每次构造一个尺寸 dict 的开销会直接放大。
+        placed_area = (
+            float(placed_box.get('raw_length', placed_box.get('length', 0)) or 0)
+            * float(placed_box.get('raw_width', placed_box.get('width', 0)) or 0)
         )
-        if placed_volume > item_volume_value + 1e-9:
+        if placed_area <= item_area + 1e-6:
+            continue
+        if _has_positive_xy_overlap(point, dims, placed_box):
             return False
     return True
 

@@ -35,7 +35,9 @@ constraints:
   support_ratio_threshold: 0.8
   center_of_mass_tolerance: 0.3333333333333333
   suction_reachability_enabled: true
-  small_box_below_enabled: true
+  # 小面积在下：任一箱子正下方不得有投影面积更大的箱子（对全部箱子生效）。
+  # 旧键 small_box_below_enabled 仍被识别并映射到本键。
+  footprint_area_below_enabled: true
   same_size_heavier_below_enabled: true
   height_multiple_layering_enabled: true
   suction_cup_length: 600.0

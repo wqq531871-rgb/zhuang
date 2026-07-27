@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List
 
-import numpy as np
 import pandas as pd
 
 from src.utils.case_group import normalize_case_group
@@ -33,7 +32,6 @@ def load_incremental_excel(path: Path) -> IncrementalOrderBatch:
     mpm_by_type = _build_mpm_index(df_bms)
     initial_boxes = _rows_to_boxes(df_initial, mpm_by_type, id_prefix="initial")
     new_boxes = _rows_to_boxes(df_new, mpm_by_type, id_prefix="new")
-    _apply_small_box_flags(initial_boxes + new_boxes)
     return IncrementalOrderBatch(path, initial_boxes, new_boxes)
 
 
@@ -135,19 +133,6 @@ def _rows_to_boxes(
         box["volume"] = length * width * height
         boxes.append(box)
     return boxes
-
-
-def _apply_small_box_flags(boxes: List[Dict]) -> None:
-    if not boxes:
-        return
-    volumes = np.array([float(box.get("volume", 0.0) or 0.0) for box in boxes])
-    positive = volumes[volumes > 0]
-    if len(positive) == 0:
-        threshold = float("inf")
-    else:
-        threshold = float(np.quantile(positive, 0.25))
-    for box in boxes:
-        box["is_small_box"] = float(box.get("volume", 0.0) or 0.0) < threshold
 
 
 def _num(value) -> float:

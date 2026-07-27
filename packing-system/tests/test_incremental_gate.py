@@ -54,7 +54,10 @@ def test_incremental_gate_equivalence():
     checked = 0
     mismatched = 0
     nontrivial_accept = 0
-    for _ in range(5000):
+    # 采样次数：随机箱型的底面积组合大多不满足「小面积在下」，随机叠放的接受率
+    # 因此偏低（5000 次仅约 54 例非平凡接受）。提到 15000 次让守卫断言恢复余量，
+    # 覆盖强度不打折；本用例很轻，代价约 2s。
+    for _ in range(15000):
         # 用整盘校验器增量构造一个几何合法的 placed
         placed = []
         for _ in range(rng.randint(0, 10)):

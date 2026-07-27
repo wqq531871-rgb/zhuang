@@ -216,15 +216,15 @@ class PlacementValidator:
             placed_boxes,
         )
 
-    def satisfies_small_box_support_order(
+    def satisfies_footprint_area_order(
         self,
         item: Dict,
         point: Dict[str, float],
         dims: Dict[str, float],
         placed_boxes: List[Dict],
     ) -> bool:
-        """小箱不压大箱：小箱不得直接置于体积更大的箱子之上。"""
-        from ..utils.helpers import passes_small_box_not_on_larger_constraint
-        return passes_small_box_not_on_larger_constraint(
+        """小面积在下：箱子正下方不得有投影面积更大的箱子。"""
+        from ..utils.helpers import passes_footprint_area_below_constraint
+        return passes_footprint_area_below_constraint(
             item, point, dims, placed_boxes
         )

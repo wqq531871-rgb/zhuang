@@ -20,7 +20,7 @@ def _mk(prefix, count, length, width, height, mpm):
         {
             'id': '%s%d' % (prefix, i), 'length': length, 'width': width,
             'height': height, 'weight': 1.0, 'min_pack_multiple': mpm,
-            'is_small_box': False, 'pallet_dims': PALLET,
+            'pallet_dims': PALLET,
         }
         for i in range(count)
     ]

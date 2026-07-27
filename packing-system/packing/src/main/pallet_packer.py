@@ -22,7 +22,10 @@ from src.packing.stacking_policy import (
 )
 from src.packing.suction_planner import SuctionPlanner
 from src.rescue import IndexBuilder, PalletEvaluator
-from src.utils.helpers import apply_suction_pose_fields
+from src.utils.helpers import (
+    apply_suction_pose_fields,
+    passes_footprint_area_below_constraint,
+)
 
 
 class PalletPacker:
@@ -56,6 +59,9 @@ class PalletPacker:
         )
         self._same_size_enabled = (
             constraint_config.same_size_heavier_below_enabled
+        )
+        self._footprint_area_below_enabled = (
+            constraint_config.footprint_area_below_enabled
         )
 
     def pack_group(
@@ -1358,6 +1364,17 @@ class PalletPacker:
                 current,
             ):
                 return []
+            # 小面积在下：整层组的底层直接压在 placed 之上，跨底面时会违例。
+            # 放置层不预检会让整盘门禁在最后拒收，整盘白装一次。
+            if self._footprint_area_below_enabled and not (
+                passes_footprint_area_below_constraint(
+                    item,
+                    point,
+                    dims,
+                    current,
+                )
+            ):
+                return []
             if self._reachability_enabled:
                 suction_pose = reachability.find_reachable_suction_pose(
                     point, dims, current, raw_dims=raw_dims
@@ -1452,6 +1469,18 @@ class PalletPacker:
                 point,
                 dims,
                 current,
+            ):
+                x += dims['length']
+                row_width = max(row_width, dims['width'])
+                continue
+            # 小面积在下：顶层散铺整排压在 base 之上，小底面箱压大底面箱会违例。
+            if self._footprint_area_below_enabled and not (
+                passes_footprint_area_below_constraint(
+                    item,
+                    point,
+                    dims,
+                    current,
+                )
             ):
                 x += dims['length']
                 row_width = max(row_width, dims['width'])
@@ -1575,7 +1604,7 @@ class PalletPacker:
                     str(item.get('id')),
                 ),
             )
-            # 同型箱剪枝：尺寸/重量/指数/小箱标记全同的箱子，本轮可行性
+            # 同型箱剪枝：尺寸/重量/指数全同的箱子，本轮可行性
             # 判定完全同构——一个试放失败即全型失败，直接跳过（每轮扫描
             # 从 O(剩余箱数) 降到 O(箱型数)，判定语义不变）。
             failed_types = set()
@@ -1588,7 +1617,6 @@ class PalletPacker:
                     round(float(item.get('height', 0) or 0), 1),
                     round(float(item.get('weight', 0) or 0), 3),
                     float(item.get('min_pack_multiple', 0) or 0),
-                    bool(item.get('is_small_box')),
                 )
                 if type_key in failed_types:
                     continue

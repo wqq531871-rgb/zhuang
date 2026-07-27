@@ -1,7 +1,7 @@
 """装箱约束统一配置（单一事实来源）。
 
 把原先散落在各处的硬编码约束参数（间隙、支撑率、重心偏差、吸盘尺寸）
-和约束开关（吸盘可达、小箱在下、同尺寸重箱在下、按倍数凑层）集中到
+和约束开关（吸盘可达、小面积在下、同尺寸重箱在下、按倍数凑层）集中到
 一个不可变配置对象。入口加载后全局注入主装箱、救援、门禁三条链路，
 保证「放置时拦截」与「最终门禁」同源，杜绝两层不一致。
 
@@ -9,7 +9,7 @@
 - **必须约束（不可关，仅值可配）**：不超界、不重叠、箱间间隙、支撑率、
   重心稳定。这些没有开关字段，永远生效；只有数值（间隙/支撑率/重心偏差）
   可通过本配置调整。
-- **可关约束（默认开启，可配置关闭）**：吸盘可达、小箱在下、
+- **可关约束（默认开启，可配置关闭）**：吸盘可达、小面积在下、
   同尺寸重箱在下、按倍数凑层。每个有一个 ``*_enabled`` 开关。
 
 设计上 frozen，确保配置在运行期不被意外修改（符合 immutability-first）。
@@ -34,7 +34,9 @@ class ConstraintConfig:
 
         # —— 可关约束的开关（默认 True）——
         suction_reachability_enabled: 是否启用机器人吸盘可达性检查。
-        small_box_below_enabled: 是否启用「小箱在下」（小箱正下方不得有更大箱）。
+        footprint_area_below_enabled: 是否启用「小面积在下」（任一箱子的正下方
+            不得有投影面积更大的箱子）。对全部箱子生效。旧配置键
+            ``small_box_below_enabled`` 由 ConfigLoader 映射到本键。
         same_size_heavier_below_enabled: 是否启用「同尺寸重箱在下」。
         height_multiple_layering_enabled: 是否启用「按倍数凑层」打分偏好
             （同底面不同高度按整数倍优先同层堆叠；这是软偏好，不是硬拦截）。
@@ -68,7 +70,7 @@ class ConstraintConfig:
 
     # —— 可关约束开关 ——
     suction_reachability_enabled: bool = True
-    small_box_below_enabled: bool = True
+    footprint_area_below_enabled: bool = True
     same_size_heavier_below_enabled: bool = True
     height_multiple_layering_enabled: bool = True
 

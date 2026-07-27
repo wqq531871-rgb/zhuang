@@ -34,7 +34,7 @@ def _mk(prefix, count, case_group=None, mpm=2.0):
         b = {
             'id': f'{prefix}{i}', 'type': prefix, 'length': 350.0,
             'width': 265.0, 'height': 240.0, 'weight': 1.0,
-            'min_pack_multiple': mpm, 'is_small_box': False,
+            'min_pack_multiple': mpm,
             'pallet_type': 'MH423C', 'sales_order_no': 'ORD1',
             'pallet_dims': dict(PALLET),
         }

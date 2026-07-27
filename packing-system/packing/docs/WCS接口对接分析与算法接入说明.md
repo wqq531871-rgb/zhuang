@@ -313,7 +313,7 @@ min_pack_multiple, ...透传字段}]`。
 全部改动集中在**新增适配层**，算法核心零改动：
 
 1. **✅ 已实现 `src/adapter/wcs_adapter.py`**（纯函数，算法核心零改动）：
-   - `stock_to_boxes(stock, bms_map, pallet_dims_map=None)`：§3 输入适配（聚合展开/查指数/托盘尺寸/case_group 归一化/product_code·priority 透传/is_small_box 标记）；未配置托盘尺寸的 case_type 快速失败（当前即 MH110，按决策暂不使用）；
+   - `stock_to_boxes(stock, bms_map, pallet_dims_map=None)`：§3 输入适配（聚合展开/查指数/托盘尺寸/case_group 归一化/product_code·priority 透传）；未配置托盘尺寸的 case_type 快速失败（当前即 MH110，按决策暂不使用）；
    - `report_to_plan_result(report, include_failed=True) -> WcsPlanResult`：§4 输出适配（box_unique_id=uuid4().hex、box_index 按 priority→订单→原盘序、total_height、layers 按 z 分层、seq 按 (z,y,x)、**original_\* 真实尺寸口径**、product_code 回填、case_group "0"/非 0 直传），并返回 `plan_by_unique_id`（box_unique_id→完整坐标方案）供接口 3/4 执行层取用；
    - 辅助：`load_bms_map(excel)`（BMS 本地过渡，同 excel_loader 口径）、`default_pallet_dims_map()`（读 yaml pallets 段）、`build_stock_request()`（接口 1 请求体）；
    - 全部待确认项以 `TODO(§8-x)` 内联标注（§8-1 BMS 来源、§8-2 MH110、§8-3 priority 方向、§8-4 layer 语义、§8-5 未达标盘、§8-6 空数组判据）。

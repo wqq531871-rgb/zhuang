@@ -71,7 +71,7 @@ def test_stock_expansion_and_mapping():
     b2 = boxes[-1]
     assert b2['min_pack_multiple'] == 0.0, 'BMS 缺失按 0（excel_loader 同口径）'
     assert b2['case_group'] == '5', 'case_group 归一化直传'
-    assert all('is_small_box' in b and 'volume' in b for b in boxes)
+    assert all('volume' in b for b in boxes)
     print('[PASS] 库存展开与字段映射')
 
 

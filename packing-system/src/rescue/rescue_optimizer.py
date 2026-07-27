@@ -651,7 +651,7 @@ class RescueOptimizer:
     ) -> List[Dict]:
         """把配方实例的箱子重映射到尽量少的源托盘（同规格箱可互换）。
 
-        配方只关心箱型与数量；同(尺寸/重量/指数/小箱标记)的箱子互换不影响
+        配方只关心箱型与数量；同(尺寸/重量/指数)的箱子互换不影响
         实例可装性。贪心：每轮选"还能供给最多所需箱"的源托盘取箱，直至
         配齐。凑标因此只"打散"极少数源托盘，其余失败盘保持原样——这是
         局部提交能秒级完成、且失败盘数不膨胀的关键。配不齐（防御性）时
@@ -664,7 +664,6 @@ class RescueOptimizer:
                 round(float(b.get('height', 0) or 0), 1),
                 round(float(b.get('weight', 0) or 0), 3),
                 float(b.get('min_pack_multiple', 0) or 0),
-                bool(b.get('is_small_box')),
             )
 
         need: Dict = {}

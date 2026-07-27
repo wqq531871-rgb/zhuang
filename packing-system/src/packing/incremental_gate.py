@@ -3,9 +3,12 @@
 前提：placed 已满足 validate_pallet_constraints 的几何部分。在其上新增
 一个 new_box 时，只需校验：
 
-1. new_box 自身：越界 / 吸盘字段 / 与既有箱三轴重叠 / 支撑率 / 间隙；
+1. new_box 自身：越界 / 吸盘字段 / 与既有箱三轴重叠 / 支撑率 / 间隙 /
+   同尺寸重箱在下 / 小面积在下；
 2. 与 new_box 在 Z 区间重叠的既有箱的间隙（新箱可能成为其更近邻居，
-   也可能让"该方向原本无邻居"的箱子出现 >=6mm 的违例间隙）。
+   也可能让"该方向原本无邻居"的箱子出现 >=6mm 的违例间隙）；
+3. 底面与 new_box 顶面齐平的既有箱的「小面积在下」——new_box 成为它们的
+   新支撑者，可能让原本合法的箱新违例。
 
 其余项不会因新增 new_box 而新违例：既有箱的越界/吸盘字段不变、
 两两重叠不变、支撑面积只增不减（新箱顶面齐平时只会增加支撑者）。
@@ -19,8 +22,12 @@ from typing import Dict, List
 
 from ..geometry.constraint_validator import REQUIRED_SUCTION_FIELDS
 from ..geometry.gap_checker import passes_box_gap_constraint
-from ..geometry.overlap import axis_overlap_len
+from ..geometry.overlap import axis_overlap_len, has_positive_xy_overlap
 from ..geometry.support import direct_support_ratio
+from ..utils.helpers import (
+    footprint_area,
+    passes_footprint_area_below_constraint,
+)
 from .stacking_policy import passes_same_size_heavier_below_constraint
 
 
@@ -56,12 +63,16 @@ def incremental_pallet_ok(
     不提供时沿用各参数默认值（行为不变）。
     """
     same_size_heavier_below_enabled = True
+    footprint_area_below_enabled = True
     if constraint_config is not None:
         support_ratio_threshold = constraint_config.support_ratio_threshold
         max_gap = constraint_config.max_box_gap_mm
         require_suction = constraint_config.suction_reachability_enabled
         same_size_heavier_below_enabled = (
             constraint_config.same_size_heavier_below_enabled
+        )
+        footprint_area_below_enabled = (
+            constraint_config.footprint_area_below_enabled
         )
     pos = new_box.get('position')
     if not pos:
@@ -123,6 +134,28 @@ def incremental_pallet_ok(
         )
     ):
         return False
+
+    # 小面积在下：new_box 自身（下方不得有更大投影面积的箱），以及被 new_box
+    # 新变成"有支撑者"的既有箱——new_box 填进空洞、顶面与某既有箱底面齐平时，
+    # 它会成为那只箱的新支撑者，可能让原本合法的箱新违例。这一项与整盘门禁
+    # 判定等价，避免"增量放行→整盘门禁拒收"。
+    if footprint_area_below_enabled:
+        if not passes_footprint_area_below_constraint(
+            new_box, pos, dims, placed
+        ):
+            return False
+        new_area = footprint_area(new_box)
+        for box in placed:
+            box_pos = box.get('position')
+            if not box_pos:
+                continue
+            if abs(float(box_pos['z']) - nz1) > 1e-6:
+                continue
+            box_dims = _dims(box)
+            if not has_positive_xy_overlap(box_pos, box_dims, new_box, eps=1e-6):
+                continue
+            if new_area > footprint_area(box) + 1e-6:
+                return False
 
     # 5. new_box 间隙（vs 全部既有箱）
     if not passes_box_gap_constraint(

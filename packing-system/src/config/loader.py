@@ -88,6 +88,17 @@ class ConfigLoader:
             if new_key not in constraints and old_key in robot:
                 constraints[new_key] = robot[old_key]
 
+        # 兼容旧键 small_box_below_enabled（「小箱在下」按体积只约束小箱）：
+        # 该约束已推广为 footprint_area_below_enabled（「小面积在下」按投影面积
+        # 约束全部箱子）。新键缺省时沿用旧键值，现场旧 yaml 不改也能运行。
+        if (
+            'footprint_area_below_enabled' not in constraints
+            and 'small_box_below_enabled' in constraints
+        ):
+            constraints['footprint_area_below_enabled'] = (
+                constraints['small_box_below_enabled']
+            )
+
         return ConstraintConfig.from_dict(constraints)
 
     def load_algorithm_config(self) -> PackingAlgorithmConfig:
@@ -183,7 +194,7 @@ def create_default_config_yaml(output_path: Path) -> None:
             'center_of_mass_tolerance': 1.0 / 3.0,
             # —— 可关约束开关（默认 True，可改 False 关闭）——
             'suction_reachability_enabled': True,
-            'small_box_below_enabled': True,
+            'footprint_area_below_enabled': True,
             'same_size_heavier_below_enabled': True,
             'height_multiple_layering_enabled': True,
             # —— 吸盘几何（仅 suction_reachability_enabled=True 时生效）——
