@@ -286,8 +286,51 @@ CP-SAT 跑 `num_search_workers=8` + `max_time_in_seconds`。子问题在时限�
 `cpsat_target_subset_*` 等。也就是说 `packing-system/src` 是落后的那一棵。
 后续再改约束时仍需同步两棵树，但要清楚它们本来就不等价。
 
-`packing-system/src/config/constants.py` 不支持 `PACKING_WORKSPACE`：
-`PROJECT_ROOT` 硬编码为 `<repo>/`，`DATA_DIR` 指向不存在的 `zhuang-integrated/data`，
-所以根目录 `run_packing.py` 当前跑不起来。`packing-system/packing/src/config/constants.py`
-有 `_resolve_workspace()` 正常支持。UI「一键装箱」拉起的是 `packing/run_packing.py`，
-故生产链路正常；但 README 记录的根目录 CLI 与 `app_launcher --mode packing` 需要修复。
+## 8. 附带修复（本次一并完成）
+
+### 8.1 根目录 `run_packing.py` 路径
+
+`packing-system/src/config/constants.py` 原先 `PROJECT_ROOT` 向上取 4 级
+（源自 `code2/` 时期的目录布局），落在 `zhuang-integrated/`，于是 `DATA_DIR`
+指向不存在的 `zhuang-integrated/data`，根目录 CLI 起不来。
+`packing/src` 那棵已有 `_resolve_workspace()`。
+
+改为与 `packing/src` 同构：`REPO_ROOT` 上取 3 级（本树源码根即仓库根，
+`packing/` 树要上取 4 级，这是两棵树唯一必须不同的地方），新增
+`CODE_ROOT` / `DEFAULT_PACKING_CONFIG` / `_resolve_workspace()`，
+`PROJECT_ROOT` 保留为 `REPO_ROOT` 的别名以兼容旧引用。
+
+实测两个入口都通：`python run_packing.py --max-boxes 40 --out ...` 与
+`python app_launcher.py --mode packing --max-boxes 40 --out ...` 均 exit 0，
+数据从 `packing-workspace/data` 读入、结果写入 `packing-workspace/output`，
+输出 JSON 可解析（4 盘）。
+
+### 8.2 `tolerances` 段的 TODO 落地
+
+配置里 `tolerances.xy_tolerance` / `z_tolerance` 原先只是占位，代码各处写死
+`2.0` / `0.0`，改配置无效。
+
+接线方式沿用已有的 `ConstraintConfig` 单一事实来源（它本来就注入到每个装箱器
+与救援器），而不是另搭一套传参链路：
+
+1. `ConstraintConfig` 增加 `xy_tolerance` / `z_tolerance` 两个字段；
+2. `ConfigLoader` 读 `tolerances:` 段并合并进约束配置，`constraints:` 段里
+   显式给同名键时优先（保留旧布局的覆盖能力）；
+3. 60 处显式传 `xy_tolerance=2.0` / `z_tolerance=0.0` 的调用点改读配置值；
+4. `BeamSearchPacker.__init__` 的两个容差形参默认值由 `2.0`/`0.0` 改为 `None`
+   哨兵，`None` 时从 `constraint_config` 取。这一步是必需的：GCP 与分层装箱
+   不显式传容差，只靠前三步它们仍会拿到构造函数写死的 `2.0`。
+
+**刻意不跟随配置的 34 处**：`hole_fill` / `topup` / `index_swap` /
+`directed_exchange` / `tail_absorb` / `recipe_rebuilder` 中与
+`size_tolerance=0.0` 成对出现的调用——这些路径用零容差往残余空隙里塞箱，
+跟随配置（2.0）会让它们塞不进去，属于算法意图而非硬编码遗漏。
+
+**验收**（两棵树各跑一遍，7 项断言全过）：把配置改成非默认的
+`xy=7.5 / z=3.25`，验证 ① `ConstraintConfig` 取到 ② `BeamSearchPacker` 与其
+`PlacementValidator` 取到 ③ 显式传 `0.0` 的救援调用仍是 `0.0`
+④ 无配置时向后兼容默认仍是 `2.0/0.0` ⑤ GCP 的 `_cfg` 与其内建 packer 取到
+⑥ `constraints:` 段优先级正确。出厂配置解析结果为 `xy=2.0 / z=0.0`，
+与改造前硬编码值逐项相同，即**默认行为不变**。
+
+两棵树单测 394 + 198 全绿。

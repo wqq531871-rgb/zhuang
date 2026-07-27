@@ -409,7 +409,6 @@ class LowLoadRebuilder:
         packer = self._CustomPacker(
             pallet_dims,
             support_ratio_threshold=self._cfg.support_ratio_threshold,
-            size_tolerance=2.0,
             max_candidate_points=260,
             max_points_per_layer=70,
             constraint_config=self._cfg,
@@ -479,8 +478,8 @@ class LowLoadRebuilder:
         if len(items) <= 60:
             compact = PoolCompactor(
                 pallet_dims,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 support_ratio_threshold=self._cfg.support_ratio_threshold,
                 constraint_config=self._cfg,
             ).compact(items, max_pallets=3)
@@ -522,8 +521,8 @@ class LowLoadRebuilder:
                 target_mpm=target_mpm,
                 pallet_dims=pallet_dims,
                 seed=seed + attempt,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 candidate_count=14,
                 constraint_config=self._cfg,
             )
@@ -533,7 +532,6 @@ class LowLoadRebuilder:
             packer = self._CustomPacker(
                 pallet_dims,
                 support_ratio_threshold=self._cfg.support_ratio_threshold,
-                size_tolerance=2.0,
                 max_candidate_points=220,
                 max_points_per_layer=60,
                 constraint_config=self._cfg,
@@ -560,8 +558,8 @@ class LowLoadRebuilder:
         if len(pool) <= 60:
             compact = PoolCompactor(
                 pallet_dims,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 support_ratio_threshold=self._cfg.support_ratio_threshold,
                 constraint_config=self._cfg,
             ).compact(pool, max_pallets=3)
@@ -577,7 +575,6 @@ class LowLoadRebuilder:
                 packer = self._CustomPacker(
                     pallet_dims,
                     support_ratio_threshold=self._cfg.support_ratio_threshold,
-                    size_tolerance=2.0,
                     max_candidate_points=180,
                     max_points_per_layer=40,
                     constraint_config=self._cfg,

@@ -54,6 +54,8 @@ class PalletPacker:
             constraint_config = ConstraintConfig()
         self._cfg = constraint_config
         self._support_ratio = constraint_config.support_ratio_threshold
+        self._xy_tolerance = constraint_config.xy_tolerance
+        self._z_tolerance = constraint_config.z_tolerance
         self._reachability_enabled = (
             constraint_config.suction_reachability_enabled
         )
@@ -349,8 +351,8 @@ class PalletPacker:
     ) -> Tuple[List[Dict], Dict]:
         compactor = PoolCompactor(
             pallet_dims,
-            xy_tolerance=2.0,
-            z_tolerance=0.0,
+            xy_tolerance=self._cfg.xy_tolerance,
+            z_tolerance=self._cfg.z_tolerance,
             support_ratio_threshold=self._support_ratio,
             constraint_config=self._cfg,
         )
@@ -484,7 +486,6 @@ class PalletPacker:
             packer = self._CustomPacker(
                 pallet_dims,
                 support_ratio_threshold=self._support_ratio,
-                size_tolerance=2.0,
                 max_candidate_points=240,
                 max_points_per_layer=70,
                 constraint_config=self._cfg,
@@ -567,8 +568,8 @@ class PalletPacker:
             packed = self._build_centered_single_box(
                 [item],
                 pallet_dims,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 support_ratio_threshold=self._support_ratio,
                 constraint_config=self._cfg,
             )
@@ -609,7 +610,6 @@ class PalletPacker:
         packer = self._CustomPacker(
             pallet_dims,
             support_ratio_threshold=self._support_ratio,
-            size_tolerance=2.0,
             max_candidate_points=120,
             max_points_per_layer=35,
             constraint_config=self._cfg,
@@ -948,8 +948,8 @@ class PalletPacker:
                 target_mpm=target_mpm,
                 pallet_dims=pallet_dims,
                 seed=pallet_counter,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 candidate_count=12,
                 prefer_fill=fill_aware,
                 constraint_config=self._cfg,
@@ -969,7 +969,6 @@ class PalletPacker:
         packer = self._CustomPacker(
             pallet_dims,
             support_ratio_threshold=self._support_ratio,
-            size_tolerance=2.0,
             max_candidate_points=100 if fill_first else 120,
             max_points_per_layer=30 if fill_first else 25,
             constraint_config=self._cfg,
@@ -1011,8 +1010,8 @@ class PalletPacker:
             packed = self._build_centered_single_box(
                 unfitted,
                 pallet_dims,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 support_ratio_threshold=self._support_ratio,
                 constraint_config=self._cfg,
             )
@@ -1118,8 +1117,8 @@ class PalletPacker:
                 target_mpm=target_mpm,
                 pallet_dims=pallet_dims,
                 seed=seed,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 candidate_count=16,
                 prefer_fill=True,
                 constraint_config=self._cfg,
@@ -1571,7 +1570,6 @@ class PalletPacker:
         probe = self._CustomPacker(
             pallet_dims,
             support_ratio_threshold=self._support_ratio,
-            size_tolerance=2.0,
             max_candidate_points=180,
             max_points_per_layer=45,
             constraint_config=self._cfg,
@@ -1774,7 +1772,6 @@ class PalletPacker:
             packer = self._CustomPacker(
                 pallet_dims,
                 support_ratio_threshold=self._support_ratio,
-                size_tolerance=2.0,
                 max_candidate_points=150,
                 max_points_per_layer=30,
                 constraint_config=self._cfg,

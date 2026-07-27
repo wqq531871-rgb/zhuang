@@ -501,8 +501,8 @@ class RescueOptimizer:
         if len(pool) <= 120:
             compact = PoolCompactor(
                 self.pallet_dims,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 support_ratio_threshold=self._cfg.support_ratio_threshold,
                 constraint_config=self._cfg,
             ).compact(pool, max_pallets=1)
@@ -1064,8 +1064,8 @@ class RescueOptimizer:
         if len(pool) <= 60:
             compact = PoolCompactor(
                 self.pallet_dims,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 support_ratio_threshold=self._cfg.support_ratio_threshold,
                 constraint_config=self._cfg,
             ).compact(pool, max_pallets=3)
@@ -1155,8 +1155,8 @@ class RescueOptimizer:
         if len(pool2) <= 60:
             compact = PoolCompactor(
                 self.pallet_dims,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 support_ratio_threshold=self._cfg.support_ratio_threshold,
                 constraint_config=self._cfg,
             ).compact(pool2, max_pallets=len(tail) - 1)
@@ -1196,8 +1196,8 @@ class RescueOptimizer:
             target_mpm=float(target_mpm),
             pallet_dims=self.pallet_dims,
             seed=seed,
-            xy_tolerance=2.0,
-            z_tolerance=0.0,
+            xy_tolerance=self._cfg.xy_tolerance,
+            z_tolerance=self._cfg.z_tolerance,
             candidate_count=12,
             prefer_fill=True,
             constraint_config=self._cfg,
@@ -1239,8 +1239,8 @@ class RescueOptimizer:
                         target_mpm=homo_target,
                         pallet_dims=self.pallet_dims,
                         seed=seed,
-                        xy_tolerance=2.0,
-                        z_tolerance=0.0,
+                        xy_tolerance=self._cfg.xy_tolerance,
+                        z_tolerance=self._cfg.z_tolerance,
                         candidate_count=12,
                         prefer_fill=True,
                         constraint_config=self._cfg,
@@ -1252,7 +1252,6 @@ class RescueOptimizer:
             packer = self._CustomPacker(
                 self.pallet_dims,
                 support_ratio_threshold=self._cfg.support_ratio_threshold,
-                size_tolerance=2.0,
                 max_candidate_points=200,
                 max_points_per_layer=40,
                 constraint_config=self._cfg,
@@ -1323,8 +1322,8 @@ class RescueOptimizer:
         return build_centered_single_box_solution(
             [box],
             self.pallet_dims,
-            xy_tolerance=2.0,
-            z_tolerance=0.0,
+            xy_tolerance=self._cfg.xy_tolerance,
+            z_tolerance=self._cfg.z_tolerance,
             support_ratio_threshold=self._cfg.support_ratio_threshold,
             constraint_config=self._cfg,
         )

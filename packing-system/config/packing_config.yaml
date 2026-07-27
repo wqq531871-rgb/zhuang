@@ -101,8 +101,14 @@ execution_sequence:
   # X/Y 进度相差不超过该值时聚为同一空间等级，只影响软排序。
   scan_column_tolerance_mm: 5.0
 tolerances:
-  # TODO: 后续统一注入主装箱、GCP、重排和全部救援路径；当前部分路径仍使用代码内常量。
-  # 在统一注入完成前，修改本段数值不能保证所有装箱路径同步变化。
+  # 放置尺寸容差：占位尺寸 = 原始尺寸 + 本段数值，用于重叠、贴紧、越界判定。
+  # 经 ConstraintConfig 统一注入：主装箱、GCP/分层、全部救援路径。
+  # 注入点分两类：显式传参的 60 处调用点，以及 BeamSearchPacker.__init__ 的
+  # None 兜底（GCP 与分层装箱不显式传容差，由此继承配置值）。
+  # 不跟随本段的例外：hole_fill / topup / index_swap / directed_exchange /
+  # tail_absorb / recipe_rebuilder 里与 size_tolerance=0.0 成对的「紧贴塞洞」调用，
+  # 这些路径刻意用零容差往残余空隙里塞箱，跟随配置会让它们塞不进去。
+  # 注：投影面积口径（「小面积在下」约束）始终用原始尺寸，不含容差。
   xy_tolerance: 2.0
   z_tolerance: 0.0
 algorithm:

@@ -69,9 +69,17 @@ class ConfigLoader:
 
         从 YAML 的 ``constraints`` 段读取（开关 + 间隙/支撑率/重心数值 +
         吸盘几何）。为兼容旧模板，吸盘几何也接受来自 ``robot`` 段的字段，
-        ``constraints`` 段优先级更高。
+        放置容差也接受来自 ``tolerances`` 段的字段，``constraints`` 段优先级更高。
         """
         constraints = dict(self.config_data.get('constraints') or {})
+
+        # 放置容差来自独立的 tolerances 段（历史布局）：仅在 constraints 未覆盖时回填。
+        # 注入 ConstraintConfig 而非 PackingAlgorithmConfig，因为后者没有任何生产
+        # 调用方；ConstraintConfig 已经全局注入主装箱/救援/门禁三条链路。
+        tolerances = self.config_data.get('tolerances') or {}
+        for key in ('xy_tolerance', 'z_tolerance'):
+            if key not in constraints and key in tolerances:
+                constraints[key] = tolerances[key]
 
         # 兼容旧 robot 段的吸盘几何：仅在 constraints 未覆盖时回填
         robot = self.config_data.get('robot') or {}

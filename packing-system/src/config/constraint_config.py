@@ -31,6 +31,9 @@ class ConstraintConfig:
         support_ratio_threshold: 非底层箱子的最小直接支撑率（默认 0.8）。
         center_of_mass_tolerance: 整体重心相对托盘中心的最大允许偏移比例
             （默认 1/3，即偏移不得超过托盘对应边长的 1/3）。
+        xy_tolerance: 放置尺寸容差，长/宽各 +本值（毫米，默认 2.0）。占位尺寸
+            用于重叠、贴紧、越界判定；投影面积口径始终用原始尺寸，不含容差。
+        z_tolerance: 放置尺寸容差，高 +本值（毫米，默认 0.0）。
 
         # —— 可关约束的开关（默认 True）——
         suction_reachability_enabled: 是否启用机器人吸盘可达性检查。
@@ -58,6 +61,8 @@ class ConstraintConfig:
     max_box_gap_mm: float = 6.0
     support_ratio_threshold: float = 0.8
     center_of_mass_tolerance: float = 1.0 / 3.0
+    xy_tolerance: float = 2.0
+    z_tolerance: float = 0.0
 
     # —— 可关约束开关 ——
     suction_reachability_enabled: bool = True

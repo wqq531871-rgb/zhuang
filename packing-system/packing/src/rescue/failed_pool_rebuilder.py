@@ -133,8 +133,8 @@ class FailedPoolRebuilder:
                 target_mpm=target_mpm,
                 pallet_dims=pallet_dims,
                 seed=seed,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 candidate_count=16,
                 constraint_config=self._cfg,
             )
@@ -303,8 +303,8 @@ class FailedPoolRebuilder:
             target_mpm=target_mpm,
             pallet_dims=pallet_dims,
             seed=seed,
-            xy_tolerance=2.0,
-            z_tolerance=0.0,
+            xy_tolerance=self._cfg.xy_tolerance,
+            z_tolerance=self._cfg.z_tolerance,
             candidate_count=14,
             constraint_config=self._cfg,
         )
@@ -320,7 +320,6 @@ class FailedPoolRebuilder:
         packer = self._CustomPacker(
             pallet_dims,
             support_ratio_threshold=self._cfg.support_ratio_threshold,
-            size_tolerance=2.0,
             max_candidate_points=180,
             max_points_per_layer=36,
             constraint_config=self._cfg,
@@ -350,7 +349,6 @@ class FailedPoolRebuilder:
             packer = self._CustomPacker(
                 pallet_dims,
                 support_ratio_threshold=self._cfg.support_ratio_threshold,
-                size_tolerance=2.0,
                 max_candidate_points=120,
                 max_points_per_layer=25,
                 constraint_config=self._cfg,
