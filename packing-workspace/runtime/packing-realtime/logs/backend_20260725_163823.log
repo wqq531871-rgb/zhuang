@@ -39,3 +39,7 @@ WCS 接口装箱服务（DB 模式）
 [WCS-DB] product_code 已存在、跳过 1235 条
 [WCS-拉] 落库完成：候选 1235 条，新插入 0 条（新行 up_to_standard=0）。
 [WCS-拉] 无新插入 → 不触发装箱。
+============================================================
+[WCS-拉] 20260725_164842：拉取接口 1 …
+[WCS-STOP] 真实接口调用失败（本轮拉取），服务停止：HTTPConnectionPool(host='10.222.10.1', port=8092): Max retries exceeded with url: /api/wcs/reqstockinfo (Caused by ConnectTimeoutError(<HTTPConnection(host='10.222.10.1', port=8092) at 0x2856ac01370>, 'Connection to 10.222.10.1 timed out. (connect timeout=30)'))
+[UI] 接口装箱服务已停止。

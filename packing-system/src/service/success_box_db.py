@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import random
+from collections import Counter
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -293,37 +294,27 @@ class WcsSuccessBoxRepository:
             conn.close()
 
     def insert_rows(self, rows: Sequence[Tuple]) -> int:
-        """插入箱子行；已存在的 (box_unique_id, seq) 或 product_code 跳过。
+        """写入本批箱子行，并整盘替换包含相同 product_code 的旧结果。
 
-        显式写 is_send=未下传；缺 product_code 时随机补内部码。
+        与本批 product_code 无交集的历史成功盘保留。查找旧盘、删除旧盘和
+        插入本批数据在同一事务中完成；显式写 is_send=未下传，缺
+        product_code 时随机补内部码。
         """
         if not rows:
             return 0
 
         filled = self._fill_missing_product_codes(list(rows))
-        known_codes = sorted(
-            {str(r[_PC_IDX]) for r in filled if r[_PC_IDX] is not None}
+        product_codes = [str(row[_PC_IDX]) for row in filled]
+        duplicate_codes = sorted(
+            code for code, count in Counter(product_codes).items() if count > 1
         )
-        existing_pc = (
-            self._existing_product_codes(known_codes) if known_codes else set()
-        )
-
-        prepared: List[Tuple] = []
-        skipped_pc = 0
-        for row in filled:
-            pc = str(row[_PC_IDX])
-            if pc in existing_pc:
-                skipped_pc += 1
-                continue
-            # 追加 is_send（box_num 已在行内）
-            prepared.append(row + (IS_SEND_UNSENT,))
-
-        if not prepared:
-            if skipped_pc:
-                print(
-                    f"[WCS-DB] wcs_success_box：product_code 已存在，跳过 {skipped_pc} 行"
-                )
-            return 0
+        if duplicate_codes:
+            samples = ", ".join(duplicate_codes[:5])
+            raise ValueError(
+                f"本批 product_code 重复，无法确定箱子唯一归属：{samples}"
+            )
+        known_codes = sorted(product_codes)
+        prepared = [row + (IS_SEND_UNSENT,) for row in filled]
 
         sql = (
             "INSERT INTO wcs_success_box ("
@@ -334,14 +325,43 @@ class WcsSuccessBoxRepository:
             ") VALUES ("
             "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
             "%s, %s"
-            ") ON DUPLICATE KEY UPDATE id = id"
+            ")"
         )
+        affected_uids: Set[str] = set()
+        deleted = 0
         with self._cursor() as (_conn, cur):
+            chunk = 500
+            for i in range(0, len(known_codes), chunk):
+                part = known_codes[i : i + chunk]
+                placeholders = ",".join(["%s"] * len(part))
+                cur.execute(
+                    "SELECT box_unique_id FROM wcs_success_box "
+                    f"WHERE product_code IN ({placeholders}) FOR UPDATE",
+                    part,
+                )
+                for old_row in cur.fetchall() or []:
+                    uid = str(old_row.get("box_unique_id") or "").strip()
+                    if uid:
+                        affected_uids.add(uid)
+
+            old_uids = sorted(affected_uids)
+            chunk = 200
+            for i in range(0, len(old_uids), chunk):
+                part = old_uids[i : i + chunk]
+                placeholders = ",".join(["%s"] * len(part))
+                cur.execute(
+                    "DELETE FROM wcs_success_box "
+                    f"WHERE box_unique_id IN ({placeholders})",
+                    part,
+                )
+                deleted += int(cur.rowcount or 0)
+
             cur.executemany(sql, prepared)
             inserted = int(cur.rowcount or 0)
-        if skipped_pc:
+        if affected_uids:
             print(
-                f"[WCS-DB] wcs_success_box：product_code 已存在，跳过 {skipped_pc} 行"
+                f"[WCS-DB] wcs_success_box：替换旧托盘 {len(affected_uids)} 个，"
+                f"删除 {deleted} 行，写入 {max(inserted, 0)} 行"
             )
         return max(inserted, 0)
 
@@ -521,7 +541,7 @@ def persist_success_boxes(
         n = repo.insert_rows(rows)
         print(
             f"[WCS-DB] wcs_success_box：本批候选 {len(rows)} 行，"
-            f"写入影响 {n}（含已存在跳过）。"
+            f"本批写入 {n} 行。"
         )
         return n
     except Exception as exc:

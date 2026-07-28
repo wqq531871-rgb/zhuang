@@ -109,6 +109,7 @@ class DataSourceConfig:
     input_dir: Path
     bms_reference_file: Path
     output_dir: Path
+    reqpallet_path: str = "/api/wcs/reqpallet"
 
     @property
     def effective_api_base_url(self) -> str:
@@ -122,6 +123,9 @@ class DataSourceConfig:
 
     def plan_url(self) -> str:
         return f"{self.effective_api_base_url.rstrip('/')}{self.plan_path}"
+
+    def reqpallet_url(self) -> str:
+        return f"{self.effective_api_base_url.rstrip('/')}{self.reqpallet_path}"
 
 
 @dataclass(frozen=True)
@@ -154,6 +158,11 @@ def load_data_source_config(config_path: Optional[Path] = None) -> DataSourceCon
         stock_path = "/" + stock_path
     if not plan_path.startswith("/"):
         plan_path = "/" + plan_path
+    reqpallet_path = str(
+        raw.get("reqpallet_path") or "/api/wcs/reqpallet"
+    ).strip()
+    if not reqpallet_path.startswith("/"):
+        reqpallet_path = "/" + reqpallet_path
     return DataSourceConfig(
         mode=str(raw.get("mode") or "api").strip().lower(),
         use_real_api=bool(raw.get("use_real_api", True)),
@@ -165,6 +174,7 @@ def load_data_source_config(config_path: Optional[Path] = None) -> DataSourceCon
         input_dir=input_path.resolve(),
         bms_reference_file=(DATA_DIR / bms_rel).resolve(),
         output_dir=OUTPUT_DIR.resolve(),
+        reqpallet_path=reqpallet_path,
     )
 
 
@@ -211,6 +221,99 @@ def push_plan_result(
     if body.get("code") != 0:
         raise RuntimeError(
             f"接口 2 返回错误: code={body.get('code')}, msg={body.get('msg')}"
+        )
+    return body
+
+
+def build_reqpallet_payload(
+    arrival: Dict,
+    wcs_case: Dict,
+    *,
+    empty_flag: bool = False,
+) -> Dict:
+    """Build interface 4.5 from the physical 4.6 pallet and one packed case."""
+    identity = {
+        key: str(arrival.get(key) or "").strip()
+        for key in ("robot_id", "station_id", "pallet_code")
+    }
+    missing = [key for key, value in identity.items() if not value]
+    if missing:
+        raise ValueError(f"4.6 缺少字段：{', '.join(missing)}")
+
+    source_layers = wcs_case.get("layers") or []
+    layers = []
+    for layer in source_layers:
+        cartons = []
+        for carton in (layer.get("cartons") or []):
+            cartons.append(
+                {
+                    "seq": int(carton.get("seq") or 0),
+                    "length": carton.get("length"),
+                    "width": carton.get("width"),
+                    "height": carton.get("height"),
+                    "product_code": str(
+                        carton.get("product_code") or ""
+                    ).strip(),
+                }
+            )
+        if cartons:
+            layers.append({"cartons": cartons})
+    if not empty_flag and not layers:
+        raise ValueError("码垛完成时 case_data 不能为空")
+
+    box_unique_id = str(wcs_case.get("box_unique_id") or "").strip()
+    if not empty_flag and not box_unique_id:
+        raise ValueError("4.5 case_data 缺少 box_unique_id")
+    case_data = []
+    if not empty_flag:
+        case_data.append(
+            {
+                "box_index": int(wcs_case.get("box_index") or 1),
+                "box_unique_id": box_unique_id,
+                "case_group": str(wcs_case.get("case_group") or "0"),
+                "height": 0,
+                "layers": layers,
+            }
+        )
+
+    case_type = str(arrival.get("case_type") or "").strip()
+    if not case_type:
+        case_type = str(wcs_case.get("case_type") or "").strip()
+    if not case_type:
+        raise ValueError("4.5 缺少 case_type")
+
+    return {
+        **identity,
+        "case_type": case_type,
+        "empty_flag": bool(empty_flag),
+        "case_data": case_data,
+    }
+
+
+def push_reqpallet(
+    base_url: str,
+    payload: Dict,
+    reqpallet_path: str,
+    timeout: int = 30,
+) -> Dict:
+    """POST interface 4.5 and require a successful WCS business response."""
+    path = (
+        reqpallet_path
+        if str(reqpallet_path).startswith("/")
+        else f"/{reqpallet_path}"
+    )
+    url = f"{str(base_url).rstrip('/')}{path}"
+    resp = requests.post(
+        url,
+        json=payload,
+        timeout=timeout,
+        verify=False,
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    if body.get("code") != 0:
+        raise RuntimeError(
+            f"接口 4.5 返回错误: code={body.get('code')}, msg={body.get('msg')}"
         )
     return body
 
