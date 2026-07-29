@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import math
 import threading
 from dataclasses import dataclass
 from datetime import datetime
@@ -361,6 +362,28 @@ def _filter_mh423c(stock_entries: List[Dict]):
     return kept, dropped, dropped_types
 
 
+def _split_positive_dimension_entries(
+    stock_entries: List[Dict],
+) -> tuple[List[Dict], List[Dict]]:
+    """按严格正数且有限的长宽高拆分有效与非法库存记录。"""
+    valid: List[Dict] = []
+    invalid: List[Dict] = []
+    for entry in stock_entries:
+        try:
+            for key in ("length", "width", "height"):
+                value = entry.get(key)
+                if isinstance(value, bool):
+                    raise ValueError(f"{key} must not be bool")
+                number = float(value)
+                if not math.isfinite(number) or number <= 0:
+                    raise ValueError(f"{key} must be positive and finite")
+        except (TypeError, ValueError, OverflowError):
+            invalid.append(entry)
+            continue
+        valid.append(entry)
+    return valid, invalid
+
+
 def _success_product_codes(report: Optional[Dict]) -> Set[int]:
     """从装箱报告中收集 SUCCESS 托盘上的 product_code。"""
     codes: Set[int] = set()
@@ -475,7 +498,29 @@ class WcsPackingService:
         else:
             print(f"[WCS-拉] 库存品类数：{len(kept)}（均为 {_SUPPORTED_CASE_TYPE}）")
 
-        sync_stats = self._repo.sync_stock_entries(kept)
+        dimension_candidates = kept
+        kept, invalid_dimensions = _split_positive_dimension_entries(
+            dimension_candidates
+        )
+        if invalid_dimensions:
+            samples = ", ".join(
+                "product_code="
+                f"{entry.get('product_code')}/"
+                f"box_type={entry.get('box_type')}/"
+                f"{entry.get('length')}×{entry.get('width')}×{entry.get('height')}"
+                for entry in invalid_dimensions[:5]
+            )
+            print(
+                f"[WCS-拉] 忽略 {len(invalid_dimensions)} 条零尺寸/非法尺寸库存；"
+                f"有效记录 {len(kept)} 条；样例：{samples}"
+            )
+
+        if dimension_candidates and not kept:
+            sync_stats = self._repo.sync_stock_entries(
+                kept, allow_empty_replace=True
+            )
+        else:
+            sync_stats = self._repo.sync_stock_entries(kept)
         if sync_stats.unchanged:
             print(
                 f"[WCS-拉] wcs_stock_box 与本次立库 product_code 一致"

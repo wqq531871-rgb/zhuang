@@ -72,6 +72,10 @@ camera_height`，PLC 下发会忽略 DBW6/8/10。
 - `DBW26=state`、`DBW28=box_num`、`DBW34=stack_height_before`。
 - 正常数据全部写完后最后置 `DBW30 DH_OVER=1`；观察到
   `DBW4 FP_OVER=1` 后才清 `DBW0 FP` 和 `DBW30 DH_OVER`。
+- 当前托盘所有箱子的最大 `seq` 是最后序号。只有 PLC 请求该序号且上述握手
+  完整结束后，现场会话才把该托盘从 `active` 标记为 `done`。
+- 重新计算、连接或断开 PLC、停止下发和关闭程序都不会完成托盘；程序重启时
+  若当前会话缺失，会自动从历史中恢复最近一个 `active` 托盘。
 - `state=0` 时只写 `DBW32 baojing=1`，不写尺寸、坐标或完成信号。
 - `DBW12 KONGXIAN` 当前只读取和显示，不参与控制。
 

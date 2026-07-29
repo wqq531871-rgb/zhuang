@@ -1,3 +1,4 @@
+import copy
 import json
 import sys
 import types
@@ -23,8 +24,10 @@ except ModuleNotFoundError:
 from src.service.wcs_service import (
     PackRunResult,
     WcsPackingService,
+    _split_positive_dimension_entries,
     select_wcs_plan_result,
 )
+import src.service.wcs_service as wcs_service_module
 import run_wcs_service
 
 
@@ -41,6 +44,131 @@ class _NeverStoppingEvent:
     def wait(self, timeout=None):
         self.wait_calls.append(timeout)
         return False
+
+
+def _stock_entry(product_code, **overrides):
+    entry = {
+        "length": 350,
+        "width": 530,
+        "height": 360,
+        "target_num": 1,
+        "box_type": "YZX507",
+        "case_type": "MH423C",
+        "product_code": product_code,
+        "order_id": "ORDER-1",
+    }
+    entry.update(overrides)
+    return entry
+
+
+def test_split_positive_dimension_entries_rejects_every_invalid_dimension():
+    entries = [
+        _stock_entry(1),
+        _stock_entry(2, length=0),
+        _stock_entry(3, width=-1),
+        _stock_entry(4, height=None),
+        _stock_entry(5, length="not-a-number"),
+        _stock_entry(6, width=float("inf")),
+        _stock_entry(7, height=float("nan")),
+    ]
+    original = copy.deepcopy(entries)
+
+    valid, invalid = _split_positive_dimension_entries(entries)
+
+    assert [entry["product_code"] for entry in valid] == [1]
+    assert [entry["product_code"] for entry in invalid] == [2, 3, 4, 5, 6, 7]
+    assert entries == original
+
+
+def test_fetch_once_filters_invalid_dimensions_before_both_stock_tables(
+    tmp_path, monkeypatch, capsys
+):
+    valid = _stock_entry(100)
+    invalid = _stock_entry(200, length=0, width=530, height=360)
+    service = object.__new__(WcsPackingService)
+    service._ds = SimpleNamespace(
+        effective_api_base_url="https://wcs.example",
+        stock_path="/stock",
+        input_dir=tmp_path / "input",
+        output_dir=tmp_path / "output",
+    )
+    service._repo = Mock()
+    service._repo.sync_stock_entries.return_value = SimpleNamespace(
+        unchanged=False,
+        changed=True,
+        deleted=2,
+        inserted=1,
+    )
+    service._repo_all = Mock()
+    service._repo_all.insert_new_stock_entries.return_value = SimpleNamespace(
+        inserted=1,
+        skipped_existing=0,
+    )
+    service._need_repack = Mock()
+    service._ensure_dirs()
+    monkeypatch.setattr(
+        wcs_service_module,
+        "fetch_stock_response",
+        lambda *_args: {"data": [valid, invalid]},
+    )
+
+    result = service.fetch_once()
+
+    assert result == 1
+    service._repo.sync_stock_entries.assert_called_once_with([valid])
+    service._repo_all.insert_new_stock_entries.assert_called_once_with([valid])
+    service._need_repack.set.assert_called_once_with()
+    raw_files = list(service.raw_dir.glob("*.json"))
+    assert len(raw_files) == 1
+    assert json.loads(raw_files[0].read_text(encoding="utf-8"))["data"] == [
+        valid,
+        invalid,
+    ]
+    output = capsys.readouterr().out
+    assert "忽略 1 条" in output
+    assert "product_code=200" in output
+    assert "0×530×360" in output
+
+
+def test_fetch_once_clears_current_snapshot_when_all_candidates_have_invalid_dimensions(
+    tmp_path, monkeypatch
+):
+    invalid = _stock_entry(200, length=0)
+    service = object.__new__(WcsPackingService)
+    service._ds = SimpleNamespace(
+        effective_api_base_url="https://wcs.example",
+        stock_path="/stock",
+        input_dir=tmp_path / "input",
+        output_dir=tmp_path / "output",
+    )
+    service._repo = Mock()
+    service._repo.sync_stock_entries.return_value = SimpleNamespace(
+        unchanged=False,
+        changed=True,
+        deleted=1,
+        inserted=0,
+    )
+    service._repo_all = Mock()
+    service._repo_all.insert_new_stock_entries.return_value = SimpleNamespace(
+        inserted=0,
+        skipped_existing=0,
+    )
+    service._need_repack = Mock()
+    service._ensure_dirs()
+    monkeypatch.setattr(
+        wcs_service_module,
+        "fetch_stock_response",
+        lambda *_args: {"data": [invalid]},
+    )
+
+    result = service.fetch_once()
+
+    assert result == 1
+    service._repo.sync_stock_entries.assert_called_once_with(
+        [], allow_empty_replace=True
+    )
+    service._repo_all.insert_new_stock_entries.assert_called_once_with([])
+    service._need_repack.set.assert_called_once_with()
 
 
 def _make_service(fetch_results):

@@ -1,9 +1,15 @@
 {
-  "id": "20260728_150003_570031",
-  "action": "load_pallet",
-  "box_unique_id": "19bfbf346be6414d8f612768cfb50f4b",
-  "order_id": "LAID16315EN01S",
-  "plan_path": null,
-  "auto_play": false,
-  "refresh_history": true
+  "id": "20260729_102549_204965",
+  "action": "play_box",
+  "box_unique_id": "eb3a46cf713c4bad9da56a955e8255fc",
+  "order_id": "PAIN26316EC02S",
+  "seq": 83,
+  "item_id": "",
+  "product_code": "30081665",
+  "state": 1,
+  "camera_length": null,
+  "camera_width": null,
+  "camera_height": null,
+  "auto_play": true,
+  "show_conveyor": true
 }

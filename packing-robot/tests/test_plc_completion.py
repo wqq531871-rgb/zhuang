@@ -1,4 +1,9 @@
-from PySide6.QtCore import QCoreApplication, QObject, Signal, Slot
+import os
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtWidgets import QApplication
 
 from packing_ui.live_command import write_live_command
 from packing_ui.layout_state import STATE_PATH_CAMERA
@@ -44,7 +49,7 @@ def test_sequence_larger_than_final_does_not_complete_pallet(tmp_path):
 
 
 def test_worker_final_box_signal_completes_started_pallet(tmp_path):
-    app = QCoreApplication.instance() or QCoreApplication([])
+    app = QApplication.instance() or QApplication([])
     completed = []
     captured = {}
 
@@ -58,7 +63,8 @@ def test_worker_final_box_signal_completes_started_pallet(tmp_path):
 
         @Slot()
         def run(self):
-            return None
+            self.box_finished.emit(7)
+            self.finished.emit()
 
         @Slot()
         def request_stop(self):
@@ -89,13 +95,10 @@ def test_worker_final_box_signal_completes_started_pallet(tmp_path):
     )()
 
     controller.start_pallet_send(S7Config(ip="127.0.0.1"))
-    captured["worker"].box_finished.emit(7)
+    controller.wait_send_finished(1000)
     app.processEvents()
 
     assert completed == ["started-pallet"]
-    controller.stop_send()
-    controller.wait_send_finished(1000)
-    app.processEvents()
 
 
 def test_try_load_session_plan_recovers_active_history(tmp_path, monkeypatch):

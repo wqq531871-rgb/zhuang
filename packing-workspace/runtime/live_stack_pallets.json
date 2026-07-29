@@ -56,6 +56,7 @@
     "last_arrived_seq": null,
     "updated_at": "2026-07-28 15:00:03",
     "received_at": "2026-07-28 15:00:03",
-    "stack_status": "active"
+    "stack_status": "done",
+    "completed_at": "2026-07-29 10:29:58"
   }
 ]

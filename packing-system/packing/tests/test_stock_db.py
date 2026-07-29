@@ -132,6 +132,20 @@ def test_wcs_stock_box_empty_pull_does_not_wipe():
     assert set(store) == {100, 200}
 
 
+def test_wcs_stock_box_can_explicitly_replace_with_empty_snapshot():
+    repo = WcsStockRepository(DatabaseConfig())
+    store = {100: None, 200: None}
+    _patch_stock_repo(repo, store)
+
+    stats = repo.sync_stock_entries([], allow_empty_replace=True)
+
+    assert stats.changed is True
+    assert stats.wake_packing is True
+    assert stats.deleted == 2
+    assert stats.inserted == 0
+    assert store == {}
+
+
 def test_wcs_stock_box_all_appends_without_delete():
     repo = WcsStockAllRepository(DatabaseConfig())
     store = {100: None, 200: None}
