@@ -52,11 +52,10 @@
     "order_id": "LAID16315EN01S",
     "robot_id": "5",
     "plan_path": null,
-    "source": "sendcasetask",
+    "source": "manual_restore",
     "last_arrived_seq": null,
-    "updated_at": "2026-07-28 09:24:59",
-    "received_at": "2026-07-28 09:24:59",
-    "stack_status": "done",
-    "completed_at": "2026-07-28 10:56:14"
+    "updated_at": "2026-07-28 15:00:03",
+    "received_at": "2026-07-28 15:00:03",
+    "stack_status": "active"
   }
 ]
