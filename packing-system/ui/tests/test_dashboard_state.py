@@ -5,6 +5,7 @@ from dashboard_state import (
     apply_download_interval,
     list_success_pallets,
     normalize_download_interval,
+    regular_irregular_box_counts,
     run_mode_policy,
     successful_pallet_count,
 )
@@ -19,6 +20,80 @@ def test_successful_pallet_count_uses_all_status_values_case_insensitively():
     ]
 
     assert successful_pallet_count(pallets) == 2
+
+
+def test_regular_irregular_box_counts_matches_integer_multiple_specs_across_pallets():
+    pallets = [
+        {
+            "packed_items": [
+                {"original_length": 100, "original_width": 80, "original_height": 50},
+                {"original_length": 100, "original_width": 80, "original_height": 50},
+            ]
+        },
+        {
+            "packed_items": [
+                {"original_length": 200, "original_width": 160, "original_height": 100},
+                {"original_length": 150, "original_width": 120, "original_height": 80},
+                {"original_length": 150, "original_width": 120, "original_height": 80},
+            ]
+        },
+    ]
+
+    assert regular_irregular_box_counts(pallets) == (3, 2)
+
+
+def test_regular_irregular_box_counts_prefers_original_dimensions_over_gap_dimensions():
+    pallets = [
+        {
+            "packed_items": [
+                {
+                    "length": 102,
+                    "width": 82,
+                    "height": 50,
+                    "original_length": 100,
+                    "original_width": 80,
+                    "original_height": 50,
+                },
+                {
+                    "length": 202,
+                    "width": 162,
+                    "height": 100,
+                    "original_length": 200,
+                    "original_width": 160,
+                    "original_height": 100,
+                },
+            ]
+        }
+    ]
+
+    assert regular_irregular_box_counts(pallets) == (2, 0)
+
+
+def test_regular_irregular_box_counts_treats_invalid_and_unmatched_boxes_as_irregular():
+    pallets = [
+        {
+            "packed_items": [
+                {"raw_length": 100, "raw_width": 80, "raw_height": 50},
+                {"length": 0, "width": 80, "height": 50},
+                {"length": "bad", "width": 80, "height": 50},
+            ]
+        }
+    ]
+
+    assert regular_irregular_box_counts(pallets) == (0, 3)
+
+
+def test_regular_irregular_box_counts_accepts_small_float_rounding_noise():
+    pallets = [
+        {
+            "packed_items": [
+                {"length": 100, "width": 80, "height": 50},
+                {"length": 200.00000001, "width": 160, "height": 100},
+            ]
+        }
+    ]
+
+    assert regular_irregular_box_counts(pallets) == (2, 0)
 
 
 def test_list_success_pallets_requires_success_status_and_pallet_id():

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
+import math
 from typing import Iterable, MutableMapping
 
 
@@ -49,6 +51,73 @@ def successful_pallet_count(pallets: Iterable[dict]) -> int:
         if str((pallet or {}).get("mpm_status") or "").strip().upper()
         == "SUCCESS"
     )
+
+
+_BOX_DIMENSION_FIELDS = (
+    ("original_length", "original_width", "original_height"),
+    ("raw_length", "raw_width", "raw_height"),
+    ("length", "width", "height"),
+)
+_INTEGER_MULTIPLE_TOLERANCE = 1e-6
+
+
+def _box_dimensions(item: dict) -> tuple[float, float, float] | None:
+    """Return the first complete, positive dimension triplet by field priority."""
+    for fields in _BOX_DIMENSION_FIELDS:
+        try:
+            dimensions = tuple(float((item or {}).get(field)) for field in fields)
+        except (TypeError, ValueError):
+            continue
+        if all(math.isfinite(value) and value > 0 for value in dimensions):
+            return dimensions
+    return None
+
+
+def _specs_have_integer_multiple_relationship(
+    left: tuple[float, float, float],
+    right: tuple[float, float, float],
+) -> bool:
+    """Return whether all corresponding axes form integer ratios."""
+    for left_value, right_value in zip(left, right):
+        ratio = max(left_value, right_value) / min(left_value, right_value)
+        nearest_integer = round(ratio)
+        if nearest_integer < 1:
+            return False
+        if abs(ratio - nearest_integer) > _INTEGER_MULTIPLE_TOLERANCE:
+            return False
+    return True
+
+
+def regular_irregular_box_counts(
+    pallets: Iterable[dict],
+) -> tuple[int, int]:
+    """Count boxes whose specifications do or do not have an integer-multiple peer."""
+    specification_counts: Counter[tuple[float, float, float]] = Counter()
+    invalid_count = 0
+    for pallet in pallets or []:
+        for item in (pallet or {}).get("packed_items") or []:
+            dimensions = _box_dimensions(item)
+            if dimensions is None:
+                invalid_count += 1
+            else:
+                specification_counts[dimensions] += 1
+
+    specifications = list(specification_counts)
+    regular_specifications: set[tuple[float, float, float]] = set()
+    for index, left in enumerate(specifications):
+        for right in specifications[index + 1 :]:
+            if _specs_have_integer_multiple_relationship(left, right):
+                regular_specifications.add(left)
+                regular_specifications.add(right)
+
+    regular_count = sum(
+        count
+        for specification, count in specification_counts.items()
+        if specification in regular_specifications
+    )
+    valid_count = sum(specification_counts.values())
+    irregular_count = invalid_count + valid_count - regular_count
+    return regular_count, irregular_count
 
 
 def list_success_pallets(pallets: Iterable[dict]) -> list:

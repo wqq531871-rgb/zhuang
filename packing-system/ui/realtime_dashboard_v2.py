@@ -75,7 +75,10 @@ try:
         ordered_packed_items,
         sequence_mode_key,
     )
-    from dashboard_state import successful_pallet_count
+    from dashboard_state import (
+        regular_irregular_box_counts,
+        successful_pallet_count,
+    )
     from result_sequence_update import (
         apply_seq_values,
         find_pallet_in_plan,
@@ -1640,12 +1643,16 @@ class IndustrialPackingWorkbench(BaseDashboard):
         self.card_height = MetricCard("高度利用率")
         self.card_support = MetricCard("平均支撑率")
         self.card_cg = MetricCard("重心偏移")
+        self.card_regular_boxes = MetricCard("规则箱子数目")
+        self.card_irregular_boxes = MetricCard("不规则箱子数目")
         cards = [
+            self.card_regular_boxes, self.card_irregular_boxes,
             self.card_fill, self.card_mpm, self.card_score, self.card_level,
-            self.card_boxes, self.card_mass, self.card_height, self.card_support, self.card_cg,
+            self.card_boxes, self.card_mass, self.card_height, self.card_support,
         ]
         for i, card in enumerate(cards):
             grid.addWidget(card, i // 2, i % 2)
+        grid.addWidget(self.card_cg, 5, 0)
         layout.addLayout(grid)
 
         suggestion_box = QtWidgets.QFrame()
@@ -2864,6 +2871,19 @@ class IndustrialPackingWorkbench(BaseDashboard):
                 self.card_mpm.set_data(index_value, f"状态 {mpm_status}，缺口 {mpm_gap:g}", "good" if mpm_status == "SUCCESS" else "bad")
         self._update_v2_summary()
 
+    def _update_box_count_cards(self) -> None:
+        if not hasattr(self, "card_regular_boxes") or not hasattr(self, "card_irregular_boxes"):
+            return
+        regular_count, irregular_count = regular_irregular_box_counts(
+            getattr(self, "pallets", [])
+        )
+        self.card_regular_boxes.set_data(
+            str(regular_count), "长宽高均有整数倍规格", "good"
+        )
+        self.card_irregular_boxes.set_data(
+            str(irregular_count), "未找到整数倍规格", "warn" if irregular_count else "good"
+        )
+
     def populate_after_load(self) -> None:
         super().populate_after_load()
         self.step_result.set_state("done", "可以选择托盘查看详情")
@@ -2879,6 +2899,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
                 "全部结果中的成功托盘",
                 "good" if success_total else "normal",
             )
+        self._update_box_count_cards()
         self._populate_overview_cards()
         self._on_sequence_mode_changed()
         self._set_status("done")
@@ -2893,7 +2914,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
         for kpi in ["kpi_score_big", "kpi_level_big", "kpi_support_big", "kpi_risk_big"]:
             if hasattr(self, kpi):
                 getattr(self, kpi).set_data("--", "等待结果")
-        for card_name in ["card_score", "card_level", "card_boxes", "card_mass", "card_fill", "card_mpm", "card_height", "card_support", "card_cg", "card_avg_fill", "card_success_total"]:
+        for card_name in ["card_score", "card_level", "card_boxes", "card_mass", "card_fill", "card_mpm", "card_height", "card_support", "card_cg", "card_avg_fill", "card_success_total", "card_regular_boxes", "card_irregular_boxes"]:
             if hasattr(self, card_name):
                 getattr(self, card_name).set_data("--", "--")
         if hasattr(self, "overview_cards"):
