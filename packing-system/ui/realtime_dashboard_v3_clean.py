@@ -39,6 +39,34 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, NamedTuple, Optional, Tuple
 
+
+def _configure_stdio_utf8() -> None:
+    """Force UTF-8 console I/O so Chinese logs render in Cursor/VS Code/Code Runner.
+
+    On Chinese Windows, Python defaults to GBK (cp936) for stdout while the IDE
+    terminal usually expects UTF-8; that mismatch shows as mojibake.
+    """
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    os.environ.setdefault("PYTHONUTF8", "1")
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+            ctypes.windll.kernel32.SetConsoleCP(65001)
+        except Exception:
+            pass
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
+_configure_stdio_utf8()
+
 # -----------------------------------------------------------------------------
 # Import v2 safely. v2 already contains the Qt plugin path fix and UI theme.
 # -----------------------------------------------------------------------------
