@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+import json
 import math
+from pathlib import Path
 from typing import Iterable, MutableMapping
 
 
@@ -131,6 +133,40 @@ def list_success_pallets(pallets: Iterable[dict]) -> list:
             continue
         result.append(pallet)
     return result
+
+
+def attach_box_unique_ids_from_wcs_map(
+    pallets: Iterable[dict],
+    result_path: Path,
+) -> None:
+    """Attach each pallet's UID from the sibling execution WCS map."""
+    result_path = Path(result_path)
+    suffix = "_execution.json"
+    if not result_path.name.endswith(suffix):
+        return
+    map_path = result_path.with_name(
+        f"{result_path.name[:-len(suffix)]}_execution_wcs_map.json"
+    )
+    try:
+        mapping = json.loads(map_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(mapping, dict):
+        return
+
+    uid_by_pallet_id = {
+        str(record.get("pallet_id") or "").strip(): str(uid).strip()
+        for uid, record in mapping.items()
+        if isinstance(record, dict)
+        and str(record.get("pallet_id") or "").strip()
+        and str(uid).strip()
+    }
+    for pallet in pallets or []:
+        if not isinstance(pallet, dict):
+            continue
+        pallet_id = str(pallet.get("pallet_id") or "").strip()
+        if pallet_id in uid_by_pallet_id:
+            pallet["box_unique_id"] = uid_by_pallet_id[pallet_id]
 
 
 def normalize_download_interval(

@@ -879,6 +879,9 @@ class PalletPreviewCard(QtWidgets.QFrame):
         head = QtWidgets.QHBoxLayout()
         self.title = QtWidgets.QLabel("--")
         self.title.setObjectName("PreviewTitle")
+        self.title.setTextInteractionFlags(
+            QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard
+        )
         self.stats = QtWidgets.QLabel("--")
         self.stats.setObjectName("PreviewSub")
         self.stats.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
@@ -890,6 +893,13 @@ class PalletPreviewCard(QtWidgets.QFrame):
         head.addWidget(self.stats)
         head.addWidget(self.btn_zoom)
         layout.addLayout(head)
+
+        self.box_unique_id = QtWidgets.QLabel("box_unique_id：--")
+        self.box_unique_id.setObjectName("PreviewSub")
+        self.box_unique_id.setTextInteractionFlags(
+            QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard
+        )
+        layout.addWidget(self.box_unique_id)
 
         self.sub = QtWidgets.QLabel("--")
         self.sub.setObjectName("PreviewSub")
@@ -983,11 +993,13 @@ class PalletPreviewCard(QtWidgets.QFrame):
         self.canvas.set_selected_box_key(selected_box_key if selected else None, render=False)
         if not pallet:
             self.title.setText("空位")
+            self.box_unique_id.setText("")
             self.sub.setText("")
             self.stats.setText("")
             self.canvas.set_pallet(None)
             return
         pid = safe_str(pallet.get("pallet_id"), "--")
+        box_unique_id = safe_str(pallet.get("box_unique_id"), "--")
         status = safe_str(pallet.get("mpm_status"), "UNKNOWN")
         count = len(pallet.get("packed_items", []) or [])
         fill_rate = safe_float(pallet.get("fill_rate"), float("nan"))
@@ -1005,6 +1017,7 @@ class PalletPreviewCard(QtWidgets.QFrame):
             "SKIPPED_FAILED_PALLET": "失败盘不排序",
         }.get(sequence_status, sequence_status)
         self.title.setText(pid)
+        self.box_unique_id.setText(f"box_unique_id：{box_unique_id}")
         self.sub.setText(
             f"状态：{status}｜箱数：{count}｜填充率：{fill_txt}｜指数：{index_txt}｜{sequence_short}"
         )

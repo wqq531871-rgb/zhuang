@@ -47,6 +47,20 @@ class _StatefulSuccessBoxCursor:
     def execute(self, sql, params=None):
         normalized = " ".join(sql.split()).upper()
         values = [str(value) for value in (params or [])]
+        if normalized.startswith("UPDATE WCS_SUCCESS_BOX SET IS_SEND"):
+            assert "WHERE IS_SEND = %S OR IS_SEND IS NULL" in normalized
+            assert "TRIM(IFNULL(IS_SEND,'')) = ''" in normalized
+            sent_value, unsent_value = values
+            updated = 0
+            for row in self.rows:
+                current = str(row.get("is_send") or "").strip()
+                if current in (unsent_value, ""):
+                    row["is_send"] = sent_value
+                    updated += 1
+            self.rowcount = updated
+            self._fetched = []
+            return
+
         if normalized.startswith("SELECT") and "WHERE PRODUCT_CODE IN" in normalized:
             matches = [
                 row
@@ -249,18 +263,21 @@ def test_insert_rows_replaces_entire_old_pallet_when_product_code_moves(
                 "seq": 1,
                 "product_code": "A",
                 "pallet_id": "OLD-PALLET",
+                "is_send": "1",
             },
             {
                 "box_unique_id": "old-uid",
                 "seq": 2,
                 "product_code": "B",
                 "pallet_id": "OLD-PALLET",
+                "is_send": "1",
             },
             {
                 "box_unique_id": "unrelated-uid",
                 "seq": 1,
                 "product_code": "D",
                 "pallet_id": "UNCHANGED-PALLET",
+                "is_send": "2",
             },
         ]
     )
@@ -300,6 +317,34 @@ def test_insert_rows_replaces_entire_old_pallet_when_product_code_moves(
     assert by_code["A"]["is_send"] == "2"
     assert by_code["C"]["box_unique_id"] == "new-uid"
     assert by_code["D"]["box_unique_id"] == "unrelated-uid"
+    assert by_code["D"]["is_send"] == "1"
+
+
+def test_insert_rows_archives_only_old_unsent_or_blank_rows(monkeypatch):
+    cursor = _StatefulSuccessBoxCursor(
+        [
+            {"box_unique_id": "u-2", "product_code": "B", "is_send": "2"},
+            {"box_unique_id": "u-null", "product_code": "C", "is_send": None},
+            {"box_unique_id": "u-empty", "product_code": "D", "is_send": ""},
+            {"box_unique_id": "u-blank", "product_code": "E", "is_send": "  "},
+            {"box_unique_id": "u-1", "product_code": "F", "is_send": "1"},
+        ]
+    )
+    repo = WcsSuccessBoxRepository(DatabaseConfig())
+
+    @contextmanager
+    def fake_cursor():
+        yield None, cursor
+
+    monkeypatch.setattr(repo, "_cursor", fake_cursor)
+
+    repo.insert_rows(
+        [_success_box_row("new-uid", 1, "A", pallet_id="NEW", pos_x=1.0)]
+    )
+
+    by_code = {str(row["product_code"]): row for row in cursor.rows}
+    assert {by_code[code]["is_send"] for code in ("B", "C", "D", "E", "F")} == {"1"}
+    assert by_code["A"]["is_send"] == "2"
 
 
 def test_insert_rows_rejects_duplicate_product_codes_in_current_batch(

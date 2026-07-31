@@ -3,12 +3,51 @@ import pytest
 from dashboard_state import (
     RUN_MODE_OPTIONS,
     apply_download_interval,
+    attach_box_unique_ids_from_wcs_map,
     list_success_pallets,
     normalize_download_interval,
     regular_irregular_box_counts,
     run_mode_policy,
     successful_pallet_count,
 )
+
+
+def test_attach_box_unique_ids_from_matching_execution_wcs_map(tmp_path):
+    result_path = tmp_path / "packing_plan_20260731_163233_execution.json"
+    result_path.write_text('{"pallets": []}', encoding="utf-8")
+    map_path = tmp_path / "packing_plan_20260731_163233_execution_wcs_map.json"
+    map_path.write_text(
+        """
+        {
+          "9827a6fe82ef46258f298c90f342c732": {
+            "pallet_id": "MH423C-PAIN26316EN01S-1"
+          },
+          "b29a7c234efb4363862a2a676968d62d": {
+            "pallet_id": "MH423C-PAIN26316EN01S-2"
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    pallets = [
+        {"pallet_id": "MH423C-PAIN26316EN01S-1"},
+        {"pallet_id": "MH423C-PAIN26316EN01S-2"},
+        {"pallet_id": "UNMAPPED-1"},
+    ]
+
+    attach_box_unique_ids_from_wcs_map(pallets, result_path)
+
+    assert pallets == [
+        {
+            "pallet_id": "MH423C-PAIN26316EN01S-1",
+            "box_unique_id": "9827a6fe82ef46258f298c90f342c732",
+        },
+        {
+            "pallet_id": "MH423C-PAIN26316EN01S-2",
+            "box_unique_id": "b29a7c234efb4363862a2a676968d62d",
+        },
+        {"pallet_id": "UNMAPPED-1"},
+    ]
 
 
 def test_successful_pallet_count_uses_all_status_values_case_insensitively():

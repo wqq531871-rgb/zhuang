@@ -1,0 +1,1953 @@
+[LOG] 后端日志文件：D:\research_code\final\zhuang\packing-workspace\runtime\packing-realtime\logs\backend_20260731_155725.log
+[LOG] 接口模式：每 200 秒拉取并计算，直到手动停止。
+[CMD] D:\research_code\zhuang-ui-m\.venvs\packing-realtime\python.exe D:\research_code\final\zhuang\packing-system\packing\run_wcs_service.py --config D:\research_code\final\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260731_155725.yaml --run-mode continuous
+[WCS] 已加载 BMS 参考表：D:\research_code\final\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+============================================================
+WCS 接口装箱服务（DB 模式）
+  接口模式：真实 WCS（use_real_api=True）
+  接口地址：http://10.222.10.1:8092
+  接口1：http://10.222.10.1:8092/api/wcs/reqstockinfo
+  接口2：http://10.222.10.1:8092/api/wcs/sendpalletplanresult
+  拉取间隔：200 秒（仅拉取）
+  原始 JSON：D:\research_code\final\zhuang\packing-workspace\input\raw
+  数据库：localhost:3306/zhuangdb 表 wcs_stock_box（当前） / wcs_stock_box_all（历史）
+  BMS 参考：D:\research_code\final\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+  输出目录：D:\research_code\final\zhuang\packing-workspace\output
+  触发：wcs_stock_box 的 product_code 集合相对立库有变化才全量替换并开算；拉取与装箱串行；历史表只追加
+  约束配置：D:\research_code\final\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260731_155725.yaml
+  按 Ctrl+C 或由 UI 停止按钮结束进程
+============================================================
+============================================================
+[WCS-拉] 20260731_155729：拉取接口 1 …
+[WCS-拉] 原始响应已保存：D:\research_code\final\zhuang\packing-workspace\input\raw\20260731_155729.json
+[WCS-拉] 已剔除 case_type≠MH423C 的品类 63 条（类型：['MH113', 'WR246']），保留 1694 条。
+[WCS-拉] 忽略 4 条零尺寸/非法尺寸库存；有效记录 1690 条；样例：product_code=30086366/box_type=YZX507/0×0×0, product_code=30086359/box_type=YZX507/0×0×0, product_code=30086364/box_type=YZX507/0×0×0, product_code=30086358/box_type=YZX507/0×0×0
+[WCS-DB] wcs_stock_box 已全量替换：清空 1689 → 插入 1690
+[WCS-拉] wcs_stock_box 已全量替换：删 1689，插 1690。
+[WCS-DB] wcs_stock_box_all product_code 已存在、跳过 1689 条
+[WCS-拉] wcs_stock_box_all 追加：新插入 1，跳过已有 1689（历史不删）。
+[WCS-拉] 库存有变化 → 本轮继续装箱。
+[WCS] 已加载 BMS 参考表：D:\research_code\final\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+============================================================
+[WCS-装] 20260731_155733：库存行 1690 条，开始装箱 …
+[WCS-装] 展开为 1690 个箱子。
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\zlib1.dll...
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\abseil_dll.dll...
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\utf8_validity.dll...
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\re2.dll...
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\libprotobuf.dll...
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\highs.dll...
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\ortools.dll...
+数据预处理和箱子分组完成（按托盘类型+销售订单号）。
+----------------------------------------
+  - 组内子聚类：10 个混合订单拆出规则子集走 GCP、杂箱走 baseline。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16306DN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 74.25，最大缺口 131.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/1/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=54.63s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=2.50s，total=57.13s。
+  - 条件双路径棘轮：替代完整路径通过守恒和最终门禁，严格优于 GCP，已采用。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 82 个，总指数 156，目标 192，理论最多达标托盘 0 个，剩余指数 156。
+  - 几何诊断：典型整层堆叠单盘参考上限 98.5/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 98.5 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305BN02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 114.00，最大缺口 185.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.08s，main_topup=0.03s，retry=0.00s，failed_pool=0.00s，repack=1.93s，total=8.76s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 12 个，总指数 48，目标 192，理论最多达标托盘 0 个，剩余指数 48。
+  - 几何诊断：典型整层堆叠单盘参考上限 48/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 48 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 144.00，最大缺口 144.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305EN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 28 个，总指数 90.5，目标 192，理论最多达标托盘 0 个，剩余指数 90.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 67/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 67 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305EN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 146.75，最大缺口 176.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.10s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.18s，total=0.54s。
+正在处理托盘类型：MH423C，销售订单号：PAID16306DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16306DN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 87.00，最大缺口 87.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=3.43s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=3.43s。
+正在处理托盘类型：MH423C，销售订单号：PAID16306DN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 1，目标 192，理论最多达标托盘 0 个，剩余指数 1。
+  - 几何诊断：典型整层堆叠单盘参考上限 1/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 1 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16306DN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.00，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305BN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 90.50，最大缺口 176.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=1/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=68.80s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=3.22s，total=72.01s。
+  - 条件双路径棘轮：替代完整路径未严格改善，保留 GCP。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 12 个，总指数 48，目标 192，理论最多达标托盘 0 个，剩余指数 48。
+  - 几何诊断：典型整层堆叠单盘参考上限 48/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 48 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 144.00，最大缺口 144.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN03S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 54 个，总指数 111，目标 192，理论最多达标托盘 0 个，剩余指数 111。
+  - 几何诊断：典型整层堆叠单盘参考上限 85/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 85 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305BN03S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 136.50，最大缺口 171.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.21s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.74s，total=1.95s。
+正在处理托盘类型：MH423C，销售订单号：LAMY16315FN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 34 个，总指数 86.5，目标 192，理论最多达标托盘 0 个，剩余指数 86.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 73/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 73 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAMY16315FN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 148.75，最大缺口 166.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.15s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.31s，total=0.85s。
+正在处理托盘类型：MH423C，销售订单号：PAID16305EC01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16305EC01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 44 个，总指数 180，目标 192，理论最多达标托盘 0 个，剩余指数 180。
+  - 几何诊断：典型整层堆叠单盘参考上限 100/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 100 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16306DN02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 102.00，最大缺口 178.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.28s，main_topup=0.01s，retry=0.00s，failed_pool=0.00s，repack=0.46s，total=2.07s。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 4 个，总指数 4，目标 192，理论最多达标托盘 0 个，剩余指数 4。
+  - 几何诊断：典型整层堆叠单盘参考上限 4/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 4 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16306DN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 188.00，最大缺口 188.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16315EN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 152.00，最大缺口 152.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.04s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.04s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 9，目标 192，理论最多达标托盘 0 个，剩余指数 9。
+  - 几何诊断：典型整层堆叠单盘参考上限 9/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 9 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16315EN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 183.00，最大缺口 183.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PEG086300LN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 64 个，总指数 143，目标 192，理论最多达标托盘 0 个，剩余指数 143。
+  - 几何诊断：典型整层堆叠单盘参考上限 101/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 101 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PEG086300LN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 49.00，最大缺口 49.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.72s，main_topup=0.01s，retry=0.00s，failed_pool=0.00s，repack=0.69s，total=5.19s。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN03S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 10 个，总指数 40，目标 192，理论最多达标托盘 0 个，剩余指数 40。
+  - 几何诊断：典型整层堆叠单盘参考上限 36/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 36 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16306DN03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 152.00，最大缺口 152.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.03s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.03s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 58 个，总指数 166，目标 192，理论最多达标托盘 0 个，剩余指数 166。
+  - 几何诊断：典型整层堆叠单盘参考上限 100/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 100 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16310IN02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 109.00，最大缺口 187.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.45s，main_topup=0.01s，retry=0.00s，failed_pool=0.00s，repack=0.83s，total=2.63s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16310IN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 91.00，最大缺口 176.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=1/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=67.03s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=1.05s，total=68.07s。
+  - 条件双路径棘轮：替代完整路径通过守恒和最终门禁，严格优于 GCP，已采用。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 3 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16310IN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16316AN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16316AN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 131.00，最大缺口 131.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.05s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.05s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310BC02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 12 个，总指数 86，目标 192，理论最多达标托盘 0 个，剩余指数 86。
+  - 几何诊断：典型整层堆叠单盘参考上限 52/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 52 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310BC02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 106.00，最大缺口 106.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.04s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.04s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 托盘 MH423C-LFEG16310IN03S-2 未找到可行装箱方案，启用剩余箱子守恒兜底。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 48 个，总指数 186，目标 192，理论最多达标托盘 0 个，剩余指数 186。
+  - 几何诊断：典型整层堆叠单盘参考上限 152/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 152 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16310IN03S）处理完成：总托盘 3，指数达标 0，未达标 3，平均缺口 130.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/1/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.28s，main_topup=0.01s，retry=0.00s，failed_pool=0.00s，repack=0.71s，total=2.27s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN03S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 18 个，总指数 27，目标 192，理论最多达标托盘 0 个，剩余指数 27。
+  - 几何诊断：典型整层堆叠单盘参考上限 23/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 23 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16310IN03S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 165.00，最大缺口 165.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.08s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.08s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26316EC02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 61 个，总指数 168，目标 192，理论最多达标托盘 0 个，剩余指数 168。
+  - 几何诊断：典型整层堆叠单盘参考上限 116/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 116 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PAIN26316EC02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 108.00，最大缺口 122.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.06s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=1.30s，total=2.43s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26296EC02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26296EC02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 116.00，最大缺口 116.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.11s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.11s。
+正在处理托盘类型：MH423C，销售订单号：PAID16315AN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 1，目标 192，理论最多达标托盘 0 个，剩余指数 1。
+  - 几何诊断：典型整层堆叠单盘参考上限 1/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 1 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16315AN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.00，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310BN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310BN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 156.00，最大缺口 156.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.02s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16315EN03S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 108.50，最大缺口 171.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.60s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=1.76s，total=3.37s。
+正在处理托盘类型：MH423C，销售订单号：PAID16316DN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16316DN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16316DN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16316DN03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 144.00，最大缺口 144.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.03s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.03s。
+正在处理托盘类型：MH423C，销售订单号：LAID16316DN03S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 3 个，总指数 3，目标 192，理论最多达标托盘 0 个，剩余指数 3。
+  - 几何诊断：典型整层堆叠单盘参考上限 3/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 3 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16316DN03S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 189.00，最大缺口 189.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：LAID16316DN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16316DN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 80.00，最大缺口 80.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.34s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.34s。
+正在处理托盘类型：MH423C，销售订单号：LAID16316DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16316DN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 49.00，最大缺口 49.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.17s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.17s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16315EN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 87.00，最大缺口 87.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.10s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.10s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 4 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16315EN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：PAID163108N01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID163108N01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 104.00，最大缺口 104.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.44s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.44s。
+正在处理托盘类型：MH423C，销售订单号：PAID16315BN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16315BN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 154.00，最大缺口 154.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.13s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.13s。
+正在处理托盘类型：MH423C，销售订单号：PAID163108N03S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID163108N03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAID16300FN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16300FN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16316AN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16316AN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 70.00，最大缺口 70.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.13s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.13s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16316AN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16316AN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310MZ05S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 55 个，总指数 818，目标 192，理论最多达标托盘 4 个，剩余指数 50。
+  - 几何诊断：典型整层堆叠单盘参考上限 160/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 160 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PAIN26310MZ05S）处理完成：总托盘 7，指数达标 0，未达标 7，平均缺口 75.14，最大缺口 174.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/7，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.13s，main_topup=0.00s，retry=0.00s，failed_pool=0.21s，repack=0.74s，total=0.88s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16320IN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16320IN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 168.00，最大缺口 168.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.01s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16320IN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16320IN03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 168.00，最大缺口 168.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.01s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310MN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 托盘 MH423C-PAIN26310MN01S-3 未找到可行装箱方案，启用剩余箱子守恒兜底。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 50 个，总指数 345，目标 192，理论最多达标托盘 1 个，剩余指数 153。
+  - 几何诊断：典型整层堆叠单盘参考上限 176/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 176 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败盘装满压实：合并/吸收 2 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PAIN26310MN01S）处理完成：总托盘 3，指数达标 0，未达标 3，平均缺口 77.00，最大缺口 185.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=1/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.30s，main_topup=0.00s，retry=0.00s，failed_pool=0.99s，repack=3.87s，total=4.18s。
+正在处理托盘类型：MH423C，销售订单号：PEG126320LN02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 6，目标 192，理论最多达标托盘 0 个，剩余指数 6。
+  - 几何诊断：典型整层堆叠单盘参考上限 6/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 6 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PEG126320LN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 186.00，最大缺口 186.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26290MN02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 7 个，总指数 26，目标 192，理论最多达标托盘 0 个，剩余指数 26。
+  - 几何诊断：典型整层堆叠单盘参考上限 26/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 26 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26290MN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 166.00，最大缺口 166.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.01s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.03s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310GC02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 3 个，总指数 6，目标 192，理论最多达标托盘 0 个，剩余指数 6。
+  - 几何诊断：典型整层堆叠单盘参考上限 6/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 6 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310GC02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 186.00，最大缺口 186.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：PAID163108C02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID163108C02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PEG126320LN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PEG126320LN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 170.00，最大缺口 170.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.09s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.09s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26316EN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 3 实例，实装成功 3，失败回兜底 0；达标 3，直接采用配方方案（基线未跑，--safe 可审计对比）。
+  - 指数诊断：箱子 174 个，总指数 671，目标 192，理论最多达标托盘 3 个，剩余指数 95。
+  - 几何诊断：典型整层堆叠单盘参考上限 192/192。
+  - 失败托盘互借诊断：未合并（less_than_2_consolidatable）。
+托盘类型 MH423C（销售订单号：PAIN26316EN01S）处理完成：总托盘 4，指数达标 3，未达标 1，平均缺口 97.00，最大缺口 97.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=2.36s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.67s，total=3.03s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26296EN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26296EN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 100.00，最大缺口 100.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=4.32s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=4.32s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310MN06S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310MN06S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 36.00，最大缺口 36.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.25s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.25s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310MN08S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310MN08S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 145.00，最大缺口 145.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.10s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=1.10s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16336AN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 1，目标 192，理论最多达标托盘 0 个，剩余指数 1。
+  - 几何诊断：典型整层堆叠单盘参考上限 1/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 1 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16336AN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.00，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16336AN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 4 个，总指数 6，目标 192，理论最多达标托盘 0 个，剩余指数 6。
+  - 几何诊断：典型整层堆叠单盘参考上限 6/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 6 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16336AN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 186.00，最大缺口 186.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26326EN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 4，目标 192，理论最多达标托盘 0 个，剩余指数 4。
+  - 几何诊断：典型整层堆叠单盘参考上限 4/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 4 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26326EN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 188.00，最大缺口 188.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26320BN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26320BN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PFEG16336AN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 托盘 MH423C-PFEG16336AN01S-1 未找到可行装箱方案，启用剩余箱子守恒兜底。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 7 个，总指数 10，目标 192，理论最多达标托盘 0 个，剩余指数 10。
+  - 几何诊断：典型整层堆叠单盘参考上限 10/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 10 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PFEG16336AN01S）处理完成：总托盘 3，指数达标 0，未达标 3，平均缺口 188.67，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/3，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.01s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.15s，total=0.22s。
+  - 跨子组条件双路径（MH423C / LAID16305BN02S）：采用严格更优完整路径。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / PAID16306DN01S）：合并 1 次（纯减盘数）。
+  - 跨子组条件双路径（MH423C / LAID16305BN01S）：采用严格更优完整路径。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LAID16306DN02S）：合并 1 次（纯减盘数）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LAID16315EN01S）：合并 1 次（纯减盘数）。
+  - 跨子组条件双路径（MH423C / LFEG16310IN01S）：采用严格更优完整路径。
+  - 跨子组条件双路径（MH423C / LFEG16310IN03S）：采用严格更优完整路径。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LAID16316DN03S）：合并 1 次（纯减盘数）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LAID16315EN02S）：合并 1 次（纯减盘数）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LFEG16316AN02S）：合并 1 次（纯减盘数）。
+========================================
+统计汇总：总托盘 75，指数达标 3，未达标 72，未知 0，平均缺口 121.65，最大缺口 191.00，失败托盘互借修复成功 0
+KPI汇总：near/mid/deep=3/2/67，pair尝试=0，pair改进=0，pair效率=0.00%
+耗时汇总：packing=210.14s，main_topup=0.07s，retry=0.00s，repack=21.13s，end_to_end=544.67s
+========================================
+[WCS-装] SUCCESS 产品码 118 个，SUCCESS 盘 3，FAILED 盘 72。
+[WCS-装] 本轮计算结束。
+[WCS-装] 本轮方案已保存（success）：D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_155733.json
+[执行规划] 产物目录：D:\research_code\final\zhuang\packing-workspace\output\success（success）
+[执行规划] 开始：D:\research_code\zhuang-ui-m\.venvs\packing-realtime\python.exe D:\research_code\final\zhuang\packing-system\run_execution_planning.py D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_155733.json --config D:\research_code\final\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260731_155725.yaml --output D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_155733_execution.json --wcs-output D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_155733_execution_wcs.json --wcs-map-output D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_155733_execution_wcs_map.json
+[WCS-DB] wcs_success_box：替换旧托盘 3 个，删除 118 行，写入 118 行
+[WCS-DB] wcs_success_box：本批候选 118 行，本批写入 118 行。
+[WCS-DB] wcs_box_orientation：本批候选 118 行，写入影响 118（含已存在跳过）。
+[现场码垛] 新计算结果已入库，已清空旧码放队列 1194 条
+[现场会话] 新计算结果已入库，当前没有未完成托盘
+execution plan written: pallets=75 boxes=1690 reordered_pallets=62 path=D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_155733_execution.json
+WCS execution cases written: D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_155733_execution_wcs.json
+WCS execution plan map written: D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_155733_execution_wcs_map.json
+execution scan deviations pallet='MH423C-LAID16306DN01S-2' count=4: expected='WCS-0145-YZX448-0000' selected='WCS-0227-YZX428-0000' box='WCS-0145-YZX448-0000' after='WCS-0227-YZX428-0000' reason=open_direction lookahead=true; expected='WCS-0114-DZX448-0000' selected='WCS-0254-DZX444-0000' box='WCS-0114-DZX448-0000' after='WCS-0254-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-0008-YBB106-0000' selected='WCS-0072-YZX448-0000' box='WCS-0008-YBB106-0000' after='WCS-0072-YZX448-0000' reason=hard_dependency; expected='WCS-0008-YBB106-0000' selected='WCS-0226-YZX428-0000' box='WCS-0008-YBB106-0000' after='WCS-0226-YZX428-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16305BN02S-1' count=9: expected='WCS-0093-YZX444-0000' selected='WCS-0497-DZX424-0000' box='WCS-0093-YZX444-0000' after='WCS-0497-DZX424-0000' reason=open_direction lookahead=true; expected='WCS-0094-YZX444-0000' selected='WCS-0100-YZX444-0000' box='WCS-0094-YZX444-0000' after='WCS-0100-YZX444-0000' reason=open_direction lookahead=true; expected='WCS-0012-YZX428-0000' selected='WCS-0469-DZX424-0000' box='WCS-0012-YZX428-0000' after='WCS-0469-DZX424-0000' reason=open_direction lookahead=true; expected='WCS-0095-YZX444-0000' selected='WCS-0065-YZX448-0000' box='WCS-0095-YZX444-0000' after='WCS-0065-YZX448-0000' reason=open_direction lookahead=true; expected='WCS-0805-YZX424-0000' selected='WCS-0038-YZX448-0000' box='WCS-0805-YZX424-0000' after='WCS-0038-YZX448-0000' reason=open_direction lookahead=true; expected='WCS-0622-YBB077-0000' selected='WCS-0806-YZX424-0000' box='WCS-0622-YBB077-0000' after='WCS-0806-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-0626-YBB077-0000' selected='WCS-0026-YZX448-0000' box='WCS-0626-YBB077-0000' after='WCS-0026-YZX448-0000' reason=open_direction lookahead=true; expected='WCS-0224-YBB125-0000' selected='WCS-0574-YZX444-0000' box='WCS-0224-YBB125-0000' after='WCS-0574-YZX444-0000' reason=hard_dependency; ...
+execution scan deviations pallet='MH423C-LAID16305BN02S-2' count=3: expected='WCS-0587-YZX448-0000' selected='WCS-0214-DZX444-0000' box='WCS-0587-YZX448-0000' after='WCS-0214-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-0590-YZX448-0000' selected='WCS-0189-YZX424-0000' box='WCS-0590-YZX448-0000' after='WCS-0189-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-0575-YZX444-0000' selected='WCS-0204-YZX848-0000' box='WCS-0575-YZX444-0000' after='WCS-0204-YZX848-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16305EN01S-1' count=5: expected='WCS-1011-DZX448-0000' selected='WCS-1008-DZX448-0000' box='WCS-1011-DZX448-0000' after='WCS-1008-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-1012-DZX448-0000' selected='WCS-1009-DZX448-0000' box='WCS-1012-DZX448-0000' after='WCS-1009-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-0016-YBB285-0000' selected='WCS-0024-YBB258-0000' box='WCS-0016-YBB285-0000' after='WCS-0024-YBB258-0000' reason=open_direction lookahead=true; expected='WCS-0023-YBB258-0000' selected='WCS-0020-YBB285-0000' box='WCS-0023-YBB258-0000' after='WCS-0020-YBB285-0000' reason=hard_dependency; expected='WCS-0023-YBB258-0000' selected='WCS-0013-YBB285-0000' box='WCS-0023-YBB258-0000' after='WCS-0013-YBB285-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAID16306DN01S-1' count=1: expected='WCS-0044-YZX448-0000' selected='WCS-0163-YZX848-0000' box='WCS-0044-YZX448-0000' after='WCS-0163-YZX848-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16305BN01S-2' count=3: expected='WCS-0579-YZX448-0000' selected='WCS-0589-YZX448-0000' box='WCS-0579-YZX448-0000' after='WCS-0589-YZX448-0000' reason=open_direction lookahead=true; expected='WCS-0287-YBB077-0000' selected='WCS-0490-DZX848-0000' box='WCS-0287-YBB077-0000' after='WCS-0490-DZX848-0000' reason=open_direction lookahead=true; expected='WCS-0588-YZX448-0000' selected='WCS-0292-YBB077-0000' box='WCS-0588-YZX448-0000' after='WCS-0292-YBB077-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16305BN03S-1' count=4: expected='WCS-0634-YBB077-0000' selected='WCS-0826-DZX444-0000' box='WCS-0634-YBB077-0000' after='WCS-0826-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-0790-ZX848-0000' selected='WCS-0639-YBB077-0000' box='WCS-0790-ZX848-0000' after='WCS-0639-YBB077-0000' reason=open_direction lookahead=true; expected='WCS-0827-DZX848-0000' selected='WCS-0641-YBB077-0000' box='WCS-0827-DZX848-0000' after='WCS-0641-YBB077-0000' reason=open_direction lookahead=true; expected='WCS-0828-DZX848-0000' selected='WCS-0643-YBB077-0000' box='WCS-0828-DZX848-0000' after='WCS-0643-YBB077-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAMY16315FN01S-1' count=4: expected='WCS-0120-DZX448-0000' selected='WCS-0785-ZX848-0000' box='WCS-0120-DZX448-0000' after='WCS-0785-ZX848-0000' reason=open_direction lookahead=true; expected='WCS-0647-DZX448-0000' selected='WCS-0609-YZX444-0000' box='WCS-0647-DZX448-0000' after='WCS-0609-YZX444-0000' reason=open_direction lookahead=true; expected='WCS-0881-YZX448-0000' selected='WCS-0652-DZX448-0000' box='WCS-0881-YZX448-0000' after='WCS-0652-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-0237-YBB077-0000' selected='WCS-0245-YBB077-0000' box='WCS-0237-YBB077-0000' after='WCS-0245-YBB077-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16306DN02S-1' count=2: expected='WCS-0597-DZX244-0000' selected='WCS-0233-YZX224-0000' box='WCS-0597-DZX244-0000' after='WCS-0233-YZX224-0000' reason=open_direction lookahead=true; expected='WCS-0432-DZX424-0000' selected='WCS-0441-DZX424-0000' box='WCS-0432-DZX424-0000' after='WCS-0441-DZX424-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PEG086300LN01S-1' count=9: expected='WCS-1198-DZX444-0000' selected='WCS-0708-DZX424-0000' box='WCS-1198-DZX444-0000' after='WCS-0708-DZX424-0000' reason=open_direction lookahead=true; expected='WCS-1204-DZX444-0000' selected='WCS-1213-DZX444-0000' box='WCS-1204-DZX444-0000' after='WCS-1213-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-1207-DZX444-0000' selected='WCS-0368-DZX424-0000' box='WCS-1207-DZX444-0000' after='WCS-0368-DZX424-0000' reason=open_direction lookahead=true; expected='WCS-1199-DZX444-0000' selected='WCS-1210-DZX428-0000' box='WCS-1199-DZX444-0000' after='WCS-1210-DZX428-0000' reason=open_direction lookahead=true; expected='WCS-1205-DZX444-0000' selected='WCS-1214-DZX444-0000' box='WCS-1205-DZX444-0000' after='WCS-1214-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-1211-DZX444-0000' selected='WCS-1200-DZX428-0000' box='WCS-1211-DZX444-0000' after='WCS-1200-DZX428-0000' reason=open_direction lookahead=true; expected='WCS-1203-DZX444-0000' selected='WCS-1216-DZX428-0000' box='WCS-1203-DZX444-0000' after='WCS-1216-DZX428-0000' reason=open_direction lookahead=true; expected='WCS-1206-DZX444-0000' selected='WCS-1218-DZX444-0000' box='WCS-1206-DZX444-0000' after='WCS-1218-DZX444-0000' reason=open_direction lookahead=true; ...
+execution scan deviations pallet='MH423C-LAID16306DN03S-1' count=1: expected='WCS-0262-DZX244-0000' selected='WCS-0230-YZX224-0000' box='WCS-0262-DZX244-0000' after='WCS-0230-YZX224-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LFEG16310IN01S-2' count=4: expected='WCS-0913-YZX448-0000' selected='WCS-0680-YZX848-0000' box='WCS-0913-YZX448-0000' after='WCS-0680-YZX848-0000' reason=open_direction lookahead=true; expected='WCS-0914-YZX448-0000' selected='WCS-0854-YZX444-0000' box='WCS-0914-YZX448-0000' after='WCS-0854-YZX444-0000' reason=open_direction lookahead=true; expected='WCS-0566-YZX448-0000' selected='WCS-0748-YZX848-0000' box='WCS-0566-YZX448-0000' after='WCS-0748-YZX848-0000' reason=open_direction lookahead=true; expected='WCS-0614-YZX244-0000' selected='WCS-0749-YZX848-0000' box='WCS-0614-YZX244-0000' after='WCS-0749-YZX848-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LFEG16316AN01S-1' count=3: expected='WCS-1333-YZX424-0000' selected='WCS-1417-YZX444-0000' box='WCS-1333-YZX424-0000' after='WCS-1417-YZX444-0000' reason=open_direction lookahead=true; expected='WCS-1334-YZX424-0000' selected='WCS-1380-YZX424-0000' box='WCS-1334-YZX424-0000' after='WCS-1380-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-0615-YZX224-0000' selected='WCS-1378-YZX424-0000' box='WCS-0615-YZX224-0000' after='WCS-1378-YZX424-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN26310BC02S-1' count=1: expected='WCS-0548-YZX222-0000' selected='WCS-0549-YZX222-0000' box='WCS-0548-YZX222-0000' after='WCS-0549-YZX222-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LFEG16310IN03S-1' count=4: expected='WCS-0411-DZX448-0000' selected='WCS-0684-YZX848-0000' box='WCS-0411-DZX448-0000' after='WCS-0684-YZX848-0000' reason=open_direction lookahead=true; expected='WCS-0318-YBB005-0000' selected='WCS-0715-YZX848-0000' box='WCS-0318-YBB005-0000' after='WCS-0715-YZX848-0000' reason=open_direction lookahead=true; expected='WCS-0912-YZX448-0000' selected='WCS-0327-YBB005-0000' box='WCS-0912-YZX448-0000' after='WCS-0327-YBB005-0000' reason=open_direction lookahead=true; expected='WCS-0316-YBB005-0000' selected='WCS-0369-YZX428-0000' box='WCS-0316-YBB005-0000' after='WCS-0369-YZX428-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LFEG16310IN03S-2' count=5: expected='WCS-1397-DZX422-0000' selected='WCS-1372-YZX424-0000' box='WCS-1397-DZX422-0000' after='WCS-1372-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-0923-YZX424-0000' selected='WCS-1371-YZX424-0000' box='WCS-0923-YZX424-0000' after='WCS-1371-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-1390-DZX422-0000' selected='WCS-0916-YZX424-0000' box='WCS-1390-DZX422-0000' after='WCS-0916-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-0315-YBB005-0000' selected='WCS-1399-DZX422-0000' box='WCS-0315-YBB005-0000' after='WCS-1399-DZX422-0000' reason=open_direction lookahead=true; expected='WCS-0918-YZX424-0000' selected='WCS-1400-DZX422-0000' box='WCS-0918-YZX424-0000' after='WCS-1400-DZX422-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN26316EC02S-1' count=2: expected='WCS-0898-YZX507-0000' selected='WCS-0895-YZX507-0000' box='WCS-0898-YZX507-0000' after='WCS-0895-YZX507-0000' reason=open_direction lookahead=true; expected='WCS-0860-YZX424-0000' selected='WCS-0857-YZX424-0000' box='WCS-0860-YZX424-0000' after='WCS-0857-YZX424-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN26316EC02S-2' count=1: expected='WCS-0899-YZX507-0000' selected='WCS-0541-YZX444-0000' box='WCS-0899-YZX507-0000' after='WCS-0541-YZX444-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16315EN03S-1' count=4: expected='WCS-1142-YZX424-0000' selected='WCS-1136-YZX424-0000' box='WCS-1142-YZX424-0000' after='WCS-1136-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-1143-YZX424-0000' selected='WCS-1135-YZX424-0000' box='WCS-1143-YZX424-0000' after='WCS-1135-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-1144-YZX424-0000' selected='WCS-1150-YZX428-0000' box='WCS-1144-YZX424-0000' after='WCS-1150-YZX428-0000' reason=open_direction lookahead=true; expected='WCS-0509-YZX444-0000' selected='WCS-0514-YZX444-0000' box='WCS-0509-YZX444-0000' after='WCS-0514-YZX444-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16316DN02S-1' count=2: expected='WCS-0877-DZX444-0000' selected='WCS-1600-DZX448-0000' box='WCS-0877-DZX444-0000' after='WCS-1600-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-1681-DZX424-0000' selected='WCS-0811-DZX244-0000' box='WCS-1681-DZX424-0000' after='WCS-0811-DZX244-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAID163108N01S-1' count=1: expected='WCS-0668-DZX424-0000' selected='WCS-0776-DZX428-0000' box='WCS-0668-DZX424-0000' after='WCS-0776-DZX428-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN26316EN01S-4' count=3: expected='WCS-1503-DZX444-0000' selected='WCS-1626-DZX448-0000' box='WCS-1503-DZX444-0000' after='WCS-1626-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-1323-YZX428-0000' selected='WCS-1322-YZX428-0000' box='WCS-1323-YZX428-0000' after='WCS-1322-YZX428-0000' reason=open_direction lookahead=true; expected='WCS-1502-DZX444-0000' selected='WCS-1616-DZX448-0000' box='WCS-1502-DZX444-0000' after='WCS-1616-DZX448-0000' reason=open_direction lookahead=true
+[执行规划] 已删除原方案（仅保留 execution）：packing_plan_20260731_155733.json
+[执行规划] 完成；统一使用：D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_155733_execution.json
+[WCS-装] 接口 2 使用执行顺序方案，发送体已保存：D:\research_code\final\zhuang\packing-workspace\output\success\wcs_plan_20260731_155733.json（75 个 case）
+[WCS-装] 执行顺序方案执行层映射已保存：D:\research_code\final\zhuang\packing-workspace\output\success\wcs_plan_map_20260731_155733.json
+[WCS-装] 已跳过接口 2 推送（仅本地保存）。
+[UI-RESULT] D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_155733_execution.json
+============================================================
+[WCS-拉] 20260731_160640：拉取接口 1 …
+[WCS-拉] 原始响应已保存：D:\research_code\final\zhuang\packing-workspace\input\raw\20260731_160640.json
+[WCS-拉] 已剔除 case_type≠MH423C 的品类 63 条（类型：['MH113', 'WR246']），保留 1694 条。
+[WCS-拉] 忽略 4 条零尺寸/非法尺寸库存；有效记录 1690 条；样例：product_code=30086366/box_type=YZX507/0×0×0, product_code=30086359/box_type=YZX507/0×0×0, product_code=30086364/box_type=YZX507/0×0×0, product_code=30086358/box_type=YZX507/0×0×0
+[WCS-DB] wcs_stock_box product_code 集合未变（1690 个），跳过替换
+[WCS-拉] wcs_stock_box 与本次立库 product_code 一致（候选 1690），不替换、不触发装箱。
+[WCS-DB] wcs_stock_box_all product_code 已存在、跳过 1690 条
+[WCS-拉] wcs_stock_box_all 追加：新插入 0，跳过已有 1690（历史不删）。
+[WCS-拉] 库存无变化 → 本轮不装箱。
+[WCS-装] 本轮库存无变化，不装箱。
+============================================================
+[WCS-拉] 20260731_161000：拉取接口 1 …
+[WCS-拉] 原始响应已保存：D:\research_code\final\zhuang\packing-workspace\input\raw\20260731_161000.json
+[WCS-拉] 已剔除 case_type≠MH423C 的品类 63 条（类型：['MH113', 'WR246']），保留 1694 条。
+[WCS-拉] 忽略 4 条零尺寸/非法尺寸库存；有效记录 1690 条；样例：product_code=30086366/box_type=YZX507/0×0×0, product_code=30086359/box_type=YZX507/0×0×0, product_code=30086364/box_type=YZX507/0×0×0, product_code=30086358/box_type=YZX507/0×0×0
+[WCS-DB] wcs_stock_box product_code 集合未变（1690 个），跳过替换
+[WCS-拉] wcs_stock_box 与本次立库 product_code 一致（候选 1690），不替换、不触发装箱。
+[WCS-DB] wcs_stock_box_all product_code 已存在、跳过 1690 条
+[WCS-拉] wcs_stock_box_all 追加：新插入 0，跳过已有 1690（历史不删）。
+[WCS-拉] 库存无变化 → 本轮不装箱。
+[WCS-装] 本轮库存无变化，不装箱。
+============================================================
+[WCS-拉] 20260731_161320：拉取接口 1 …
+[WCS-拉] 原始响应已保存：D:\research_code\final\zhuang\packing-workspace\input\raw\20260731_161320.json
+[WCS-拉] 已剔除 case_type≠MH423C 的品类 63 条（类型：['MH113', 'WR246']），保留 1694 条。
+[WCS-拉] 忽略 4 条零尺寸/非法尺寸库存；有效记录 1690 条；样例：product_code=30086366/box_type=YZX507/0×0×0, product_code=30086359/box_type=YZX507/0×0×0, product_code=30086364/box_type=YZX507/0×0×0, product_code=30086358/box_type=YZX507/0×0×0
+[WCS-DB] wcs_stock_box product_code 集合未变（1690 个），跳过替换
+[WCS-拉] wcs_stock_box 与本次立库 product_code 一致（候选 1690），不替换、不触发装箱。
+[WCS-DB] wcs_stock_box_all product_code 已存在、跳过 1690 条
+[WCS-拉] wcs_stock_box_all 追加：新插入 0，跳过已有 1690（历史不删）。
+[WCS-拉] 库存无变化 → 本轮不装箱。
+[WCS-装] 本轮库存无变化，不装箱。
+============================================================
+[WCS-拉] 20260731_161640：拉取接口 1 …
+[WCS-拉] 原始响应已保存：D:\research_code\final\zhuang\packing-workspace\input\raw\20260731_161640.json
+[WCS-拉] 已剔除 case_type≠MH423C 的品类 63 条（类型：['MH113', 'WR246']），保留 1694 条。
+[WCS-拉] 忽略 4 条零尺寸/非法尺寸库存；有效记录 1690 条；样例：product_code=30086366/box_type=YZX507/0×0×0, product_code=30086359/box_type=YZX507/0×0×0, product_code=30086364/box_type=YZX507/0×0×0, product_code=30086358/box_type=YZX507/0×0×0
+[WCS-DB] wcs_stock_box product_code 集合未变（1690 个），跳过替换
+[WCS-拉] wcs_stock_box 与本次立库 product_code 一致（候选 1690），不替换、不触发装箱。
+[WCS-DB] wcs_stock_box_all product_code 已存在、跳过 1690 条
+[WCS-拉] wcs_stock_box_all 追加：新插入 0，跳过已有 1690（历史不删）。
+[WCS-拉] 库存无变化 → 本轮不装箱。
+[WCS-装] 本轮库存无变化，不装箱。
+============================================================
+[WCS-拉] 20260731_162000：拉取接口 1 …
+[WCS-拉] 原始响应已保存：D:\research_code\final\zhuang\packing-workspace\input\raw\20260731_162000.json
+[WCS-拉] 已剔除 case_type≠MH423C 的品类 63 条（类型：['MH113', 'WR246']），保留 1694 条。
+[WCS-拉] 忽略 4 条零尺寸/非法尺寸库存；有效记录 1690 条；样例：product_code=30086366/box_type=YZX507/0×0×0, product_code=30086359/box_type=YZX507/0×0×0, product_code=30086364/box_type=YZX507/0×0×0, product_code=30086358/box_type=YZX507/0×0×0
+[WCS-DB] wcs_stock_box product_code 集合未变（1690 个），跳过替换
+[WCS-拉] wcs_stock_box 与本次立库 product_code 一致（候选 1690），不替换、不触发装箱。
+[WCS-DB] wcs_stock_box_all product_code 已存在、跳过 1690 条
+[WCS-拉] wcs_stock_box_all 追加：新插入 0，跳过已有 1690（历史不删）。
+[WCS-拉] 库存无变化 → 本轮不装箱。
+[WCS-装] 本轮库存无变化，不装箱。
+============================================================
+[WCS-拉] 20260731_162320：拉取接口 1 …
+[WCS-拉] 原始响应已保存：D:\research_code\final\zhuang\packing-workspace\input\raw\20260731_162320.json
+[WCS-拉] 已剔除 case_type≠MH423C 的品类 63 条（类型：['MH113', 'WR246']），保留 1658 条。
+[WCS-拉] 忽略 4 条零尺寸/非法尺寸库存；有效记录 1654 条；样例：product_code=30086366/box_type=YZX507/0×0×0, product_code=30086359/box_type=YZX507/0×0×0, product_code=30086364/box_type=YZX507/0×0×0, product_code=30086358/box_type=YZX507/0×0×0
+[WCS-DB] wcs_stock_box 已全量替换：清空 1690 → 插入 1654
+[WCS-拉] wcs_stock_box 已全量替换：删 1690，插 1654。
+[WCS-DB] wcs_stock_box_all product_code 已存在、跳过 1654 条
+[WCS-拉] wcs_stock_box_all 追加：新插入 0，跳过已有 1654（历史不删）。
+[WCS-拉] 库存有变化 → 本轮继续装箱。
+[WCS] 已加载 BMS 参考表：D:\research_code\final\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+============================================================
+[WCS-装] 20260731_162324：库存行 1654 条，开始装箱 …
+[WCS-装] 展开为 1654 个箱子。
+数据预处理和箱子分组完成（按托盘类型+销售订单号）。
+----------------------------------------
+  - 组内子聚类：10 个混合订单拆出规则子集走 GCP、杂箱走 baseline。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16306DN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 74.25，最大缺口 131.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/1/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=54.57s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=2.43s，total=56.99s。
+  - 条件双路径棘轮：替代完整路径通过守恒和最终门禁，严格优于 GCP，已采用。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 82 个，总指数 156，目标 192，理论最多达标托盘 0 个，剩余指数 156。
+  - 几何诊断：典型整层堆叠单盘参考上限 98.5/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 98.5 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305BN02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 114.00，最大缺口 185.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.09s，main_topup=0.03s，retry=0.00s，failed_pool=0.00s，repack=1.98s，total=8.92s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 12 个，总指数 48，目标 192，理论最多达标托盘 0 个，剩余指数 48。
+  - 几何诊断：典型整层堆叠单盘参考上限 48/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 48 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 144.00，最大缺口 144.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305EN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 28 个，总指数 90.5，目标 192，理论最多达标托盘 0 个，剩余指数 90.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 67/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 67 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305EN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 146.75，最大缺口 176.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.10s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.19s，total=0.56s。
+正在处理托盘类型：MH423C，销售订单号：PAID16306DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16306DN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 87.00，最大缺口 87.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=3.50s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=3.50s。
+正在处理托盘类型：MH423C，销售订单号：PAID16306DN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 1，目标 192，理论最多达标托盘 0 个，剩余指数 1。
+  - 几何诊断：典型整层堆叠单盘参考上限 1/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 1 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16306DN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.00，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305BN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 90.50，最大缺口 176.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=1/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=68.80s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=3.21s，total=72.02s。
+  - 条件双路径棘轮：替代完整路径未严格改善，保留 GCP。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 12 个，总指数 48，目标 192，理论最多达标托盘 0 个，剩余指数 48。
+  - 几何诊断：典型整层堆叠单盘参考上限 48/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 48 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 144.00，最大缺口 144.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN03S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 53 个，总指数 110.5，目标 192，理论最多达标托盘 0 个，剩余指数 110.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 85/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 85 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305BN03S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 136.75，最大缺口 171.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.22s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.73s，total=1.95s。
+正在处理托盘类型：MH423C，销售订单号：LAMY16315FN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 34 个，总指数 86.5，目标 192，理论最多达标托盘 0 个，剩余指数 86.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 73/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 73 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAMY16315FN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 148.75，最大缺口 166.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.16s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.33s，total=0.89s。
+正在处理托盘类型：MH423C，销售订单号：PAID16305EC01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16305EC01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 44 个，总指数 180，目标 192，理论最多达标托盘 0 个，剩余指数 180。
+  - 几何诊断：典型整层堆叠单盘参考上限 100/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 100 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16306DN02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 102.00，最大缺口 178.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.30s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.49s，total=2.13s。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 4 个，总指数 4，目标 192，理论最多达标托盘 0 个，剩余指数 4。
+  - 几何诊断：典型整层堆叠单盘参考上限 4/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 4 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16306DN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 188.00，最大缺口 188.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16315EN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 152.00，最大缺口 152.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.05s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.05s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 9，目标 192，理论最多达标托盘 0 个，剩余指数 9。
+  - 几何诊断：典型整层堆叠单盘参考上限 9/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 9 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16315EN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 183.00，最大缺口 183.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PEG086300LN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 64 个，总指数 143，目标 192，理论最多达标托盘 0 个，剩余指数 143。
+  - 几何诊断：典型整层堆叠单盘参考上限 101/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 101 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PEG086300LN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 49.00，最大缺口 49.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.75s，main_topup=0.01s，retry=0.00s，failed_pool=0.00s，repack=0.72s，total=5.39s。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN03S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 10 个，总指数 40，目标 192，理论最多达标托盘 0 个，剩余指数 40。
+  - 几何诊断：典型整层堆叠单盘参考上限 36/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 36 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16306DN03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 152.00，最大缺口 152.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.03s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.03s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 58 个，总指数 166，目标 192，理论最多达标托盘 0 个，剩余指数 166。
+  - 几何诊断：典型整层堆叠单盘参考上限 100/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 100 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16310IN02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 109.00，最大缺口 187.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.46s，main_topup=0.01s，retry=0.00s，failed_pool=0.00s，repack=0.82s，total=2.70s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16310IN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 91.00，最大缺口 176.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=1/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=66.84s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=1.00s，total=67.84s。
+  - 条件双路径棘轮：替代完整路径通过守恒和最终门禁，严格优于 GCP，已采用。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 3 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16310IN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16316AN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16316AN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 131.00，最大缺口 131.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.05s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.05s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310BC02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 12 个，总指数 86，目标 192，理论最多达标托盘 0 个，剩余指数 86。
+  - 几何诊断：典型整层堆叠单盘参考上限 52/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 52 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310BC02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 106.00，最大缺口 106.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.05s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.05s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 托盘 MH423C-LFEG16310IN03S-2 未找到可行装箱方案，启用剩余箱子守恒兜底。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 48 个，总指数 186，目标 192，理论最多达标托盘 0 个，剩余指数 186。
+  - 几何诊断：典型整层堆叠单盘参考上限 152/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 152 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16310IN03S）处理完成：总托盘 3，指数达标 0，未达标 3，平均缺口 130.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/1/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.29s，main_topup=0.01s，retry=0.00s，failed_pool=0.00s，repack=0.69s，total=2.28s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN03S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 18 个，总指数 27，目标 192，理论最多达标托盘 0 个，剩余指数 27。
+  - 几何诊断：典型整层堆叠单盘参考上限 23/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 23 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16310IN03S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 165.00，最大缺口 165.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.08s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.08s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26316EC02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 61 个，总指数 168，目标 192，理论最多达标托盘 0 个，剩余指数 168。
+  - 几何诊断：典型整层堆叠单盘参考上限 116/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 116 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PAIN26316EC02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 108.00，最大缺口 122.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.06s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=1.28s，total=2.39s。
+正在处理托盘类型：MH423C，销售订单号：PAID16315AN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 1，目标 192，理论最多达标托盘 0 个，剩余指数 1。
+  - 几何诊断：典型整层堆叠单盘参考上限 1/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 1 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16315AN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.00，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310BN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310BN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 156.00，最大缺口 156.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.02s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16315EN03S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 108.50，最大缺口 171.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.59s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=1.48s，total=3.07s。
+正在处理托盘类型：MH423C，销售订单号：PAID16316DN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16316DN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16316DN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16316DN03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 144.00，最大缺口 144.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.03s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.03s。
+正在处理托盘类型：MH423C，销售订单号：LAID16316DN03S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 3 个，总指数 3，目标 192，理论最多达标托盘 0 个，剩余指数 3。
+  - 几何诊断：典型整层堆叠单盘参考上限 3/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 3 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16316DN03S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 189.00，最大缺口 189.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：LAID16316DN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16316DN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 80.00，最大缺口 80.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.33s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.33s。
+正在处理托盘类型：MH423C，销售订单号：LAID16316DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16316DN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 49.00，最大缺口 49.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.16s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.16s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16315EN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 87.00，最大缺口 87.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.10s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.10s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 4 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16315EN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：PAID163108N01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID163108N01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 104.00，最大缺口 104.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.43s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.43s。
+正在处理托盘类型：MH423C，销售订单号：PAID16315BN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16315BN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 154.00，最大缺口 154.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.13s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.13s。
+正在处理托盘类型：MH423C，销售订单号：PAID163108N03S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID163108N03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAID16300FN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16300FN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16316AN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16316AN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 70.00，最大缺口 70.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.13s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.13s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16316AN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16316AN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16320IN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16320IN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 168.00，最大缺口 168.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.02s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16320IN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16320IN03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 168.00，最大缺口 168.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.02s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310MN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 托盘 MH423C-PAIN26310MN01S-3 未找到可行装箱方案，启用剩余箱子守恒兜底。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 50 个，总指数 345，目标 192，理论最多达标托盘 1 个，剩余指数 153。
+  - 几何诊断：典型整层堆叠单盘参考上限 176/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 176 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败盘装满压实：合并/吸收 2 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PAIN26310MN01S）处理完成：总托盘 3，指数达标 0，未达标 3，平均缺口 77.00，最大缺口 185.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=1/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.30s，main_topup=0.00s，retry=0.00s，failed_pool=0.99s，repack=3.87s，total=4.18s。
+正在处理托盘类型：MH423C，销售订单号：PEG126320LN02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 6，目标 192，理论最多达标托盘 0 个，剩余指数 6。
+  - 几何诊断：典型整层堆叠单盘参考上限 6/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 6 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PEG126320LN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 186.00，最大缺口 186.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26290MN02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 7 个，总指数 26，目标 192，理论最多达标托盘 0 个，剩余指数 26。
+  - 几何诊断：典型整层堆叠单盘参考上限 26/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 26 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26290MN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 166.00，最大缺口 166.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.01s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.03s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310GC02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 3 个，总指数 6，目标 192，理论最多达标托盘 0 个，剩余指数 6。
+  - 几何诊断：典型整层堆叠单盘参考上限 6/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 6 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310GC02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 186.00，最大缺口 186.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：PAID163108C02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID163108C02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PEG126320LN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PEG126320LN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 171.00，最大缺口 171.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.08s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.08s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26316EN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 3 实例，实装成功 3，失败回兜底 0；达标 3，直接采用配方方案（基线未跑，--safe 可审计对比）。
+  - 指数诊断：箱子 173 个，总指数 670，目标 192，理论最多达标托盘 3 个，剩余指数 94。
+  - 几何诊断：典型整层堆叠单盘参考上限 192/192。
+  - 失败托盘互借诊断：未合并（less_than_2_consolidatable）。
+托盘类型 MH423C（销售订单号：PAIN26316EN01S）处理完成：总托盘 4，指数达标 3，未达标 1，平均缺口 98.00，最大缺口 98.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=2.24s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.65s，total=2.89s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26296EN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26296EN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 101.00，最大缺口 101.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=4.19s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=4.19s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310MN06S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310MN06S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 36.00，最大缺口 36.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.24s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.24s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310MZ05S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 42 个，总指数 672，目标 192，理论最多达标托盘 3 个，剩余指数 96。
+  - 几何诊断：典型整层堆叠单盘参考上限 128/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 128 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PAIN26310MZ05S）处理完成：总托盘 6，指数达标 0，未达标 6，平均缺口 80.00，最大缺口 160.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/6，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.07s，main_topup=0.00s，retry=0.00s，failed_pool=0.13s，repack=0.53s，total=0.60s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310MN08S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310MN08S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 145.00，最大缺口 145.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.12s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=1.12s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16336AN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 1，目标 192，理论最多达标托盘 0 个，剩余指数 1。
+  - 几何诊断：典型整层堆叠单盘参考上限 1/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 1 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16336AN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.00，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16336AN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 4 个，总指数 6，目标 192，理论最多达标托盘 0 个，剩余指数 6。
+  - 几何诊断：典型整层堆叠单盘参考上限 6/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 6 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16336AN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 186.00，最大缺口 186.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26326EN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 4，目标 192，理论最多达标托盘 0 个，剩余指数 4。
+  - 几何诊断：典型整层堆叠单盘参考上限 4/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 4 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26326EN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 188.00，最大缺口 188.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26320BN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26320BN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PFEG16336AN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 托盘 MH423C-PFEG16336AN01S-1 未找到可行装箱方案，启用剩余箱子守恒兜底。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 7 个，总指数 10，目标 192，理论最多达标托盘 0 个，剩余指数 10。
+  - 几何诊断：典型整层堆叠单盘参考上限 10/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 10 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PFEG16336AN01S）处理完成：总托盘 3，指数达标 0，未达标 3，平均缺口 188.67，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/3，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.01s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.16s，total=0.22s。
+  - 跨子组条件双路径（MH423C / LAID16305BN02S）：采用严格更优完整路径。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / PAID16306DN01S）：合并 1 次（纯减盘数）。
+  - 跨子组条件双路径（MH423C / LAID16305BN01S）：采用严格更优完整路径。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LAID16306DN02S）：合并 1 次（纯减盘数）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LAID16315EN01S）：合并 1 次（纯减盘数）。
+  - 跨子组条件双路径（MH423C / LFEG16310IN01S）：采用严格更优完整路径。
+  - 跨子组条件双路径（MH423C / LFEG16310IN03S）：采用严格更优完整路径。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LAID16316DN03S）：合并 1 次（纯减盘数）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LAID16315EN02S）：合并 1 次（纯减盘数）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LFEG16316AN02S）：合并 1 次（纯减盘数）。
+========================================
+统计汇总：总托盘 73，指数达标 3，未达标 70，未知 0，平均缺口 122.86，最大缺口 191.00，失败托盘互借修复成功 0
+KPI汇总：near/mid/deep=3/2/65，pair尝试=0，pair改进=0，pair效率=0.00%
+耗时汇总：packing=209.62s，main_topup=0.07s，retry=0.00s，repack=20.59s，end_to_end=543.14s
+========================================
+[WCS-装] SUCCESS 产品码 118 个，SUCCESS 盘 3，FAILED 盘 70。
+[WCS-装] 本轮计算结束。
+[WCS-装] 本轮方案已保存（success）：D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_162324.json
+[执行规划] 产物目录：D:\research_code\final\zhuang\packing-workspace\output\success（success）
+[执行规划] 开始：D:\research_code\zhuang-ui-m\.venvs\packing-realtime\python.exe D:\research_code\final\zhuang\packing-system\run_execution_planning.py D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_162324.json --config D:\research_code\final\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260731_155725.yaml --output D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_162324_execution.json --wcs-output D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_162324_execution_wcs.json --wcs-map-output D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_162324_execution_wcs_map.json
+[WCS-DB] wcs_success_box：替换旧托盘 3 个，删除 118 行，写入 118 行
+[WCS-DB] wcs_success_box：本批候选 118 行，本批写入 118 行。
+[WCS-DB] wcs_box_orientation：本批候选 118 行，写入影响 118（含已存在跳过）。
+[现场码垛] 新计算结果已入库，已清空旧码放队列 1194 条
+[现场会话] 新计算结果已入库，当前没有未完成托盘
+execution plan written: pallets=73 boxes=1654 reordered_pallets=59 path=D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_162324_execution.json
+WCS execution cases written: D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_162324_execution_wcs.json
+WCS execution plan map written: D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_162324_execution_wcs_map.json
+execution scan deviations pallet='MH423C-LAID16306DN01S-2' count=4: expected='WCS-0145-YZX448-0000' selected='WCS-0227-YZX428-0000' box='WCS-0145-YZX448-0000' after='WCS-0227-YZX428-0000' reason=open_direction lookahead=true; expected='WCS-0114-DZX448-0000' selected='WCS-0254-DZX444-0000' box='WCS-0114-DZX448-0000' after='WCS-0254-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-0008-YBB106-0000' selected='WCS-0072-YZX448-0000' box='WCS-0008-YBB106-0000' after='WCS-0072-YZX448-0000' reason=hard_dependency; expected='WCS-0008-YBB106-0000' selected='WCS-0226-YZX428-0000' box='WCS-0008-YBB106-0000' after='WCS-0226-YZX428-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16305BN02S-1' count=9: expected='WCS-0093-YZX444-0000' selected='WCS-0478-DZX424-0000' box='WCS-0093-YZX444-0000' after='WCS-0478-DZX424-0000' reason=open_direction lookahead=true; expected='WCS-0094-YZX444-0000' selected='WCS-0100-YZX444-0000' box='WCS-0094-YZX444-0000' after='WCS-0100-YZX444-0000' reason=open_direction lookahead=true; expected='WCS-0012-YZX428-0000' selected='WCS-0450-DZX424-0000' box='WCS-0012-YZX428-0000' after='WCS-0450-DZX424-0000' reason=open_direction lookahead=true; expected='WCS-0095-YZX444-0000' selected='WCS-0065-YZX448-0000' box='WCS-0095-YZX444-0000' after='WCS-0065-YZX448-0000' reason=open_direction lookahead=true; expected='WCS-0782-YZX424-0000' selected='WCS-0038-YZX448-0000' box='WCS-0782-YZX424-0000' after='WCS-0038-YZX448-0000' reason=open_direction lookahead=true; expected='WCS-0603-YBB077-0000' selected='WCS-0783-YZX424-0000' box='WCS-0603-YBB077-0000' after='WCS-0783-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-0607-YBB077-0000' selected='WCS-0026-YZX448-0000' box='WCS-0607-YBB077-0000' after='WCS-0026-YZX448-0000' reason=open_direction lookahead=true; expected='WCS-0224-YBB125-0000' selected='WCS-0555-YZX444-0000' box='WCS-0224-YBB125-0000' after='WCS-0555-YZX444-0000' reason=hard_dependency; ...
+execution scan deviations pallet='MH423C-LAID16305BN02S-2' count=3: expected='WCS-0568-YZX448-0000' selected='WCS-0214-DZX444-0000' box='WCS-0568-YZX448-0000' after='WCS-0214-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-0571-YZX448-0000' selected='WCS-0189-YZX424-0000' box='WCS-0571-YZX448-0000' after='WCS-0189-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-0556-YZX444-0000' selected='WCS-0204-YZX848-0000' box='WCS-0556-YZX444-0000' after='WCS-0204-YZX848-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16305EN01S-1' count=5: expected='WCS-0983-DZX448-0000' selected='WCS-0980-DZX448-0000' box='WCS-0983-DZX448-0000' after='WCS-0980-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-0984-DZX448-0000' selected='WCS-0981-DZX448-0000' box='WCS-0984-DZX448-0000' after='WCS-0981-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-0016-YBB285-0000' selected='WCS-0024-YBB258-0000' box='WCS-0016-YBB285-0000' after='WCS-0024-YBB258-0000' reason=open_direction lookahead=true; expected='WCS-0023-YBB258-0000' selected='WCS-0020-YBB285-0000' box='WCS-0023-YBB258-0000' after='WCS-0020-YBB285-0000' reason=hard_dependency; expected='WCS-0023-YBB258-0000' selected='WCS-0013-YBB285-0000' box='WCS-0023-YBB258-0000' after='WCS-0013-YBB285-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAID16306DN01S-1' count=1: expected='WCS-0044-YZX448-0000' selected='WCS-0163-YZX848-0000' box='WCS-0044-YZX448-0000' after='WCS-0163-YZX848-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16305BN01S-2' count=3: expected='WCS-0560-YZX448-0000' selected='WCS-0570-YZX448-0000' box='WCS-0560-YZX448-0000' after='WCS-0570-YZX448-0000' reason=open_direction lookahead=true; expected='WCS-0287-YBB077-0000' selected='WCS-0471-DZX848-0000' box='WCS-0287-YBB077-0000' after='WCS-0471-DZX848-0000' reason=open_direction lookahead=true; expected='WCS-0569-YZX448-0000' selected='WCS-0292-YBB077-0000' box='WCS-0569-YZX448-0000' after='WCS-0292-YBB077-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16305BN03S-1' count=4: expected='WCS-0615-YBB077-0000' selected='WCS-0803-DZX444-0000' box='WCS-0615-YBB077-0000' after='WCS-0803-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-0771-ZX848-0000' selected='WCS-0620-YBB077-0000' box='WCS-0771-ZX848-0000' after='WCS-0620-YBB077-0000' reason=open_direction lookahead=true; expected='WCS-0804-DZX848-0000' selected='WCS-0622-YBB077-0000' box='WCS-0804-DZX848-0000' after='WCS-0622-YBB077-0000' reason=open_direction lookahead=true; expected='WCS-0805-DZX848-0000' selected='WCS-0624-YBB077-0000' box='WCS-0805-DZX848-0000' after='WCS-0624-YBB077-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAMY16315FN01S-1' count=4: expected='WCS-0120-DZX448-0000' selected='WCS-0766-ZX848-0000' box='WCS-0120-DZX448-0000' after='WCS-0766-ZX848-0000' reason=open_direction lookahead=true; expected='WCS-0628-DZX448-0000' selected='WCS-0590-YZX444-0000' box='WCS-0628-DZX448-0000' after='WCS-0590-YZX444-0000' reason=open_direction lookahead=true; expected='WCS-0857-YZX448-0000' selected='WCS-0633-DZX448-0000' box='WCS-0857-YZX448-0000' after='WCS-0633-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-0237-YBB077-0000' selected='WCS-0245-YBB077-0000' box='WCS-0237-YBB077-0000' after='WCS-0245-YBB077-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16306DN02S-1' count=2: expected='WCS-0578-DZX244-0000' selected='WCS-0233-YZX224-0000' box='WCS-0578-DZX244-0000' after='WCS-0233-YZX224-0000' reason=open_direction lookahead=true; expected='WCS-0413-DZX424-0000' selected='WCS-0422-DZX424-0000' box='WCS-0413-DZX424-0000' after='WCS-0422-DZX424-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PEG086300LN01S-1' count=9: expected='WCS-1168-DZX444-0000' selected='WCS-0689-DZX424-0000' box='WCS-1168-DZX444-0000' after='WCS-0689-DZX424-0000' reason=open_direction lookahead=true; expected='WCS-1174-DZX444-0000' selected='WCS-1183-DZX444-0000' box='WCS-1174-DZX444-0000' after='WCS-1183-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-1177-DZX444-0000' selected='WCS-0349-DZX424-0000' box='WCS-1177-DZX444-0000' after='WCS-0349-DZX424-0000' reason=open_direction lookahead=true; expected='WCS-1169-DZX444-0000' selected='WCS-1180-DZX428-0000' box='WCS-1169-DZX444-0000' after='WCS-1180-DZX428-0000' reason=open_direction lookahead=true; expected='WCS-1175-DZX444-0000' selected='WCS-1184-DZX444-0000' box='WCS-1175-DZX444-0000' after='WCS-1184-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-1181-DZX444-0000' selected='WCS-1170-DZX428-0000' box='WCS-1181-DZX444-0000' after='WCS-1170-DZX428-0000' reason=open_direction lookahead=true; expected='WCS-1173-DZX444-0000' selected='WCS-1186-DZX428-0000' box='WCS-1173-DZX444-0000' after='WCS-1186-DZX428-0000' reason=open_direction lookahead=true; expected='WCS-1176-DZX444-0000' selected='WCS-1188-DZX444-0000' box='WCS-1176-DZX444-0000' after='WCS-1188-DZX444-0000' reason=open_direction lookahead=true; ...
+execution scan deviations pallet='MH423C-LAID16306DN03S-1' count=1: expected='WCS-0262-DZX244-0000' selected='WCS-0230-YZX224-0000' box='WCS-0262-DZX244-0000' after='WCS-0230-YZX224-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LFEG16310IN01S-2' count=4: expected='WCS-0886-YZX448-0000' selected='WCS-0661-YZX848-0000' box='WCS-0886-YZX448-0000' after='WCS-0661-YZX848-0000' reason=open_direction lookahead=true; expected='WCS-0887-YZX448-0000' selected='WCS-0830-YZX444-0000' box='WCS-0887-YZX448-0000' after='WCS-0830-YZX444-0000' reason=open_direction lookahead=true; expected='WCS-0547-YZX448-0000' selected='WCS-0729-YZX848-0000' box='WCS-0547-YZX448-0000' after='WCS-0729-YZX848-0000' reason=open_direction lookahead=true; expected='WCS-0595-YZX244-0000' selected='WCS-0730-YZX848-0000' box='WCS-0595-YZX244-0000' after='WCS-0730-YZX848-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LFEG16316AN01S-1' count=3: expected='WCS-1297-YZX424-0000' selected='WCS-1381-YZX444-0000' box='WCS-1297-YZX424-0000' after='WCS-1381-YZX444-0000' reason=open_direction lookahead=true; expected='WCS-1298-YZX424-0000' selected='WCS-1344-YZX424-0000' box='WCS-1298-YZX424-0000' after='WCS-1344-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-0596-YZX224-0000' selected='WCS-1342-YZX424-0000' box='WCS-0596-YZX224-0000' after='WCS-1342-YZX424-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN26310BC02S-1' count=1: expected='WCS-0529-YZX222-0000' selected='WCS-0530-YZX222-0000' box='WCS-0529-YZX222-0000' after='WCS-0530-YZX222-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LFEG16310IN03S-1' count=4: expected='WCS-0392-DZX448-0000' selected='WCS-0665-YZX848-0000' box='WCS-0392-DZX448-0000' after='WCS-0665-YZX848-0000' reason=open_direction lookahead=true; expected='WCS-0318-YBB005-0000' selected='WCS-0696-YZX848-0000' box='WCS-0318-YBB005-0000' after='WCS-0696-YZX848-0000' reason=open_direction lookahead=true; expected='WCS-0885-YZX448-0000' selected='WCS-0327-YBB005-0000' box='WCS-0885-YZX448-0000' after='WCS-0327-YBB005-0000' reason=open_direction lookahead=true; expected='WCS-0316-YBB005-0000' selected='WCS-0350-YZX428-0000' box='WCS-0316-YBB005-0000' after='WCS-0350-YZX428-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LFEG16310IN03S-2' count=3: expected='WCS-1360-DZX422-0000' selected='WCS-1387-DZX422-0000' box='WCS-1360-DZX422-0000' after='WCS-1387-DZX422-0000' reason=open_direction lookahead=true; expected='WCS-1350-DZX422-0000' selected='WCS-1336-YZX424-0000' box='WCS-1350-DZX422-0000' after='WCS-1336-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-0889-YZX424-0000' selected='WCS-1361-DZX422-0000' box='WCS-0889-YZX424-0000' after='WCS-1361-DZX422-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN26316EC02S-1' count=2: expected='WCS-0874-YZX507-0000' selected='WCS-0871-YZX507-0000' box='WCS-0874-YZX507-0000' after='WCS-0871-YZX507-0000' reason=open_direction lookahead=true; expected='WCS-0836-YZX424-0000' selected='WCS-0833-YZX424-0000' box='WCS-0836-YZX424-0000' after='WCS-0833-YZX424-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN26316EC02S-2' count=1: expected='WCS-0875-YZX507-0000' selected='WCS-0522-YZX444-0000' box='WCS-0875-YZX507-0000' after='WCS-0522-YZX444-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16315EN03S-1' count=4: expected='WCS-1112-YZX424-0000' selected='WCS-1106-YZX424-0000' box='WCS-1112-YZX424-0000' after='WCS-1106-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-1113-YZX424-0000' selected='WCS-1105-YZX424-0000' box='WCS-1113-YZX424-0000' after='WCS-1105-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-1114-YZX424-0000' selected='WCS-1120-YZX428-0000' box='WCS-1114-YZX424-0000' after='WCS-1120-YZX428-0000' reason=open_direction lookahead=true; expected='WCS-0490-YZX444-0000' selected='WCS-0495-YZX444-0000' box='WCS-0490-YZX444-0000' after='WCS-0495-YZX444-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16316DN02S-1' count=2: expected='WCS-0853-DZX444-0000' selected='WCS-1564-DZX448-0000' box='WCS-0853-DZX444-0000' after='WCS-1564-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-1645-DZX424-0000' selected='WCS-0788-DZX244-0000' box='WCS-1645-DZX424-0000' after='WCS-0788-DZX244-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAID163108N01S-1' count=1: expected='WCS-0649-DZX424-0000' selected='WCS-0757-DZX428-0000' box='WCS-0649-DZX424-0000' after='WCS-0757-DZX428-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN26316EN01S-4' count=1: expected='WCS-1466-DZX444-0000' selected='WCS-1639-DZX244-0000' box='WCS-1466-DZX444-0000' after='WCS-1639-DZX244-0000' reason=open_direction lookahead=true
+[执行规划] 已删除原方案（仅保留 execution）：packing_plan_20260731_162324.json
+[执行规划] 完成；统一使用：D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_162324_execution.json
+[WCS-装] 接口 2 使用执行顺序方案，发送体已保存：D:\research_code\final\zhuang\packing-workspace\output\success\wcs_plan_20260731_162324.json（73 个 case）
+[WCS-装] 执行顺序方案执行层映射已保存：D:\research_code\final\zhuang\packing-workspace\output\success\wcs_plan_map_20260731_162324.json
+[WCS-装] 已跳过接口 2 推送（仅本地保存）。
+[UI-RESULT] D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_162324_execution.json
+============================================================
+[WCS-拉] 20260731_163230：拉取接口 1 …
+[WCS-拉] 原始响应已保存：D:\research_code\final\zhuang\packing-workspace\input\raw\20260731_163230.json
+[WCS-拉] 已剔除 case_type≠MH423C 的品类 63 条（类型：['MH113', 'WR246']），保留 1656 条。
+[WCS-拉] 忽略 4 条零尺寸/非法尺寸库存；有效记录 1652 条；样例：product_code=30086366/box_type=YZX507/0×0×0, product_code=30086359/box_type=YZX507/0×0×0, product_code=30086364/box_type=YZX507/0×0×0, product_code=30086358/box_type=YZX507/0×0×0
+[WCS-DB] wcs_stock_box 已全量替换：清空 1654 → 插入 1652
+[WCS-拉] wcs_stock_box 已全量替换：删 1654，插 1652。
+[WCS-DB] wcs_stock_box_all product_code 已存在、跳过 1649 条
+[WCS-拉] wcs_stock_box_all 追加：新插入 3，跳过已有 1649（历史不删）。
+[WCS-拉] 库存有变化 → 本轮继续装箱。
+[WCS] 已加载 BMS 参考表：D:\research_code\final\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+============================================================
+[WCS-装] 20260731_163233：库存行 1652 条，开始装箱 …
+[WCS-装] 展开为 1652 个箱子。
+数据预处理和箱子分组完成（按托盘类型+销售订单号）。
+----------------------------------------
+  - 组内子聚类：10 个混合订单拆出规则子集走 GCP、杂箱走 baseline。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16306DN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 74.25，最大缺口 131.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/1/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=54.54s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=2.49s，total=57.03s。
+  - 条件双路径棘轮：替代完整路径通过守恒和最终门禁，严格优于 GCP，已采用。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 82 个，总指数 156，目标 192，理论最多达标托盘 0 个，剩余指数 156。
+  - 几何诊断：典型整层堆叠单盘参考上限 98.5/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 98.5 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305BN02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 114.00，最大缺口 185.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.10s，main_topup=0.02s，retry=0.00s，failed_pool=0.00s，repack=1.94s，total=8.76s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 12 个，总指数 48，目标 192，理论最多达标托盘 0 个，剩余指数 48。
+  - 几何诊断：典型整层堆叠单盘参考上限 48/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 48 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 144.00，最大缺口 144.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305EN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 28 个，总指数 90.5，目标 192，理论最多达标托盘 0 个，剩余指数 90.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 67/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 67 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305EN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 146.75，最大缺口 176.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.10s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.18s，total=0.54s。
+正在处理托盘类型：MH423C，销售订单号：PAID16306DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16306DN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 87.00，最大缺口 87.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=3.48s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=3.48s。
+正在处理托盘类型：MH423C，销售订单号：PAID16306DN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 1，目标 192，理论最多达标托盘 0 个，剩余指数 1。
+  - 几何诊断：典型整层堆叠单盘参考上限 1/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 1 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16306DN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.00，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305BN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 90.50，最大缺口 176.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=1/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=68.79s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=3.28s，total=72.07s。
+  - 条件双路径棘轮：替代完整路径未严格改善，保留 GCP。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 11 个，总指数 44，目标 192，理论最多达标托盘 0 个，剩余指数 44。
+  - 几何诊断：典型整层堆叠单盘参考上限 44/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 44 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 148.00，最大缺口 148.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN03S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 54 个，总指数 111，目标 192，理论最多达标托盘 0 个，剩余指数 111。
+  - 几何诊断：典型整层堆叠单盘参考上限 85/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 85 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305BN03S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 136.50，最大缺口 171.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.22s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.75s，total=1.98s。
+正在处理托盘类型：MH423C，销售订单号：LAMY16315FN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 34 个，总指数 86.5，目标 192，理论最多达标托盘 0 个，剩余指数 86.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 73/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 73 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAMY16315FN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 148.75，最大缺口 166.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.15s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.31s，total=0.86s。
+正在处理托盘类型：MH423C，销售订单号：PAID16305EC01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16305EC01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 44 个，总指数 180，目标 192，理论最多达标托盘 0 个，剩余指数 180。
+  - 几何诊断：典型整层堆叠单盘参考上限 100/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 100 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16306DN02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 102.00，最大缺口 178.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.28s，main_topup=0.01s，retry=0.00s，failed_pool=0.00s，repack=0.48s，total=2.09s。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 4 个，总指数 4，目标 192，理论最多达标托盘 0 个，剩余指数 4。
+  - 几何诊断：典型整层堆叠单盘参考上限 4/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 4 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16306DN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 188.00，最大缺口 188.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16315EN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 152.00，最大缺口 152.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.04s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.04s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 9，目标 192，理论最多达标托盘 0 个，剩余指数 9。
+  - 几何诊断：典型整层堆叠单盘参考上限 9/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 9 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16315EN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 183.00，最大缺口 183.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PEG086300LN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 64 个，总指数 143，目标 192，理论最多达标托盘 0 个，剩余指数 143。
+  - 几何诊断：典型整层堆叠单盘参考上限 101/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 101 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PEG086300LN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 49.00，最大缺口 49.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.85s，main_topup=0.01s，retry=0.00s，failed_pool=0.00s，repack=0.74s，total=5.53s。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN03S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 10 个，总指数 40，目标 192，理论最多达标托盘 0 个，剩余指数 40。
+  - 几何诊断：典型整层堆叠单盘参考上限 36/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 36 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16306DN03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 152.00，最大缺口 152.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.03s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.03s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 58 个，总指数 166，目标 192，理论最多达标托盘 0 个，剩余指数 166。
+  - 几何诊断：典型整层堆叠单盘参考上限 100/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 100 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16310IN02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 109.00，最大缺口 187.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.49s，main_topup=0.01s，retry=0.00s，failed_pool=0.00s，repack=0.85s，total=2.86s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16310IN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 91.00，最大缺口 176.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=1/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=67.02s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=1.03s，total=68.05s。
+  - 条件双路径棘轮：替代完整路径通过守恒和最终门禁，严格优于 GCP，已采用。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 3 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16310IN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16316AN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16316AN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 131.00，最大缺口 131.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.06s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.06s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310BC02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 12 个，总指数 86，目标 192，理论最多达标托盘 0 个，剩余指数 86。
+  - 几何诊断：典型整层堆叠单盘参考上限 52/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 52 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310BC02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 106.00，最大缺口 106.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.05s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.05s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 托盘 MH423C-LFEG16310IN03S-2 未找到可行装箱方案，启用剩余箱子守恒兜底。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 48 个，总指数 186，目标 192，理论最多达标托盘 0 个，剩余指数 186。
+  - 几何诊断：典型整层堆叠单盘参考上限 152/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 152 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16310IN03S）处理完成：总托盘 3，指数达标 0，未达标 3，平均缺口 130.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/1/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.28s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.71s，total=2.29s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16310IN03S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 18 个，总指数 27，目标 192，理论最多达标托盘 0 个，剩余指数 27。
+  - 几何诊断：典型整层堆叠单盘参考上限 23/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 23 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16310IN03S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 165.00，最大缺口 165.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.09s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.09s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26316EC02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 61 个，总指数 168，目标 192，理论最多达标托盘 0 个，剩余指数 168。
+  - 几何诊断：典型整层堆叠单盘参考上限 116/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 116 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PAIN26316EC02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 108.00，最大缺口 122.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.06s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=1.32s，total=2.48s。
+正在处理托盘类型：MH423C，销售订单号：PAID16315AN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 1，目标 192，理论最多达标托盘 0 个，剩余指数 1。
+  - 几何诊断：典型整层堆叠单盘参考上限 1/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 1 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16315AN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.00，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310BN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310BN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 156.00，最大缺口 156.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.02s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16315EN03S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 108.50，最大缺口 171.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.66s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=1.35s，total=3.02s。
+正在处理托盘类型：MH423C，销售订单号：PAID16316DN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16316DN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：LAID16316DN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16316DN03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 144.00，最大缺口 144.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.03s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.03s。
+正在处理托盘类型：MH423C，销售订单号：LAID16316DN03S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 3 个，总指数 3，目标 192，理论最多达标托盘 0 个，剩余指数 3。
+  - 几何诊断：典型整层堆叠单盘参考上限 3/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 3 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16316DN03S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 189.00，最大缺口 189.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：LAID16316DN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16316DN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 82.00，最大缺口 82.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.33s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.33s。
+正在处理托盘类型：MH423C，销售订单号：LAID16316DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16316DN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 49.00，最大缺口 49.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.17s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.17s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16315EN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 87.00，最大缺口 87.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.11s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.11s。
+正在处理托盘类型：MH423C，销售订单号：LAID16315EN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 4 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16315EN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：PAID163108N01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID163108N01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 104.00，最大缺口 104.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.44s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.44s。
+正在处理托盘类型：MH423C，销售订单号：PAID16315BN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16315BN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 154.00，最大缺口 154.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.13s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.13s。
+正在处理托盘类型：MH423C，销售订单号：PAID163108N03S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID163108N03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAID16300FN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16300FN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16316AN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16316AN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 70.00，最大缺口 70.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.14s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.14s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16316AN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16316AN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16320IN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16320IN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 168.00，最大缺口 168.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.01s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16320IN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LFEG16320IN03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 168.00，最大缺口 168.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.02s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310MN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 53 个，总指数 375，目标 192，理论最多达标托盘 1 个，剩余指数 183。
+  - 几何诊断：典型整层堆叠单盘参考上限 176/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 176 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PAIN26310MN01S）处理完成：总托盘 3，指数达标 0，未达标 3，平均缺口 67.00，最大缺口 178.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=1/1/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.31s，main_topup=0.00s，retry=0.00s，failed_pool=1.05s，repack=1.97s，total=2.28s。
+正在处理托盘类型：MH423C，销售订单号：PEG126320LN02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 6，目标 192，理论最多达标托盘 0 个，剩余指数 6。
+  - 几何诊断：典型整层堆叠单盘参考上限 6/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 6 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PEG126320LN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 186.00，最大缺口 186.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310GC02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 3 个，总指数 6，目标 192，理论最多达标托盘 0 个，剩余指数 6。
+  - 几何诊断：典型整层堆叠单盘参考上限 6/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 6 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310GC02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 186.00，最大缺口 186.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：PAID163108C02S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 8，目标 192，理论最多达标托盘 0 个，剩余指数 8。
+  - 几何诊断：典型整层堆叠单盘参考上限 8/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 8 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID163108C02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 184.00，最大缺口 184.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PEG126320LN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PEG126320LN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 170.00，最大缺口 170.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.10s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.10s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26316EN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 3 实例，实装成功 3，失败回兜底 0；达标 3，直接采用配方方案（基线未跑，--safe 可审计对比）。
+  - 指数诊断：箱子 174 个，总指数 671，目标 192，理论最多达标托盘 3 个，剩余指数 95。
+  - 几何诊断：典型整层堆叠单盘参考上限 192/192。
+  - 失败托盘互借诊断：未合并（less_than_2_consolidatable）。
+托盘类型 MH423C（销售订单号：PAIN26316EN01S）处理完成：总托盘 4，指数达标 3，未达标 1，平均缺口 97.00，最大缺口 97.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=2.36s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.67s，total=3.03s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26296EN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26296EN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 100.00，最大缺口 100.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=4.35s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=4.35s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310MN06S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310MN06S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 36.00，最大缺口 36.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.26s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.26s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310MZ05S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 42 个，总指数 672，目标 192，理论最多达标托盘 3 个，剩余指数 96。
+  - 几何诊断：典型整层堆叠单盘参考上限 128/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 128 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PAIN26310MZ05S）处理完成：总托盘 6，指数达标 0，未达标 6，平均缺口 80.00，最大缺口 160.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/6，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.07s，main_topup=0.00s，retry=0.00s，failed_pool=0.13s，repack=0.53s，total=0.60s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26310MN08S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26310MN08S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 145.00，最大缺口 145.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.10s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=1.10s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16336AN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 1，目标 192，理论最多达标托盘 0 个，剩余指数 1。
+  - 几何诊断：典型整层堆叠单盘参考上限 1/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 1 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16336AN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.00，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16336AN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 4 个，总指数 6，目标 192，理论最多达标托盘 0 个，剩余指数 6。
+  - 几何诊断：典型整层堆叠单盘参考上限 6/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 6 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16336AN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 186.00，最大缺口 186.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26326EN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 4，目标 192，理论最多达标托盘 0 个，剩余指数 4。
+  - 几何诊断：典型整层堆叠单盘参考上限 4/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 4 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26326EN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 188.00，最大缺口 188.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAIN26320BN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAIN26320BN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PFEG16336AN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 托盘 MH423C-PFEG16336AN01S-1 未找到可行装箱方案，启用剩余箱子守恒兜底。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 7 个，总指数 10，目标 192，理论最多达标托盘 0 个，剩余指数 10。
+  - 几何诊断：典型整层堆叠单盘参考上限 10/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 10 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PFEG16336AN01S）处理完成：总托盘 3，指数达标 0，未达标 3，平均缺口 188.67，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/3，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.01s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.15s，total=0.21s。
+  - 跨子组条件双路径（MH423C / LAID16305BN02S）：采用严格更优完整路径。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / PAID16306DN01S）：合并 1 次（纯减盘数）。
+  - 跨子组条件双路径（MH423C / LAID16305BN01S）：采用严格更优完整路径。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LAID16306DN02S）：合并 1 次（纯减盘数）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LAID16315EN01S）：合并 1 次（纯减盘数）。
+  - 跨子组条件双路径（MH423C / LFEG16310IN01S）：采用严格更优完整路径。
+  - 跨子组条件双路径（MH423C / LFEG16310IN03S）：采用严格更优完整路径。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LAID16316DN03S）：合并 1 次（纯减盘数）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LAID16315EN02S）：合并 1 次（纯减盘数）。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / LFEG16316AN02S）：合并 1 次（纯减盘数）。
+========================================
+统计汇总：总托盘 72，指数达标 3，未达标 69，未知 0，平均缺口 121.83，最大缺口 191.00，失败托盘互借修复成功 0
+KPI汇总：near/mid/deep=3/3/63，pair尝试=0，pair改进=0，pair效率=0.00%
+耗时汇总：packing=210.25s，main_topup=0.07s，retry=0.00s，repack=18.80s，end_to_end=547.45s
+========================================
+[WCS-装] SUCCESS 产品码 118 个，SUCCESS 盘 3，FAILED 盘 69。
+[WCS-装] 本轮计算结束。
+[WCS-装] 本轮方案已保存（success）：D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_163233.json
+[执行规划] 产物目录：D:\research_code\final\zhuang\packing-workspace\output\success（success）
+[执行规划] 开始：D:\research_code\zhuang-ui-m\.venvs\packing-realtime\python.exe D:\research_code\final\zhuang\packing-system\run_execution_planning.py D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_163233.json --config D:\research_code\final\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260731_155725.yaml --output D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_163233_execution.json --wcs-output D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_163233_execution_wcs.json --wcs-map-output D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_163233_execution_wcs_map.json
+[WCS-DB] wcs_success_box：替换旧托盘 3 个，删除 118 行，写入 118 行
+[WCS-DB] wcs_success_box：本批候选 118 行，本批写入 118 行。
+[WCS-DB] wcs_box_orientation：本批候选 118 行，写入影响 118（含已存在跳过）。
+[现场码垛] 新计算结果已入库，已清空旧码放队列 1194 条
+[现场会话] 新计算结果已入库，当前没有未完成托盘
+execution plan written: pallets=72 boxes=1652 reordered_pallets=59 path=D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_163233_execution.json
+WCS execution cases written: D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_163233_execution_wcs.json
+WCS execution plan map written: D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_163233_execution_wcs_map.json
+execution scan deviations pallet='MH423C-LAID16306DN01S-2' count=4: expected='WCS-0145-YZX448-0000' selected='WCS-0227-YZX428-0000' box='WCS-0145-YZX448-0000' after='WCS-0227-YZX428-0000' reason=open_direction lookahead=true; expected='WCS-0114-DZX448-0000' selected='WCS-0254-DZX444-0000' box='WCS-0114-DZX448-0000' after='WCS-0254-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-0008-YBB106-0000' selected='WCS-0072-YZX448-0000' box='WCS-0008-YBB106-0000' after='WCS-0072-YZX448-0000' reason=hard_dependency; expected='WCS-0008-YBB106-0000' selected='WCS-0226-YZX428-0000' box='WCS-0008-YBB106-0000' after='WCS-0226-YZX428-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16305BN02S-1' count=9: expected='WCS-0093-YZX444-0000' selected='WCS-0477-DZX424-0000' box='WCS-0093-YZX444-0000' after='WCS-0477-DZX424-0000' reason=open_direction lookahead=true; expected='WCS-0094-YZX444-0000' selected='WCS-0100-YZX444-0000' box='WCS-0094-YZX444-0000' after='WCS-0100-YZX444-0000' reason=open_direction lookahead=true; expected='WCS-0012-YZX428-0000' selected='WCS-0449-DZX424-0000' box='WCS-0012-YZX428-0000' after='WCS-0449-DZX424-0000' reason=open_direction lookahead=true; expected='WCS-0095-YZX444-0000' selected='WCS-0065-YZX448-0000' box='WCS-0095-YZX444-0000' after='WCS-0065-YZX448-0000' reason=open_direction lookahead=true; expected='WCS-0781-YZX424-0000' selected='WCS-0038-YZX448-0000' box='WCS-0781-YZX424-0000' after='WCS-0038-YZX448-0000' reason=open_direction lookahead=true; expected='WCS-0602-YBB077-0000' selected='WCS-0782-YZX424-0000' box='WCS-0602-YBB077-0000' after='WCS-0782-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-0606-YBB077-0000' selected='WCS-0026-YZX448-0000' box='WCS-0606-YBB077-0000' after='WCS-0026-YZX448-0000' reason=open_direction lookahead=true; expected='WCS-0224-YBB125-0000' selected='WCS-0554-YZX444-0000' box='WCS-0224-YBB125-0000' after='WCS-0554-YZX444-0000' reason=hard_dependency; ...
+execution scan deviations pallet='MH423C-LAID16305BN02S-2' count=3: expected='WCS-0567-YZX448-0000' selected='WCS-0214-DZX444-0000' box='WCS-0567-YZX448-0000' after='WCS-0214-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-0570-YZX448-0000' selected='WCS-0189-YZX424-0000' box='WCS-0570-YZX448-0000' after='WCS-0189-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-0555-YZX444-0000' selected='WCS-0204-YZX848-0000' box='WCS-0555-YZX444-0000' after='WCS-0204-YZX848-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16305EN01S-1' count=5: expected='WCS-0983-DZX448-0000' selected='WCS-0980-DZX448-0000' box='WCS-0983-DZX448-0000' after='WCS-0980-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-0984-DZX448-0000' selected='WCS-0981-DZX448-0000' box='WCS-0984-DZX448-0000' after='WCS-0981-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-0016-YBB285-0000' selected='WCS-0024-YBB258-0000' box='WCS-0016-YBB285-0000' after='WCS-0024-YBB258-0000' reason=open_direction lookahead=true; expected='WCS-0023-YBB258-0000' selected='WCS-0020-YBB285-0000' box='WCS-0023-YBB258-0000' after='WCS-0020-YBB285-0000' reason=hard_dependency; expected='WCS-0023-YBB258-0000' selected='WCS-0013-YBB285-0000' box='WCS-0023-YBB258-0000' after='WCS-0013-YBB285-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAID16306DN01S-1' count=1: expected='WCS-0044-YZX448-0000' selected='WCS-0163-YZX848-0000' box='WCS-0044-YZX448-0000' after='WCS-0163-YZX848-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16305BN01S-2' count=3: expected='WCS-0559-YZX448-0000' selected='WCS-0569-YZX448-0000' box='WCS-0559-YZX448-0000' after='WCS-0569-YZX448-0000' reason=open_direction lookahead=true; expected='WCS-0287-YBB077-0000' selected='WCS-0470-DZX848-0000' box='WCS-0287-YBB077-0000' after='WCS-0470-DZX848-0000' reason=open_direction lookahead=true; expected='WCS-0568-YZX448-0000' selected='WCS-0292-YBB077-0000' box='WCS-0568-YZX448-0000' after='WCS-0292-YBB077-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16305BN03S-1' count=4: expected='WCS-0614-YBB077-0000' selected='WCS-0802-DZX444-0000' box='WCS-0614-YBB077-0000' after='WCS-0802-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-0770-ZX848-0000' selected='WCS-0619-YBB077-0000' box='WCS-0770-ZX848-0000' after='WCS-0619-YBB077-0000' reason=open_direction lookahead=true; expected='WCS-0803-DZX848-0000' selected='WCS-0621-YBB077-0000' box='WCS-0803-DZX848-0000' after='WCS-0621-YBB077-0000' reason=open_direction lookahead=true; expected='WCS-0804-DZX848-0000' selected='WCS-0623-YBB077-0000' box='WCS-0804-DZX848-0000' after='WCS-0623-YBB077-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAMY16315FN01S-1' count=4: expected='WCS-0120-DZX448-0000' selected='WCS-0765-ZX848-0000' box='WCS-0120-DZX448-0000' after='WCS-0765-ZX848-0000' reason=open_direction lookahead=true; expected='WCS-0627-DZX448-0000' selected='WCS-0589-YZX444-0000' box='WCS-0627-DZX448-0000' after='WCS-0589-YZX444-0000' reason=open_direction lookahead=true; expected='WCS-0857-YZX448-0000' selected='WCS-0632-DZX448-0000' box='WCS-0857-YZX448-0000' after='WCS-0632-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-0237-YBB077-0000' selected='WCS-0245-YBB077-0000' box='WCS-0237-YBB077-0000' after='WCS-0245-YBB077-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16306DN02S-1' count=2: expected='WCS-0577-DZX244-0000' selected='WCS-0233-YZX224-0000' box='WCS-0577-DZX244-0000' after='WCS-0233-YZX224-0000' reason=open_direction lookahead=true; expected='WCS-0412-DZX424-0000' selected='WCS-0421-DZX424-0000' box='WCS-0412-DZX424-0000' after='WCS-0421-DZX424-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PEG086300LN01S-1' count=9: expected='WCS-1164-DZX444-0000' selected='WCS-0688-DZX424-0000' box='WCS-1164-DZX444-0000' after='WCS-0688-DZX424-0000' reason=open_direction lookahead=true; expected='WCS-1170-DZX444-0000' selected='WCS-1179-DZX444-0000' box='WCS-1170-DZX444-0000' after='WCS-1179-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-1173-DZX444-0000' selected='WCS-0348-DZX424-0000' box='WCS-1173-DZX444-0000' after='WCS-0348-DZX424-0000' reason=open_direction lookahead=true; expected='WCS-1165-DZX444-0000' selected='WCS-1176-DZX428-0000' box='WCS-1165-DZX444-0000' after='WCS-1176-DZX428-0000' reason=open_direction lookahead=true; expected='WCS-1171-DZX444-0000' selected='WCS-1180-DZX444-0000' box='WCS-1171-DZX444-0000' after='WCS-1180-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-1177-DZX444-0000' selected='WCS-1166-DZX428-0000' box='WCS-1177-DZX444-0000' after='WCS-1166-DZX428-0000' reason=open_direction lookahead=true; expected='WCS-1169-DZX444-0000' selected='WCS-1182-DZX428-0000' box='WCS-1169-DZX444-0000' after='WCS-1182-DZX428-0000' reason=open_direction lookahead=true; expected='WCS-1172-DZX444-0000' selected='WCS-1184-DZX444-0000' box='WCS-1172-DZX444-0000' after='WCS-1184-DZX444-0000' reason=open_direction lookahead=true; ...
+execution scan deviations pallet='MH423C-LAID16306DN03S-1' count=1: expected='WCS-0262-DZX244-0000' selected='WCS-0230-YZX224-0000' box='WCS-0262-DZX244-0000' after='WCS-0230-YZX224-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LFEG16310IN01S-2' count=4: expected='WCS-0885-YZX448-0000' selected='WCS-0660-YZX848-0000' box='WCS-0885-YZX448-0000' after='WCS-0660-YZX848-0000' reason=open_direction lookahead=true; expected='WCS-0886-YZX448-0000' selected='WCS-0830-YZX444-0000' box='WCS-0886-YZX448-0000' after='WCS-0830-YZX444-0000' reason=open_direction lookahead=true; expected='WCS-0546-YZX448-0000' selected='WCS-0728-YZX848-0000' box='WCS-0546-YZX448-0000' after='WCS-0728-YZX848-0000' reason=open_direction lookahead=true; expected='WCS-0594-YZX244-0000' selected='WCS-0729-YZX848-0000' box='WCS-0594-YZX244-0000' after='WCS-0729-YZX848-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LFEG16316AN01S-1' count=3: expected='WCS-1293-YZX424-0000' selected='WCS-1376-YZX444-0000' box='WCS-1293-YZX424-0000' after='WCS-1376-YZX444-0000' reason=open_direction lookahead=true; expected='WCS-1294-YZX424-0000' selected='WCS-1339-YZX424-0000' box='WCS-1294-YZX424-0000' after='WCS-1339-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-0595-YZX224-0000' selected='WCS-1337-YZX424-0000' box='WCS-0595-YZX224-0000' after='WCS-1337-YZX424-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN26310BC02S-1' count=1: expected='WCS-0528-YZX222-0000' selected='WCS-0529-YZX222-0000' box='WCS-0528-YZX222-0000' after='WCS-0529-YZX222-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LFEG16310IN03S-1' count=4: expected='WCS-0391-DZX448-0000' selected='WCS-0664-YZX848-0000' box='WCS-0391-DZX448-0000' after='WCS-0664-YZX848-0000' reason=open_direction lookahead=true; expected='WCS-0317-YBB005-0000' selected='WCS-0695-YZX848-0000' box='WCS-0317-YBB005-0000' after='WCS-0695-YZX848-0000' reason=open_direction lookahead=true; expected='WCS-0884-YZX448-0000' selected='WCS-0326-YBB005-0000' box='WCS-0884-YZX448-0000' after='WCS-0326-YBB005-0000' reason=open_direction lookahead=true; expected='WCS-0315-YBB005-0000' selected='WCS-0349-YZX428-0000' box='WCS-0315-YBB005-0000' after='WCS-0349-YZX428-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LFEG16310IN03S-2' count=3: expected='WCS-1331-YZX424-0000' selected='WCS-0889-YZX424-0000' box='WCS-1331-YZX424-0000' after='WCS-0889-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-0890-YZX424-0000' selected='WCS-1382-DZX422-0000' box='WCS-0890-YZX424-0000' after='WCS-1382-DZX422-0000' reason=open_direction lookahead=true; expected='WCS-1344-DZX422-0000' selected='WCS-1355-DZX422-0000' box='WCS-1344-DZX422-0000' after='WCS-1355-DZX422-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN26316EC02S-1' count=2: expected='WCS-0874-YZX507-0000' selected='WCS-0871-YZX507-0000' box='WCS-0874-YZX507-0000' after='WCS-0871-YZX507-0000' reason=open_direction lookahead=true; expected='WCS-0836-YZX424-0000' selected='WCS-0833-YZX424-0000' box='WCS-0836-YZX424-0000' after='WCS-0833-YZX424-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN26316EC02S-2' count=1: expected='WCS-0875-YZX507-0000' selected='WCS-0521-YZX444-0000' box='WCS-0875-YZX507-0000' after='WCS-0521-YZX444-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16315EN03S-1' count=4: expected='WCS-1113-YZX424-0000' selected='WCS-1107-YZX424-0000' box='WCS-1113-YZX424-0000' after='WCS-1107-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-1114-YZX424-0000' selected='WCS-1106-YZX424-0000' box='WCS-1114-YZX424-0000' after='WCS-1106-YZX424-0000' reason=open_direction lookahead=true; expected='WCS-1115-YZX424-0000' selected='WCS-1121-YZX428-0000' box='WCS-1115-YZX424-0000' after='WCS-1121-YZX428-0000' reason=open_direction lookahead=true; expected='WCS-0489-YZX444-0000' selected='WCS-0494-YZX444-0000' box='WCS-0489-YZX444-0000' after='WCS-0494-YZX444-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-LAID16316DN02S-1' count=3: expected='WCS-0853-DZX444-0000' selected='WCS-1559-DZX448-0000' box='WCS-0853-DZX444-0000' after='WCS-1559-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-1640-DZX424-0000' selected='WCS-0852-DZX444-0000' box='WCS-1640-DZX424-0000' after='WCS-0852-DZX444-0000' reason=open_direction lookahead=true; expected='WCS-1641-DZX424-0000' selected='WCS-1643-DZX424-0000' box='WCS-1641-DZX424-0000' after='WCS-1643-DZX424-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAID163108N01S-1' count=1: expected='WCS-0648-DZX424-0000' selected='WCS-0756-DZX428-0000' box='WCS-0648-DZX424-0000' after='WCS-0756-DZX428-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN26310MN01S-3' count=1: expected='WCS-0810-YZX424-0000' selected='WCS-1512-DZX444-0000' box='WCS-0810-YZX424-0000' after='WCS-1512-DZX444-0000' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN26316EN01S-4' count=3: expected='WCS-1462-DZX444-0000' selected='WCS-1585-DZX448-0000' box='WCS-1462-DZX444-0000' after='WCS-1585-DZX448-0000' reason=open_direction lookahead=true; expected='WCS-1283-YZX428-0000' selected='WCS-1282-YZX428-0000' box='WCS-1283-YZX428-0000' after='WCS-1282-YZX428-0000' reason=open_direction lookahead=true; expected='WCS-1461-DZX444-0000' selected='WCS-1575-DZX448-0000' box='WCS-1461-DZX444-0000' after='WCS-1575-DZX448-0000' reason=open_direction lookahead=true
+[执行规划] 已删除原方案（仅保留 execution）：packing_plan_20260731_163233.json
+[执行规划] 完成；统一使用：D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_163233_execution.json
+[WCS-装] 接口 2 使用执行顺序方案，发送体已保存：D:\research_code\final\zhuang\packing-workspace\output\success\wcs_plan_20260731_163233.json（72 个 case）
+[WCS-装] 执行顺序方案执行层映射已保存：D:\research_code\final\zhuang\packing-workspace\output\success\wcs_plan_map_20260731_163233.json
+[WCS-装] 已跳过接口 2 推送（仅本地保存）。
+[UI-RESULT] D:\research_code\final\zhuang\packing-workspace\output\success\packing_plan_20260731_163233_execution.json
+============================================================
+[WCS-拉] 20260731_164143：拉取接口 1 …
+[WCS-拉] 原始响应已保存：D:\research_code\final\zhuang\packing-workspace\input\raw\20260731_164143.json
+[WCS-拉] 已剔除 case_type≠MH423C 的品类 63 条（类型：['MH113', 'WR246']），保留 1666 条。
+[WCS-拉] 忽略 4 条零尺寸/非法尺寸库存；有效记录 1662 条；样例：product_code=30086366/box_type=YZX507/0×0×0, product_code=30086359/box_type=YZX507/0×0×0, product_code=30086364/box_type=YZX507/0×0×0, product_code=30086358/box_type=YZX507/0×0×0
+[WCS-DB] wcs_stock_box 已全量替换：清空 1652 → 插入 1662
+[WCS-拉] wcs_stock_box 已全量替换：删 1652，插 1662。
+[WCS-DB] wcs_stock_box_all product_code 已存在、跳过 1654 条
+[WCS-拉] wcs_stock_box_all 追加：新插入 8，跳过已有 1654（历史不删）。
+[WCS-拉] 库存有变化 → 本轮继续装箱。
+[WCS] 已加载 BMS 参考表：D:\research_code\final\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+============================================================
+[WCS-装] 20260731_164148：库存行 1662 条，开始装箱 …
+[WCS-装] 展开为 1662 个箱子。
+数据预处理和箱子分组完成（按托盘类型+销售订单号）。
+----------------------------------------
+  - 组内子聚类：10 个混合订单拆出规则子集走 GCP、杂箱走 baseline。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16306DN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 74.25，最大缺口 131.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/1/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=55.29s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=2.92s，total=58.21s。
+  - 条件双路径棘轮：替代完整路径通过守恒和最终门禁，严格优于 GCP，已采用。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 82 个，总指数 156，目标 192，理论最多达标托盘 0 个，剩余指数 156。
+  - 几何诊断：典型整层堆叠单盘参考上限 98.5/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 98.5 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305BN02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 114.00，最大缺口 185.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.12s，main_topup=0.02s，retry=0.00s，failed_pool=0.00s，repack=1.98s，total=8.97s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 12 个，总指数 48，目标 192，理论最多达标托盘 0 个，剩余指数 48。
+  - 几何诊断：典型整层堆叠单盘参考上限 48/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 48 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 144.00，最大缺口 144.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305EN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 28 个，总指数 90.5，目标 192，理论最多达标托盘 0 个，剩余指数 90.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 67/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 67 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305EN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 146.75，最大缺口 176.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.10s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.19s，total=0.55s。
+正在处理托盘类型：MH423C，销售订单号：PAID16306DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16306DN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 87.00，最大缺口 87.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=3.52s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=3.52s。
+正在处理托盘类型：MH423C，销售订单号：PAID16306DN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 1，目标 192，理论最多达标托盘 0 个，剩余指数 1。
+  - 几何诊断：典型整层堆叠单盘参考上限 1/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 1 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16306DN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.00，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+[UI] 接口装箱服务已停止。

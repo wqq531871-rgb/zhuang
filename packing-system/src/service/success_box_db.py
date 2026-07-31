@@ -297,8 +297,9 @@ class WcsSuccessBoxRepository:
     def insert_rows(self, rows: Sequence[Tuple]) -> int:
         """写入本批箱子行，并整盘替换包含相同 product_code 的旧结果。
 
-        与本批 product_code 无交集的历史成功盘保留。查找旧盘、删除旧盘和
-        插入本批数据在同一事务中完成；显式写 is_send=未下传，缺
+        与本批 product_code 无交集的历史成功盘保留并标记为已归档（is_send=1）。
+        归档旧记录、查找旧盘、删除旧盘和插入本批数据在同一事务中完成；
+        新批显式写 is_send=未下传，缺
         product_code 时随机补内部码。
         """
         if not rows:
@@ -329,8 +330,17 @@ class WcsSuccessBoxRepository:
             ")"
         )
         affected_uids: Set[str] = set()
+        archived = 0
         deleted = 0
         with self._cursor() as (_conn, cur):
+            cur.execute(
+                "UPDATE wcs_success_box SET is_send = %s "
+                "WHERE is_send = %s OR is_send IS NULL "
+                "OR TRIM(IFNULL(is_send,'')) = ''",
+                (IS_SEND_SENT, IS_SEND_UNSENT),
+            )
+            archived = int(cur.rowcount or 0)
+
             chunk = 500
             for i in range(0, len(known_codes), chunk):
                 part = known_codes[i : i + chunk]
@@ -359,6 +369,10 @@ class WcsSuccessBoxRepository:
 
             cur.executemany(sql, prepared)
             inserted = int(cur.rowcount or 0)
+        if archived:
+            print(
+                f"[WCS-DB] wcs_success_box：归档旧未下传记录 {archived} 行。"
+            )
         if affected_uids:
             print(
                 f"[WCS-DB] wcs_success_box：替换旧托盘 {len(affected_uids)} 个，"

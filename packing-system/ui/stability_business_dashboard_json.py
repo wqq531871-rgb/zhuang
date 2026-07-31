@@ -23,6 +23,8 @@ import numpy as np
 import pandas as pd
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from dashboard_state import attach_box_unique_ids_from_wcs_map
+
 try:
     import pyqtgraph.opengl as gl
     HAS_GL = True
@@ -876,6 +878,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 raise ValueError("该文件不是预期的装箱规划 JSON：根节点需要包含 pallets 列表。")
             self.plan_data = data
             self.pallets = list(data.get("pallets", []))
+            attach_box_unique_ids_from_wcs_map(self.pallets, path)
             self.current_path = path
             self.populate_after_load()
         except Exception as e:
