@@ -1,16 +1,17 @@
 """WCS 接口装箱常驻服务（HTTP 服务壳）。
 
-两条独立流水线（互不等待，装箱严格串行）：
+接口持续模式按单一串行周期运行：
 
-1. 拉取器：每 download_interval 秒 POST 接口 1；
+1. 每轮记录拉取开始时间并 POST 接口 1；
    原始 JSON → ``input/raw/``；
    过滤 MH423C 后：
    - ``wcs_stock_box``：按 product_code 集合对比；有差异则整表清空后全量插入，
-     并置位 ``need_repack``；完全一致则不动、不置位；
+     并在本轮触发装箱；完全一致则不动、不装箱；
    - ``wcs_stock_box_all``：历史全量追加（新码插入、已有跳过，不删除）。
 
-2. 装箱器：监听 ``need_repack``；置位后开算前先清除标志，读取当前表全部行计算；
-   算完再读标志——仍为真则立刻再算，否则继续等待。保证一次算完再开下一次。
+2. 库存有变化时，当前线程读取库存并完成装箱；计算期间不再拉取。
+3. 计算结束后只等待本轮 ``download_interval`` 的剩余时间；若本轮已经超时，
+   立即开始下一次拉取。
 
 可选：装箱结果推送接口 2（由 ``_PUSH_PLAN_TO_WCS`` 控制）。
 """
@@ -18,7 +19,9 @@
 from __future__ import annotations
 
 import json
+import math
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -63,9 +66,6 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 _SUPPORTED_CASE_TYPE = "MH423C"
 # False=只本地装箱/落盘，不向接口 2 推送结果（调试用，恢复推送改 True）。
 _PUSH_PLAN_TO_WCS = False
-# 装箱器空闲等待超时（秒）：防止漏掉 wake 信号。
-_PACK_IDLE_POLL_SEC = 2.0
-
 # UI 识别此标记后按「停止」处理（与点击停止按钮同效）。
 WCS_STOP_MARKER = "[WCS-STOP]"
 
@@ -109,6 +109,7 @@ class DataSourceConfig:
     input_dir: Path
     bms_reference_file: Path
     output_dir: Path
+    reqpallet_path: str = "/api/wcs/reqpallet"
 
     @property
     def effective_api_base_url(self) -> str:
@@ -122,6 +123,9 @@ class DataSourceConfig:
 
     def plan_url(self) -> str:
         return f"{self.effective_api_base_url.rstrip('/')}{self.plan_path}"
+
+    def reqpallet_url(self) -> str:
+        return f"{self.effective_api_base_url.rstrip('/')}{self.reqpallet_path}"
 
 
 @dataclass(frozen=True)
@@ -154,6 +158,11 @@ def load_data_source_config(config_path: Optional[Path] = None) -> DataSourceCon
         stock_path = "/" + stock_path
     if not plan_path.startswith("/"):
         plan_path = "/" + plan_path
+    reqpallet_path = str(
+        raw.get("reqpallet_path") or "/api/wcs/reqpallet"
+    ).strip()
+    if not reqpallet_path.startswith("/"):
+        reqpallet_path = "/" + reqpallet_path
     return DataSourceConfig(
         mode=str(raw.get("mode") or "api").strip().lower(),
         use_real_api=bool(raw.get("use_real_api", True)),
@@ -165,6 +174,7 @@ def load_data_source_config(config_path: Optional[Path] = None) -> DataSourceCon
         input_dir=input_path.resolve(),
         bms_reference_file=(DATA_DIR / bms_rel).resolve(),
         output_dir=OUTPUT_DIR.resolve(),
+        reqpallet_path=reqpallet_path,
     )
 
 
@@ -215,6 +225,99 @@ def push_plan_result(
     return body
 
 
+def build_reqpallet_payload(
+    arrival: Dict,
+    wcs_case: Dict,
+    *,
+    empty_flag: bool = False,
+) -> Dict:
+    """Build interface 4.5 from the physical 4.6 pallet and one packed case."""
+    identity = {
+        key: str(arrival.get(key) or "").strip()
+        for key in ("robot_id", "station_id", "pallet_code")
+    }
+    missing = [key for key, value in identity.items() if not value]
+    if missing:
+        raise ValueError(f"4.6 缺少字段：{', '.join(missing)}")
+
+    source_layers = wcs_case.get("layers") or []
+    layers = []
+    for layer in source_layers:
+        cartons = []
+        for carton in (layer.get("cartons") or []):
+            cartons.append(
+                {
+                    "seq": int(carton.get("seq") or 0),
+                    "length": carton.get("length"),
+                    "width": carton.get("width"),
+                    "height": carton.get("height"),
+                    "product_code": str(
+                        carton.get("product_code") or ""
+                    ).strip(),
+                }
+            )
+        if cartons:
+            layers.append({"cartons": cartons})
+    if not empty_flag and not layers:
+        raise ValueError("码垛完成时 case_data 不能为空")
+
+    box_unique_id = str(wcs_case.get("box_unique_id") or "").strip()
+    if not empty_flag and not box_unique_id:
+        raise ValueError("4.5 case_data 缺少 box_unique_id")
+    case_data = []
+    if not empty_flag:
+        case_data.append(
+            {
+                "box_index": int(wcs_case.get("box_index") or 1),
+                "box_unique_id": box_unique_id,
+                "case_group": str(wcs_case.get("case_group") or "0"),
+                "height": 0,
+                "layers": layers,
+            }
+        )
+
+    case_type = str(arrival.get("case_type") or "").strip()
+    if not case_type:
+        case_type = str(wcs_case.get("case_type") or "").strip()
+    if not case_type:
+        raise ValueError("4.5 缺少 case_type")
+
+    return {
+        **identity,
+        "case_type": case_type,
+        "empty_flag": bool(empty_flag),
+        "case_data": case_data,
+    }
+
+
+def push_reqpallet(
+    base_url: str,
+    payload: Dict,
+    reqpallet_path: str,
+    timeout: int = 30,
+) -> Dict:
+    """POST interface 4.5 and require a successful WCS business response."""
+    path = (
+        reqpallet_path
+        if str(reqpallet_path).startswith("/")
+        else f"/{reqpallet_path}"
+    )
+    url = f"{str(base_url).rstrip('/')}{path}"
+    resp = requests.post(
+        url,
+        json=payload,
+        timeout=timeout,
+        verify=False,
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    if body.get("code") != 0:
+        raise RuntimeError(
+            f"接口 4.5 返回错误: code={body.get('code')}, msg={body.get('msg')}"
+        )
+    return body
+
+
 def _save_json(path: Path, payload) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -258,6 +361,28 @@ def _filter_mh423c(stock_entries: List[Dict]):
     return kept, dropped, dropped_types
 
 
+def _split_positive_dimension_entries(
+    stock_entries: List[Dict],
+) -> tuple[List[Dict], List[Dict]]:
+    """按严格正数且有限的长宽高拆分有效与非法库存记录。"""
+    valid: List[Dict] = []
+    invalid: List[Dict] = []
+    for entry in stock_entries:
+        try:
+            for key in ("length", "width", "height"):
+                value = entry.get(key)
+                if isinstance(value, bool):
+                    raise ValueError(f"{key} must not be bool")
+                number = float(value)
+                if not math.isfinite(number) or number <= 0:
+                    raise ValueError(f"{key} must be positive and finite")
+        except (TypeError, ValueError, OverflowError):
+            invalid.append(entry)
+            continue
+        valid.append(entry)
+    return valid, invalid
+
+
 def _success_product_codes(report: Optional[Dict]) -> Set[int]:
     """从装箱报告中收集 SUCCESS 托盘上的 product_code。"""
     codes: Set[int] = set()
@@ -291,8 +416,6 @@ class WcsPackingService:
         self._build_workflow = build_workflow
         self._bms_map: Dict[str, float] = {}
         self._stop = threading.Event()
-        # 立库相对库表有变化时置位；装箱线程据此开算（算完再读）
-        self._need_repack = threading.Event()
         # use_real_api 开且接口失败时置位；UI 据此按「停止」处理
         self.stopped_by_api_failure = False
         self._ensure_dirs()
@@ -303,7 +426,6 @@ class WcsPackingService:
         self.stopped_by_api_failure = True
         print(f"{WCS_STOP_MARKER} {reason}")
         self._stop.set()
-        self._need_repack.set()
 
     def _handle_fetch_error(self, exc: Exception, context: str) -> bool:
         """处理拉取异常。返回 True 表示应结束当前循环/模式。"""
@@ -347,7 +469,7 @@ class WcsPackingService:
 
     # ------------------------------------------------------------------ fetch
     def fetch_once(self) -> int:
-        """拉一次接口 1：原始 JSON 落 raw/；库存有变则全量替换并置 need_repack。
+        """拉一次接口 1：原始 JSON 落 raw/；库存有变则全量替换并请求本轮装箱。
 
         返回 1 表示 wcs_stock_box 已变化并已请求装箱；0 表示无变化。
         """
@@ -372,7 +494,29 @@ class WcsPackingService:
         else:
             print(f"[WCS-拉] 库存品类数：{len(kept)}（均为 {_SUPPORTED_CASE_TYPE}）")
 
-        sync_stats = self._repo.sync_stock_entries(kept)
+        dimension_candidates = kept
+        kept, invalid_dimensions = _split_positive_dimension_entries(
+            dimension_candidates
+        )
+        if invalid_dimensions:
+            samples = ", ".join(
+                "product_code="
+                f"{entry.get('product_code')}/"
+                f"box_type={entry.get('box_type')}/"
+                f"{entry.get('length')}×{entry.get('width')}×{entry.get('height')}"
+                for entry in invalid_dimensions[:5]
+            )
+            print(
+                f"[WCS-拉] 忽略 {len(invalid_dimensions)} 条零尺寸/非法尺寸库存；"
+                f"有效记录 {len(kept)} 条；样例：{samples}"
+            )
+
+        if dimension_candidates and not kept:
+            sync_stats = self._repo.sync_stock_entries(
+                kept, allow_empty_replace=True
+            )
+        else:
+            sync_stats = self._repo.sync_stock_entries(kept)
         if sync_stats.unchanged:
             print(
                 f"[WCS-拉] wcs_stock_box 与本次立库 product_code 一致"
@@ -391,11 +535,10 @@ class WcsPackingService:
         )
 
         if sync_stats.changed:
-            self._need_repack.set()
-            print("[WCS-拉] 库存有变化 → need_repack=True，唤醒装箱。")
+            print("[WCS-拉] 库存有变化 → 本轮继续装箱。")
             return 1
 
-        print("[WCS-拉] 库存无变化 → need_repack 不变。")
+        print("[WCS-拉] 库存无变化 → 本轮不装箱。")
         return 0
 
     # ------------------------------------------------------------------ pack
@@ -451,7 +594,7 @@ class WcsPackingService:
             f"[WCS-装] SUCCESS 产品码 {len(success_codes)} 个，"
             f"SUCCESS 盘 {success_pallets}，FAILED 盘 {failed_pallets}。"
         )
-        print("[WCS-装] 本轮结束；将检查 need_repack 决定是否再算。")
+        print("[WCS-装] 本轮计算结束。")
 
         # 一次计算只写一份完整 JSON（成功+失败托盘都在内）；
         # 有任一达标盘 → success/，否则 → fail/。
@@ -539,45 +682,14 @@ class WcsPackingService:
         )
 
     # ------------------------------------------------------------------ loops
-    def _fetch_loop(self) -> None:
-        while not self._stop.is_set():
-            try:
-                self.fetch_once()
-            except Exception as exc:
-                if self._handle_fetch_error(exc, "本轮拉取"):
-                    break
-            if self._stop.wait(self._ds.download_interval):
-                break
-
-    def _pack_loop(self) -> None:
-        """监听 need_repack；一次算完后再决定是否连算。"""
-        idle_announced = False
-        while not self._stop.is_set():
-            if not self._need_repack.is_set():
-                if not idle_announced:
-                    print(
-                        "[WCS-装] 等待 need_repack"
-                        "（立库相对库表有变化才开算）…"
-                    )
-                    idle_announced = True
-                self._need_repack.wait(timeout=_PACK_IDLE_POLL_SEC)
-                if self._stop.is_set():
-                    break
-                if not self._need_repack.is_set():
-                    continue
-
-            idle_announced = False
-            # 开算前清除：算中拉取再变会重新 set，算完可再开一轮
-            self._need_repack.clear()
-            try:
-                self._reload_reference_data()
-                self.pack_once()
-            except Exception as exc:
-                print(f"[WCS-装] 循环异常：{exc}")
-            if self._need_repack.is_set():
-                print("[WCS-装] 算完后 need_repack 仍为 True → 立即再算。")
-            else:
-                print("[WCS-装] 算完后 need_repack=False → 继续等待。")
+    def _wait_for_next_fetch(self, started_at: float) -> bool:
+        """等待到以上次拉取开始时间为基准的下一个周期。"""
+        elapsed = max(0.0, time.monotonic() - started_at)
+        remaining = max(
+            0.0,
+            float(self._ds.download_interval) - elapsed,
+        )
+        return self._stop.wait(remaining)
 
     def run_loop(self) -> None:
         print("=" * 60)
@@ -600,31 +712,36 @@ class WcsPackingService:
         print(f"  输出目录：{self._ds.output_dir}")
         print(
             "  触发：wcs_stock_box 的 product_code 集合相对立库有变化才全量替换并开算；"
-            "装箱用当前全表；算完再读 need_repack；历史表只追加"
+            "拉取与装箱串行；历史表只追加"
         )
         if self._config_path:
             print(f"  约束配置：{self._config_path}")
         print("  按 Ctrl+C 或由 UI 停止按钮结束进程")
         print("=" * 60)
 
-        fetch_thread = threading.Thread(
-            target=self._fetch_loop, name="wcs-fetch", daemon=True
-        )
-        pack_thread = threading.Thread(
-            target=self._pack_loop, name="wcs-pack", daemon=True
-        )
-        fetch_thread.start()
-        pack_thread.start()
         try:
-            while fetch_thread.is_alive() or pack_thread.is_alive():
-                fetch_thread.join(timeout=0.5)
-                pack_thread.join(timeout=0.5)
+            while not self._stop.is_set():
+                started_at = time.monotonic()
+                try:
+                    changed = self.fetch_once()
+                except Exception as exc:
+                    if self._handle_fetch_error(exc, "本轮拉取"):
+                        break
+                else:
+                    if changed > 0:
+                        try:
+                            self._reload_reference_data()
+                            self.pack_once()
+                        except Exception as exc:
+                            print(f"[WCS-装] 循环异常：{exc}")
+                    else:
+                        print("[WCS-装] 本轮库存无变化，不装箱。")
+
+                if self._wait_for_next_fetch(started_at):
+                    break
         except KeyboardInterrupt:
             print("[WCS] 收到停止信号，正在结束 …")
             self._stop.set()
-            self._need_repack.set()
-            fetch_thread.join(timeout=5)
-            pack_thread.join(timeout=5)
             print("[WCS] 服务已结束。")
 
     def run_once(self) -> bool:
@@ -646,6 +763,7 @@ class WcsPackingService:
         print("[WCS] 运行模式：循环拉取，直到出现成功托盘后停止。")
         while not self._stop.is_set():
             round_no += 1
+            started_at = time.monotonic()
             print(f"[WCS] 成功等待模式：第 {round_no} 轮拉取。")
             try:
                 changed = self.fetch_once()
@@ -665,7 +783,7 @@ class WcsPackingService:
                 if self._handle_fetch_error(exc, "成功等待模式本轮"):
                     return False
 
-            if self._stop.wait(self._ds.download_interval):
+            if self._wait_for_next_fetch(started_at):
                 break
 
         print("[WCS] 成功等待模式已停止，尚未产生成功托盘。")

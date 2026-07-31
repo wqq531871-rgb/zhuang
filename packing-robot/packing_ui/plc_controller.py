@@ -18,7 +18,12 @@ from .layout_state import (
 )
 
 _DEFAULT_STATE_SOURCE = STATE_PATH_LAYOUT
-from .live_command import default_session_path
+from .live_command import (
+    default_history_path,
+    default_session_path,
+    mark_live_pallet_done,
+    recover_live_session,
+)
 from .plan_from_db import fetch_plc_row, load_plan_from_db, update_camera_dimensions
 from .plc_protocol import S7Client, S7Config, create_snap7_client
 from .plc_worker import PlcSendWorker
@@ -60,6 +65,7 @@ class PlcController(QObject):
         lock_path: str | Path | None = None,
         row_loader: Any = None,
         plan_loader: Any = None,
+        pallet_completion_writer: Any = None,
     ) -> None:
         super().__init__(parent)
         self._config_path = Path(config_path) if config_path else None
@@ -73,6 +79,9 @@ class PlcController(QObject):
         )
         self._row_loader = row_loader or fetch_plc_row
         self._plan_loader = plan_loader or load_plan_from_db
+        self._pallet_completion_writer = (
+            pallet_completion_writer or mark_live_pallet_done
+        )
         self._lock_path = (
             Path(lock_path) if lock_path else default_plc_lock_path()
         )
@@ -109,9 +118,10 @@ class PlcController(QObject):
         return plan
 
     def try_load_session_plan(self) -> PalletPlan | None:
-        from .live_command import read_live_session
-
-        session = read_live_session(default_session_path())
+        session = recover_live_session(
+            default_session_path(),
+            default_history_path(),
+        )
         uid = str((session or {}).get("box_unique_id") or "").strip()
         if not uid:
             return None
@@ -216,6 +226,7 @@ class PlcController(QObject):
 
         uid = str(self.current_plan.source_key)
         sequences = tuple(int(item.sequence) for item in self.current_plan.items)
+        final_seq = max(sequences)
         # 确保下发线程独占连接
         self._release_probe_for_worker()
         worker = self._plc_worker_factory(
@@ -244,7 +255,9 @@ class PlcController(QObject):
         worker.status.connect(self.log.emit)
         worker.plc_status.connect(self._on_plc_status)
         worker.box_finished.connect(
-            lambda seq: self.log.emit(f"seq={seq} 下发并握手完成")
+            lambda seq, started_uid=uid, last_seq=final_seq: (
+                self._on_box_finished(started_uid, last_seq, seq)
+            )
         )
         worker.alarm.connect(
             lambda seq: self.log.emit(
@@ -317,6 +330,35 @@ class PlcController(QObject):
             mark_ready_on_kongxian_idle(getattr(status, "idle", None))
         except Exception as exc:
             self.log.emit(f"[4.7-状态] 写就绪失败：{exc}")
+
+    def _on_box_finished(
+        self,
+        box_unique_id: str,
+        final_seq: int,
+        seq: int,
+    ) -> None:
+        """处理一箱完整握手；只有最大 seq 才结束当前托盘。"""
+        seq_i = int(seq)
+        final_seq_i = int(final_seq)
+        self.log.emit(f"seq={seq_i} 下发并握手完成")
+        if seq_i != final_seq_i:
+            return
+        try:
+            changed = self._pallet_completion_writer(str(box_unique_id))
+            if changed is False:
+                self.log.emit(
+                    f"托盘 {box_unique_id} 最后 seq={seq_i} 已握手，"
+                    "但未找到对应 active 历史，状态未改写"
+                )
+                return
+            self.log.emit(
+                f"托盘 {box_unique_id} 最后 seq={seq_i} 已握手，已标记 done"
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.log.emit(
+                f"托盘 {box_unique_id} 最后 seq={seq_i} 已握手，"
+                f"但完成状态保存失败：{exc}"
+            )
 
     def _on_plc_thread_finished(self) -> None:
         self._plc_worker = None

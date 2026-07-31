@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
+import json
+import math
+from pathlib import Path
 from typing import Iterable, MutableMapping
 
 
@@ -51,6 +55,73 @@ def successful_pallet_count(pallets: Iterable[dict]) -> int:
     )
 
 
+_BOX_DIMENSION_FIELDS = (
+    ("original_length", "original_width", "original_height"),
+    ("raw_length", "raw_width", "raw_height"),
+    ("length", "width", "height"),
+)
+_INTEGER_MULTIPLE_TOLERANCE = 1e-6
+
+
+def _box_dimensions(item: dict) -> tuple[float, float, float] | None:
+    """Return the first complete, positive dimension triplet by field priority."""
+    for fields in _BOX_DIMENSION_FIELDS:
+        try:
+            dimensions = tuple(float((item or {}).get(field)) for field in fields)
+        except (TypeError, ValueError):
+            continue
+        if all(math.isfinite(value) and value > 0 for value in dimensions):
+            return dimensions
+    return None
+
+
+def _specs_have_integer_multiple_relationship(
+    left: tuple[float, float, float],
+    right: tuple[float, float, float],
+) -> bool:
+    """Return whether all corresponding axes form integer ratios."""
+    for left_value, right_value in zip(left, right):
+        ratio = max(left_value, right_value) / min(left_value, right_value)
+        nearest_integer = round(ratio)
+        if nearest_integer < 1:
+            return False
+        if abs(ratio - nearest_integer) > _INTEGER_MULTIPLE_TOLERANCE:
+            return False
+    return True
+
+
+def regular_irregular_box_counts(
+    pallets: Iterable[dict],
+) -> tuple[int, int]:
+    """Count boxes whose specifications do or do not have an integer-multiple peer."""
+    specification_counts: Counter[tuple[float, float, float]] = Counter()
+    invalid_count = 0
+    for pallet in pallets or []:
+        for item in (pallet or {}).get("packed_items") or []:
+            dimensions = _box_dimensions(item)
+            if dimensions is None:
+                invalid_count += 1
+            else:
+                specification_counts[dimensions] += 1
+
+    specifications = list(specification_counts)
+    regular_specifications: set[tuple[float, float, float]] = set()
+    for index, left in enumerate(specifications):
+        for right in specifications[index + 1 :]:
+            if _specs_have_integer_multiple_relationship(left, right):
+                regular_specifications.add(left)
+                regular_specifications.add(right)
+
+    regular_count = sum(
+        count
+        for specification, count in specification_counts.items()
+        if specification in regular_specifications
+    )
+    valid_count = sum(specification_counts.values())
+    irregular_count = invalid_count + valid_count - regular_count
+    return regular_count, irregular_count
+
+
 def list_success_pallets(pallets: Iterable[dict]) -> list:
     """Return SUCCESS pallets that have a non-empty pallet_id, stable order."""
     result = []
@@ -62,6 +133,40 @@ def list_success_pallets(pallets: Iterable[dict]) -> list:
             continue
         result.append(pallet)
     return result
+
+
+def attach_box_unique_ids_from_wcs_map(
+    pallets: Iterable[dict],
+    result_path: Path,
+) -> None:
+    """Attach each pallet's UID from the sibling execution WCS map."""
+    result_path = Path(result_path)
+    suffix = "_execution.json"
+    if not result_path.name.endswith(suffix):
+        return
+    map_path = result_path.with_name(
+        f"{result_path.name[:-len(suffix)]}_execution_wcs_map.json"
+    )
+    try:
+        mapping = json.loads(map_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(mapping, dict):
+        return
+
+    uid_by_pallet_id = {
+        str(record.get("pallet_id") or "").strip(): str(uid).strip()
+        for uid, record in mapping.items()
+        if isinstance(record, dict)
+        and str(record.get("pallet_id") or "").strip()
+        and str(uid).strip()
+    }
+    for pallet in pallets or []:
+        if not isinstance(pallet, dict):
+            continue
+        pallet_id = str(pallet.get("pallet_id") or "").strip()
+        if pallet_id in uid_by_pallet_id:
+            pallet["box_unique_id"] = uid_by_pallet_id[pallet_id]
 
 
 def normalize_download_interval(

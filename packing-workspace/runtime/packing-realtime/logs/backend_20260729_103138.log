@@ -1,0 +1,361 @@
+[LOG] 后端日志文件：D:\research_code\final\zhuang\packing-workspace\runtime\packing-realtime\logs\backend_20260729_103138.log
+[LOG] 接口模式：每 200 秒拉取并计算，直到手动停止。
+[CMD] D:\research_code\zhuang-ui-m\.venvs\packing-realtime\python.exe D:\research_code\final\zhuang\packing-system\packing\run_wcs_service.py --config D:\research_code\final\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260729_103138.yaml --run-mode continuous
+[WCS] 已加载 BMS 参考表：D:\research_code\final\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+============================================================
+WCS 接口装箱服务（DB 模式）
+  接口模式：真实 WCS（use_real_api=True）
+  接口地址：http://10.222.10.1:8092
+  接口1：http://10.222.10.1:8092/api/wcs/reqstockinfo
+  接口2：http://10.222.10.1:8092/api/wcs/sendpalletplanresult
+  拉取间隔：200 秒（仅拉取）
+  原始 JSON：D:\research_code\final\zhuang\packing-workspace\input\raw
+  数据库：localhost:3306/zhuangdb 表 wcs_stock_box（当前） / wcs_stock_box_all（历史）
+  BMS 参考：D:\research_code\final\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+  输出目录：D:\research_code\final\zhuang\packing-workspace\output
+  触发：wcs_stock_box 的 product_code 集合相对立库有变化才全量替换并开算；装箱用当前全表；算完再读 need_repack；历史表只追加
+  约束配置：D:\research_code\final\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260729_103138.yaml
+  按 Ctrl+C 或由 UI 停止按钮结束进程
+============================================================
+============================================================
+[WCS-拉] 20260729_103142：拉取接口 1 …
+[WCS-装] 等待 need_repack（立库相对库表有变化才开算）…
+[WCS-拉] 原始响应已保存：D:\research_code\final\zhuang\packing-workspace\input\raw\20260729_103142.json
+[WCS-拉] 已剔除 case_type≠MH423C 的品类 54 条（类型：['WR246']），保留 1624 条。
+[WCS-DB] wcs_stock_box 已全量替换：清空 1450 → 插入 1624
+[WCS-拉] wcs_stock_box 已全量替换：删 1450，插 1624。
+[WCS-DB] wcs_stock_box_all product_code 已存在、跳过 886 条
+[WCS-拉] wcs_stock_box_all 追加：新插入 738，跳过已有 886（历史不删）。
+[WCS-拉] 库存有变化 → need_repack=True，唤醒装箱。
+[WCS] 已加载 BMS 参考表：D:\research_code\final\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+============================================================
+[WCS-装] 20260729_103145：库存行 1624 条，开始装箱 …
+[WCS-装] 展开为 1624 个箱子。
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\zlib1.dll...
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\abseil_dll.dll...
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\utf8_validity.dll...
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\re2.dll...
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\libprotobuf.dll...
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\highs.dll...
+load D:\research_code\zhuang-ui-m\.venvs\packing-realtime\Lib\site-packages\ortools\.libs\ortools.dll...
+数据预处理和箱子分组完成（按托盘类型+销售订单号）。
+----------------------------------------
+  - 组内子聚类：18 个混合订单拆出规则子集走 GCP、杂箱走 baseline。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16306DN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 74.25，最大缺口 131.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/1/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=54.64s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=2.45s，total=57.09s。
+  - 条件双路径棘轮：替代完整路径通过守恒和最终门禁，严格优于 GCP，已采用。
+正在处理托盘类型：MH423C，销售订单号：LAMY16315FN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAMY16315FN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 104.50，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/1/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.93s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.80s，total=1.73s。
+正在处理托盘类型：MH423C，销售订单号：LAMY16315FN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 13 个，总指数 48.5，目标 192，理论最多达标托盘 0 个，剩余指数 48.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 48.5/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 48.5 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAMY16315FN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 143.50，最大缺口 143.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.04s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.04s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 63.00，最大缺口 63.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.71s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=1.71s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305EN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305EN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 121.00，最大缺口 160.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.43s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.38s，total=0.81s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305EN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 5 个，总指数 22.5，目标 192，理论最多达标托盘 0 个，剩余指数 22.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 22.5/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 22.5 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305EN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 169.50，最大缺口 169.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.01s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：PAID16306DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16306DN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 97.00，最大缺口 97.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.67s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=1.67s。
+正在处理托盘类型：MH423C，销售订单号：PAID16306DN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 1，目标 192，理论最多达标托盘 0 个，剩余指数 1。
+  - 几何诊断：典型整层堆叠单盘参考上限 1/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 1 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16306DN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.00，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305BN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 99.50，最大缺口 174.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=2.06s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=1.51s，total=3.57s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 12 个，总指数 48，目标 192，理论最多达标托盘 0 个，剩余指数 48。
+  - 几何诊断：典型整层堆叠单盘参考上限 48/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 48 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 144.00，最大缺口 144.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16300IN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16300IN03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 70.00，最大缺口 70.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.70s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.70s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16300IN03S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 3 个，总指数 4.5，目标 192，理论最多达标托盘 0 个，剩余指数 4.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 4.5/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 4.5 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16300IN03S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 187.50，最大缺口 187.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 157.00，最大缺口 157.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.08s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.08s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN03S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 0.5，目标 192，理论最多达标托盘 0 个，剩余指数 0.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 0.5/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 0.5 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN03S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.50，最大缺口 191.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAID16305EC01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16305EC01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 44 个，总指数 180，目标 192，理论最多达标托盘 0 个，剩余指数 180。
+  - 几何诊断：典型整层堆叠单盘参考上限 100/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 100 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16306DN02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 102.00，最大缺口 178.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.30s，main_topup=0.01s，retry=0.00s，failed_pool=0.00s，repack=0.52s，total=2.26s。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 4 个，总指数 4，目标 192，理论最多达标托盘 0 个，剩余指数 4。
+  - 几何诊断：典型整层堆叠单盘参考上限 4/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 4 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16306DN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 188.00，最大缺口 188.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16316AN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（less_than_2_consolidatable）。
+托盘类型 MH423C（销售订单号：LFEG16316AN02S）处理完成：总托盘 2，指数达标 1，未达标 1，平均缺口 117.00，最大缺口 117.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=30.96s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=30.96s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16316AN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 托盘 MH423C-LFEG16316AN02S__SPLITREST__-1 未找到可行装箱方案，启用剩余箱子守恒兜底。
+[WCS-装] 装箱异常：剩余箱子无法合法放入单箱兜底托盘，box_id=WCS-1457-YZX507-0000, box_type=YZX507, pallet_type=MH423C, sales_order_no=LFEG16316AN02S__SPLITREST__
+[WCS-装] 算完后 need_repack=False → 继续等待。
+[WCS-装] 等待 need_repack（立库相对库表有变化才开算）…
+============================================================
+[WCS-拉] 20260729_103502：拉取接口 1 …
+[WCS-拉] 原始响应已保存：D:\research_code\final\zhuang\packing-workspace\input\raw\20260729_103502.json
+[WCS-拉] 已剔除 case_type≠MH423C 的品类 54 条（类型：['WR246']），保留 1611 条。
+[WCS-DB] wcs_stock_box 已全量替换：清空 1624 → 插入 1611
+[WCS-拉] wcs_stock_box 已全量替换：删 1624，插 1611。
+[WCS-DB] wcs_stock_box_all product_code 已存在、跳过 1606 条
+[WCS-拉] wcs_stock_box_all 追加：新插入 5，跳过已有 1606（历史不删）。
+[WCS-拉] 库存有变化 → need_repack=True，唤醒装箱。
+[WCS] 已加载 BMS 参考表：D:\research_code\final\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+============================================================
+[WCS-装] 20260729_103506：库存行 1611 条，开始装箱 …
+[WCS-装] 展开为 1611 个箱子。
+数据预处理和箱子分组完成（按托盘类型+销售订单号）。
+----------------------------------------
+  - 组内子聚类：18 个混合订单拆出规则子集走 GCP、杂箱走 baseline。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16306DN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 74.25，最大缺口 131.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/1/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=54.43s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=2.50s，total=56.94s。
+  - 条件双路径棘轮：替代完整路径通过守恒和最终门禁，严格优于 GCP，已采用。
+正在处理托盘类型：MH423C，销售订单号：LAMY16315FN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAMY16315FN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 104.50，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/1/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.91s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.78s，total=1.69s。
+正在处理托盘类型：MH423C，销售订单号：LAMY16315FN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 13 个，总指数 48.5，目标 192，理论最多达标托盘 0 个，剩余指数 48.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 48.5/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 48.5 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAMY16315FN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 143.50，最大缺口 143.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.05s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.05s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN02S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 63.00，最大缺口 63.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.67s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=1.67s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305EN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 22 个，总指数 84.5，目标 192，理论最多达标托盘 0 个，剩余指数 84.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 67/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 67 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305EN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 107.50，最大缺口 107.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.15s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.15s。
+正在处理托盘类型：MH423C，销售订单号：PAID16306DN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16306DN01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 97.00，最大缺口 97.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=1.60s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=1.60s。
+正在处理托盘类型：MH423C，销售订单号：PAID16306DN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 1，目标 192，理论最多达标托盘 0 个，剩余指数 1。
+  - 几何诊断：典型整层堆叠单盘参考上限 1/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 1 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16306DN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.00，最大缺口 191.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16305BN01S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 99.50，最大缺口 174.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=2.01s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=1.41s，total=3.42s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 12 个，总指数 48，目标 192，理论最多达标托盘 0 个，剩余指数 48。
+  - 几何诊断：典型整层堆叠单盘参考上限 48/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 48 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN01S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 144.00，最大缺口 144.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.01s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16300IN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16300IN03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 70.00，最大缺口 70.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.71s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.71s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16300IN03S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 3 个，总指数 4.5，目标 192，理论最多达标托盘 0 个，剩余指数 4.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 4.5/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 4.5 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LFEG16300IN03S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 187.50，最大缺口 187.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.01s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN03S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN03S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 157.00，最大缺口 157.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.09s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.09s。
+正在处理托盘类型：MH423C，销售订单号：LAID16305BN03S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 1 个，总指数 0.5，目标 192，理论最多达标托盘 0 个，剩余指数 0.5。
+  - 几何诊断：典型整层堆叠单盘参考上限 0.5/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 0.5 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16305BN03S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 191.50，最大缺口 191.50，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：PAID16305EC01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 2 个，总指数 2，目标 192，理论最多达标托盘 0 个，剩余指数 2。
+  - 几何诊断：典型整层堆叠单盘参考上限 2/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 2 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：PAID16305EC01S）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 190.00，最大缺口 190.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.00s。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 44 个，总指数 180，目标 192，理论最多达标托盘 0 个，剩余指数 180。
+  - 几何诊断：典型整层堆叠单盘参考上限 100/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 100 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：LAID16306DN02S）处理完成：总托盘 2，指数达标 0，未达标 2，平均缺口 102.00，最大缺口 178.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/2，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.30s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.51s，total=2.21s。
+正在处理托盘类型：MH423C，销售订单号：LAID16306DN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 4 个，总指数 4，目标 192，理论最多达标托盘 0 个，剩余指数 4。
+  - 几何诊断：典型整层堆叠单盘参考上限 4/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 4 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（no_target_or_single_plan）。
+托盘类型 MH423C（销售订单号：LAID16306DN02S__SPLITREST__）处理完成：总托盘 1，指数达标 0，未达标 1，平均缺口 188.00，最大缺口 188.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.00s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=0.02s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16316AN02S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（less_than_2_consolidatable）。
+托盘类型 MH423C（销售订单号：LFEG16316AN02S）处理完成：总托盘 2，指数达标 1，未达标 1，平均缺口 117.00，最大缺口 117.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/1，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=30.97s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.00s，total=30.97s。
+正在处理托盘类型：MH423C，销售订单号：LFEG16316AN02S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 托盘 MH423C-LFEG16316AN02S__SPLITREST__-1 未找到可行装箱方案，启用剩余箱子守恒兜底。
+[WCS-装] 装箱异常：剩余箱子无法合法放入单箱兜底托盘，box_id=WCS-1439-YZX507-0000, box_type=YZX507, pallet_type=MH423C, sales_order_no=LFEG16316AN02S__SPLITREST__
+[WCS-装] 算完后 need_repack=False → 继续等待。
+[WCS-装] 等待 need_repack（立库相对库表有变化才开算）…
+============================================================
+[WCS-拉] 20260729_103823：拉取接口 1 …
+[WCS-STOP] 真实接口调用失败（本轮拉取），服务停止：HTTPConnectionPool(host='10.222.10.1', port=8092): Max retries exceeded with url: /api/wcs/reqstockinfo (Caused by ConnectTimeoutError(<HTTPConnection(host='10.222.10.1', port=8092) at 0x1aaf49d9e50>, 'Connection to 10.222.10.1 timed out. (connect timeout=30)'))
+[UI] 接口装箱服务已停止。

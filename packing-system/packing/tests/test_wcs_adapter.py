@@ -123,7 +123,11 @@ def test_end_to_end_roundtrip():
         assert len(cartons) == 96
         assert [ct['seq'] for ct in cartons] == list(range(1, 97)), \
             'seq 连续 1..N（(z,y,x) 码垛序）'
-        assert {ct['layer_id'] for ct in c['layers'][0]['cartons']} == {1}
+        assert {
+            ct['layer_id']
+            for layer in c['layers']
+            for ct in layer['cartons']
+        } == {1}
         # ⚠️ 真实尺寸口径：350 而非 +2mm 的 352
         assert all(ct['length'] == 350.0 and ct['width'] == 265.0
                    and ct['height'] == 240.0 for ct in cartons)

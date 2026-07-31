@@ -1,0 +1,305 @@
+[
+  {
+    "box_index": 1,
+    "box_unique_id": "19bfbf346be6414d8f612768cfb50f4b",
+    "total_height": 720.0,
+    "order_id": "LAID16315EN01S",
+    "case_group": "0",
+    "case_type": "MH423C",
+    "case_source": "DH",
+    "layers": [
+      {
+        "cartons": [
+          {
+            "length": 700.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 1,
+            "seq": 1,
+            "product_code": 30077093
+          },
+          {
+            "length": 700.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 1,
+            "seq": 2,
+            "product_code": 30077105
+          },
+          {
+            "length": 700.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 1,
+            "seq": 3,
+            "product_code": 30077083
+          },
+          {
+            "length": 700.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 1,
+            "seq": 4,
+            "product_code": 30077079
+          },
+          {
+            "length": 700.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 1,
+            "seq": 5,
+            "product_code": 30077106
+          },
+          {
+            "length": 700.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 1,
+            "seq": 6,
+            "product_code": 30077087
+          },
+          {
+            "length": 700.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 1,
+            "seq": 8,
+            "product_code": 30077107
+          },
+          {
+            "length": 700.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 1,
+            "seq": 9,
+            "product_code": 30077094
+          }
+        ]
+      },
+      {
+        "cartons": [
+          {
+            "length": 700.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 2,
+            "seq": 7,
+            "product_code": 30077082
+          },
+          {
+            "length": 700.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 2,
+            "seq": 10,
+            "product_code": 30077100
+          },
+          {
+            "length": 700.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 2,
+            "seq": 11,
+            "product_code": 30074443
+          },
+          {
+            "length": 700.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 2,
+            "seq": 12,
+            "product_code": 30077081
+          },
+          {
+            "length": 700.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 2,
+            "seq": 13,
+            "product_code": 30077103
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 2,
+            "seq": 14,
+            "product_code": 30077281
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 2,
+            "seq": 16,
+            "product_code": 30077278
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 2,
+            "seq": 17,
+            "product_code": 30077298
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 2,
+            "seq": 18,
+            "product_code": 30077290
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 2,
+            "seq": 19,
+            "product_code": 30077280
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 2,
+            "seq": 20,
+            "product_code": 30077279
+          }
+        ]
+      },
+      {
+        "cartons": [
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 15,
+            "product_code": 30077305
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 21,
+            "product_code": 30077284
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 22,
+            "product_code": 30077292
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 23,
+            "product_code": 30077277
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 24,
+            "product_code": 30077268
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 25,
+            "product_code": 30077262
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 26,
+            "product_code": 30077265
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 27,
+            "product_code": 30077286
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 28,
+            "product_code": 30077259
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 29,
+            "product_code": 30081532
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 30,
+            "product_code": 30081530
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 31,
+            "product_code": 30073912
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 32,
+            "product_code": 30077287
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 33,
+            "product_code": 30077282
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 34,
+            "product_code": 30081535
+          },
+          {
+            "length": 350.0,
+            "width": 530.0,
+            "height": 240.0,
+            "layer_id": 3,
+            "seq": 35,
+            "product_code": 30073910
+          }
+        ]
+      }
+    ]
+  }
+]

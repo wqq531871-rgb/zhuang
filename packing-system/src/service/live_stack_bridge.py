@@ -107,16 +107,13 @@ def _upsert_history(
     uid = str(entry.get("box_unique_id") or "").strip()
     items = list_selected_pallets(workspace)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    # 同一 uid 再来：更新并移到末尾；其余仍是「进行中」的标为已完成（WCS 已换盘）
+    # 同一 uid 再来：更新并移到末尾。其它托盘只有在 PLC 最后 seq
+    # 完成握手后才能结束，选中新托盘本身不是完成信号。
     kept: List[Dict[str, Any]] = []
     for old in items:
         old_uid = str(old.get("box_unique_id") or "").strip()
         if old_uid == uid:
             continue
-        if str(old.get("stack_status") or "") == "active":
-            old = dict(old)
-            old["stack_status"] = "done"
-            old["completed_at"] = now
         kept.append(old)
     entry = dict(entry)
     entry["stack_status"] = "active"
@@ -248,27 +245,10 @@ def write_live_play_box(
 def clear_current_session_after_replan(
     workspace: Optional[Path] = None,
 ) -> None:
-    """新一轮装箱结果入库后：清空「当前选定托盘」，避免面板一直显示上一盘。
-
-    历史列表保留（三维仍可看过往盘），仅把进行中标为已完成。
-    """
-    path = session_path(workspace)
-    if path.is_file():
-        try:
-            path.unlink()
-        except OSError:
-            _atomic_write(path, {})
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    items = list_selected_pallets(workspace)
-    if not items:
-        print("[现场会话] 新计算结果已入库，当前选定托盘已清空")
-        return
-    updated = []
-    for old in items:
-        entry = dict(old)
-        if str(entry.get("stack_status") or "") == "active":
-            entry["stack_status"] = "done"
-            entry["completed_at"] = now
-        updated.append(entry)
-    _atomic_write(history_path(workspace), updated)
-    print(f"[现场会话] 新计算结果已入库，当前选定已清空，历史 {len(updated)} 盘保留")
+    """兼容旧调用：重新计算不改变现场未完成托盘状态。"""
+    session = read_json(session_path(workspace)) or {}
+    uid = str(session.get("box_unique_id") or "").strip()
+    if uid:
+        print(f"[现场会话] 新计算结果已入库，保留未完成托盘 uid={uid}")
+    else:
+        print("[现场会话] 新计算结果已入库，当前没有未完成托盘")

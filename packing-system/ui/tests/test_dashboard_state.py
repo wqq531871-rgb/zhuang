@@ -3,11 +3,51 @@ import pytest
 from dashboard_state import (
     RUN_MODE_OPTIONS,
     apply_download_interval,
+    attach_box_unique_ids_from_wcs_map,
     list_success_pallets,
     normalize_download_interval,
+    regular_irregular_box_counts,
     run_mode_policy,
     successful_pallet_count,
 )
+
+
+def test_attach_box_unique_ids_from_matching_execution_wcs_map(tmp_path):
+    result_path = tmp_path / "packing_plan_20260731_163233_execution.json"
+    result_path.write_text('{"pallets": []}', encoding="utf-8")
+    map_path = tmp_path / "packing_plan_20260731_163233_execution_wcs_map.json"
+    map_path.write_text(
+        """
+        {
+          "9827a6fe82ef46258f298c90f342c732": {
+            "pallet_id": "MH423C-PAIN26316EN01S-1"
+          },
+          "b29a7c234efb4363862a2a676968d62d": {
+            "pallet_id": "MH423C-PAIN26316EN01S-2"
+          }
+        }
+        """,
+        encoding="utf-8",
+    )
+    pallets = [
+        {"pallet_id": "MH423C-PAIN26316EN01S-1"},
+        {"pallet_id": "MH423C-PAIN26316EN01S-2"},
+        {"pallet_id": "UNMAPPED-1"},
+    ]
+
+    attach_box_unique_ids_from_wcs_map(pallets, result_path)
+
+    assert pallets == [
+        {
+            "pallet_id": "MH423C-PAIN26316EN01S-1",
+            "box_unique_id": "9827a6fe82ef46258f298c90f342c732",
+        },
+        {
+            "pallet_id": "MH423C-PAIN26316EN01S-2",
+            "box_unique_id": "b29a7c234efb4363862a2a676968d62d",
+        },
+        {"pallet_id": "UNMAPPED-1"},
+    ]
 
 
 def test_successful_pallet_count_uses_all_status_values_case_insensitively():
@@ -19,6 +59,80 @@ def test_successful_pallet_count_uses_all_status_values_case_insensitively():
     ]
 
     assert successful_pallet_count(pallets) == 2
+
+
+def test_regular_irregular_box_counts_matches_integer_multiple_specs_across_pallets():
+    pallets = [
+        {
+            "packed_items": [
+                {"original_length": 100, "original_width": 80, "original_height": 50},
+                {"original_length": 100, "original_width": 80, "original_height": 50},
+            ]
+        },
+        {
+            "packed_items": [
+                {"original_length": 200, "original_width": 160, "original_height": 100},
+                {"original_length": 150, "original_width": 120, "original_height": 80},
+                {"original_length": 150, "original_width": 120, "original_height": 80},
+            ]
+        },
+    ]
+
+    assert regular_irregular_box_counts(pallets) == (3, 2)
+
+
+def test_regular_irregular_box_counts_prefers_original_dimensions_over_gap_dimensions():
+    pallets = [
+        {
+            "packed_items": [
+                {
+                    "length": 102,
+                    "width": 82,
+                    "height": 50,
+                    "original_length": 100,
+                    "original_width": 80,
+                    "original_height": 50,
+                },
+                {
+                    "length": 202,
+                    "width": 162,
+                    "height": 100,
+                    "original_length": 200,
+                    "original_width": 160,
+                    "original_height": 100,
+                },
+            ]
+        }
+    ]
+
+    assert regular_irregular_box_counts(pallets) == (2, 0)
+
+
+def test_regular_irregular_box_counts_treats_invalid_and_unmatched_boxes_as_irregular():
+    pallets = [
+        {
+            "packed_items": [
+                {"raw_length": 100, "raw_width": 80, "raw_height": 50},
+                {"length": 0, "width": 80, "height": 50},
+                {"length": "bad", "width": 80, "height": 50},
+            ]
+        }
+    ]
+
+    assert regular_irregular_box_counts(pallets) == (0, 3)
+
+
+def test_regular_irregular_box_counts_accepts_small_float_rounding_noise():
+    pallets = [
+        {
+            "packed_items": [
+                {"length": 100, "width": 80, "height": 50},
+                {"length": 200.00000001, "width": 160, "height": 100},
+            ]
+        }
+    ]
+
+    assert regular_irregular_box_counts(pallets) == (2, 0)
 
 
 def test_list_success_pallets_requires_success_status_and_pallet_id():

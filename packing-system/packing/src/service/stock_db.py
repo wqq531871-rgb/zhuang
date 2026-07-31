@@ -193,10 +193,16 @@ class WcsStockRepository(_BaseStockRepository):
     def load_product_code_set(self) -> Set[int]:
         return self._all_product_codes(self.TABLE)
 
-    def sync_stock_entries(self, entries: Sequence[Dict]) -> StockSyncStats:
+    def sync_stock_entries(
+        self,
+        entries: Sequence[Dict],
+        *,
+        allow_empty_replace: bool = False,
+    ) -> StockSyncStats:
         """按 product_code 集合对比；有差异则整表替换，一致则不动。
 
-        本次无任何合法 product_code 时不洗库（防空包）。
+        本次无任何合法 product_code 时默认不洗库（防空包）。调用方已确认
+        空集合是经过校验后的真实快照时，可显式允许清空当前库存。
         """
         prepared, skipped_invalid, invalid_samples = prepare_stock_rows(entries)
         if skipped_invalid:
@@ -205,7 +211,7 @@ class WcsStockRepository(_BaseStockRepository):
                 f"{skipped_invalid} 条（样例：{', '.join(invalid_samples)}）"
             )
 
-        if not prepared:
+        if not prepared and not allow_empty_replace:
             return StockSyncStats(
                 skipped_invalid=skipped_invalid,
                 unchanged=True,
@@ -233,7 +239,8 @@ class WcsStockRepository(_BaseStockRepository):
         )
         with self._cursor() as (_conn, cur):
             cur.execute(f"DELETE FROM {self.TABLE}")
-            cur.executemany(sql, prepared)
+            if prepared:
+                cur.executemany(sql, prepared)
 
         print(
             f"[WCS-DB] {self.TABLE} 已全量替换："

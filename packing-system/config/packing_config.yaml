@@ -154,8 +154,8 @@ data_source:
   stock_path: api/wcs/reqstockinfo
   # TODO(4.2 规划订单输出 path): 规划结果推送路径，拼在根地址后（注意：/api/wcs/...，不是 /adaptor/...）。
   plan_path: api/wcs/sendpalletplanresult
-  # TODO(4.5 托盘更新 path): 机械臂向 WCS 请求新托盘；完整地址待与现场确认（文档约定 /adaptor/api/wcs/reqpallet）。
-  # reqpallet_path: adaptor/api/wcs/reqpallet
+  # 4.5 托盘更新：机械臂码垛完成后向 WCS 上报。
+  reqpallet_path: api/wcs/reqpallet
   # TODO(拉取间隔): 4.1 轮询间隔（秒）。UI「拉取间隔」可改，写入本次临时配置后生效。
   download_interval: 200
   input_dir: input

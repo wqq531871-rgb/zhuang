@@ -391,6 +391,17 @@ def test_debug_load_path_fills_boxes_and_playback():
 
 
 @pytest.mark.skipif(not SAMPLE.is_file(), reason="缺少样例 JSON")
+def test_selected_pallet_displays_full_box_unique_id():
+    _app()
+    window = _test_window()
+
+    window.load_path(SAMPLE)
+
+    assert window.order_label.text() == "ea1ed40cb35f4842bad04e45ac5a95b1"
+    window.close()
+
+
+@pytest.mark.skipif(not SAMPLE.is_file(), reason="缺少样例 JSON")
 def test_orientation_change_only_updates_selected_box():
     app = _app()
     window = _test_window()

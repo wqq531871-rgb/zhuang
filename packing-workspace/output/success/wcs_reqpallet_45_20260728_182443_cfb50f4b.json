@@ -1,0 +1,277 @@
+{
+  "box_unique_id_source": "19bfbf346be6414d8f612768cfb50f4b",
+  "request": {
+    "robot_id": "5",
+    "station_id": "N12X010",
+    "pallet_code": "KDDM24170113",
+    "case_type": "MH423C",
+    "empty_flag": false,
+    "case_data": [
+      {
+        "box_index": 1,
+        "box_unique_id": "19bfbf346be6414d8f612768cfb50f4b",
+        "case_group": "0",
+        "height": 0,
+        "layers": [
+          {
+            "cartons": [
+              {
+                "seq": 1,
+                "length": 700.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077093"
+              },
+              {
+                "seq": 2,
+                "length": 700.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077105"
+              },
+              {
+                "seq": 3,
+                "length": 700.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077083"
+              },
+              {
+                "seq": 4,
+                "length": 700.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077079"
+              },
+              {
+                "seq": 5,
+                "length": 700.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077106"
+              },
+              {
+                "seq": 6,
+                "length": 700.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077087"
+              },
+              {
+                "seq": 8,
+                "length": 700.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077107"
+              },
+              {
+                "seq": 9,
+                "length": 700.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077094"
+              }
+            ]
+          },
+          {
+            "cartons": [
+              {
+                "seq": 7,
+                "length": 700.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077082"
+              },
+              {
+                "seq": 10,
+                "length": 700.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077100"
+              },
+              {
+                "seq": 11,
+                "length": 700.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30074443"
+              },
+              {
+                "seq": 12,
+                "length": 700.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077081"
+              },
+              {
+                "seq": 13,
+                "length": 700.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077103"
+              },
+              {
+                "seq": 14,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077281"
+              },
+              {
+                "seq": 16,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077278"
+              },
+              {
+                "seq": 17,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077298"
+              },
+              {
+                "seq": 18,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077290"
+              },
+              {
+                "seq": 19,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077280"
+              },
+              {
+                "seq": 20,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077279"
+              }
+            ]
+          },
+          {
+            "cartons": [
+              {
+                "seq": 15,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077305"
+              },
+              {
+                "seq": 21,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077284"
+              },
+              {
+                "seq": 22,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077292"
+              },
+              {
+                "seq": 23,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077277"
+              },
+              {
+                "seq": 24,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077268"
+              },
+              {
+                "seq": 25,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077262"
+              },
+              {
+                "seq": 26,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077265"
+              },
+              {
+                "seq": 27,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077286"
+              },
+              {
+                "seq": 28,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077259"
+              },
+              {
+                "seq": 29,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30081532"
+              },
+              {
+                "seq": 30,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30081530"
+              },
+              {
+                "seq": 31,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30073912"
+              },
+              {
+                "seq": 32,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077287"
+              },
+              {
+                "seq": 33,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30077282"
+              },
+              {
+                "seq": 34,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30081535"
+              },
+              {
+                "seq": 35,
+                "length": 350.0,
+                "width": 530.0,
+                "height": 240.0,
+                "product_code": "30073910"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

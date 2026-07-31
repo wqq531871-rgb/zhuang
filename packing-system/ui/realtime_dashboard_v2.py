@@ -75,7 +75,10 @@ try:
         ordered_packed_items,
         sequence_mode_key,
     )
-    from dashboard_state import successful_pallet_count
+    from dashboard_state import (
+        regular_irregular_box_counts,
+        successful_pallet_count,
+    )
     from result_sequence_update import (
         apply_seq_values,
         find_pallet_in_plan,
@@ -876,6 +879,9 @@ class PalletPreviewCard(QtWidgets.QFrame):
         head = QtWidgets.QHBoxLayout()
         self.title = QtWidgets.QLabel("--")
         self.title.setObjectName("PreviewTitle")
+        self.title.setTextInteractionFlags(
+            QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard
+        )
         self.stats = QtWidgets.QLabel("--")
         self.stats.setObjectName("PreviewSub")
         self.stats.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
@@ -887,6 +893,13 @@ class PalletPreviewCard(QtWidgets.QFrame):
         head.addWidget(self.stats)
         head.addWidget(self.btn_zoom)
         layout.addLayout(head)
+
+        self.box_unique_id = QtWidgets.QLabel("box_unique_id：--")
+        self.box_unique_id.setObjectName("PreviewSub")
+        self.box_unique_id.setTextInteractionFlags(
+            QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard
+        )
+        layout.addWidget(self.box_unique_id)
 
         self.sub = QtWidgets.QLabel("--")
         self.sub.setObjectName("PreviewSub")
@@ -980,11 +993,13 @@ class PalletPreviewCard(QtWidgets.QFrame):
         self.canvas.set_selected_box_key(selected_box_key if selected else None, render=False)
         if not pallet:
             self.title.setText("空位")
+            self.box_unique_id.setText("")
             self.sub.setText("")
             self.stats.setText("")
             self.canvas.set_pallet(None)
             return
         pid = safe_str(pallet.get("pallet_id"), "--")
+        box_unique_id = safe_str(pallet.get("box_unique_id"), "--")
         status = safe_str(pallet.get("mpm_status"), "UNKNOWN")
         count = len(pallet.get("packed_items", []) or [])
         fill_rate = safe_float(pallet.get("fill_rate"), float("nan"))
@@ -1002,6 +1017,7 @@ class PalletPreviewCard(QtWidgets.QFrame):
             "SKIPPED_FAILED_PALLET": "失败盘不排序",
         }.get(sequence_status, sequence_status)
         self.title.setText(pid)
+        self.box_unique_id.setText(f"box_unique_id：{box_unique_id}")
         self.sub.setText(
             f"状态：{status}｜箱数：{count}｜填充率：{fill_txt}｜指数：{index_txt}｜{sequence_short}"
         )
@@ -1640,12 +1656,16 @@ class IndustrialPackingWorkbench(BaseDashboard):
         self.card_height = MetricCard("高度利用率")
         self.card_support = MetricCard("平均支撑率")
         self.card_cg = MetricCard("重心偏移")
+        self.card_regular_boxes = MetricCard("规则箱子数目")
+        self.card_irregular_boxes = MetricCard("不规则箱子数目")
         cards = [
+            self.card_regular_boxes, self.card_irregular_boxes,
             self.card_fill, self.card_mpm, self.card_score, self.card_level,
-            self.card_boxes, self.card_mass, self.card_height, self.card_support, self.card_cg,
+            self.card_boxes, self.card_mass, self.card_height, self.card_support,
         ]
         for i, card in enumerate(cards):
             grid.addWidget(card, i // 2, i % 2)
+        grid.addWidget(self.card_cg, 5, 0)
         layout.addLayout(grid)
 
         suggestion_box = QtWidgets.QFrame()
@@ -2864,6 +2884,19 @@ class IndustrialPackingWorkbench(BaseDashboard):
                 self.card_mpm.set_data(index_value, f"状态 {mpm_status}，缺口 {mpm_gap:g}", "good" if mpm_status == "SUCCESS" else "bad")
         self._update_v2_summary()
 
+    def _update_box_count_cards(self) -> None:
+        if not hasattr(self, "card_regular_boxes") or not hasattr(self, "card_irregular_boxes"):
+            return
+        regular_count, irregular_count = regular_irregular_box_counts(
+            getattr(self, "pallets", [])
+        )
+        self.card_regular_boxes.set_data(
+            str(regular_count), "长宽高均有整数倍规格", "good"
+        )
+        self.card_irregular_boxes.set_data(
+            str(irregular_count), "未找到整数倍规格", "warn" if irregular_count else "good"
+        )
+
     def populate_after_load(self) -> None:
         super().populate_after_load()
         self.step_result.set_state("done", "可以选择托盘查看详情")
@@ -2879,6 +2912,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
                 "全部结果中的成功托盘",
                 "good" if success_total else "normal",
             )
+        self._update_box_count_cards()
         self._populate_overview_cards()
         self._on_sequence_mode_changed()
         self._set_status("done")
@@ -2893,7 +2927,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
         for kpi in ["kpi_score_big", "kpi_level_big", "kpi_support_big", "kpi_risk_big"]:
             if hasattr(self, kpi):
                 getattr(self, kpi).set_data("--", "等待结果")
-        for card_name in ["card_score", "card_level", "card_boxes", "card_mass", "card_fill", "card_mpm", "card_height", "card_support", "card_cg", "card_avg_fill", "card_success_total"]:
+        for card_name in ["card_score", "card_level", "card_boxes", "card_mass", "card_fill", "card_mpm", "card_height", "card_support", "card_cg", "card_avg_fill", "card_success_total", "card_regular_boxes", "card_irregular_boxes"]:
             if hasattr(self, card_name):
                 getattr(self, card_name).set_data("--", "--")
         if hasattr(self, "overview_cards"):

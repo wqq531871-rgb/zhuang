@@ -1,5 +1,7 @@
+import copy
 import json
 import sys
+import time
 import types
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,8 +25,10 @@ except ModuleNotFoundError:
 from src.service.wcs_service import (
     PackRunResult,
     WcsPackingService,
+    _split_positive_dimension_entries,
     select_wcs_plan_result,
 )
+import src.service.wcs_service as wcs_service_module
 import run_wcs_service
 
 
@@ -43,6 +47,127 @@ class _NeverStoppingEvent:
         return False
 
 
+def _stock_entry(product_code, **overrides):
+    entry = {
+        "length": 350,
+        "width": 530,
+        "height": 360,
+        "target_num": 1,
+        "box_type": "YZX507",
+        "case_type": "MH423C",
+        "product_code": product_code,
+        "order_id": "ORDER-1",
+    }
+    entry.update(overrides)
+    return entry
+
+
+def test_split_positive_dimension_entries_rejects_every_invalid_dimension():
+    entries = [
+        _stock_entry(1),
+        _stock_entry(2, length=0),
+        _stock_entry(3, width=-1),
+        _stock_entry(4, height=None),
+        _stock_entry(5, length="not-a-number"),
+        _stock_entry(6, width=float("inf")),
+        _stock_entry(7, height=float("nan")),
+    ]
+    original = copy.deepcopy(entries)
+
+    valid, invalid = _split_positive_dimension_entries(entries)
+
+    assert [entry["product_code"] for entry in valid] == [1]
+    assert [entry["product_code"] for entry in invalid] == [2, 3, 4, 5, 6, 7]
+    assert entries == original
+
+
+def test_fetch_once_filters_invalid_dimensions_before_both_stock_tables(
+    tmp_path, monkeypatch, capsys
+):
+    valid = _stock_entry(100)
+    invalid = _stock_entry(200, length=0, width=530, height=360)
+    service = object.__new__(WcsPackingService)
+    service._ds = SimpleNamespace(
+        effective_api_base_url="https://wcs.example",
+        stock_path="/stock",
+        input_dir=tmp_path / "input",
+        output_dir=tmp_path / "output",
+    )
+    service._repo = Mock()
+    service._repo.sync_stock_entries.return_value = SimpleNamespace(
+        unchanged=False,
+        changed=True,
+        deleted=2,
+        inserted=1,
+    )
+    service._repo_all = Mock()
+    service._repo_all.insert_new_stock_entries.return_value = SimpleNamespace(
+        inserted=1,
+        skipped_existing=0,
+    )
+    service._ensure_dirs()
+    monkeypatch.setattr(
+        wcs_service_module,
+        "fetch_stock_response",
+        lambda *_args: {"data": [valid, invalid]},
+    )
+
+    result = service.fetch_once()
+
+    assert result == 1
+    service._repo.sync_stock_entries.assert_called_once_with([valid])
+    service._repo_all.insert_new_stock_entries.assert_called_once_with([valid])
+    raw_files = list(service.raw_dir.glob("*.json"))
+    assert len(raw_files) == 1
+    assert json.loads(raw_files[0].read_text(encoding="utf-8"))["data"] == [
+        valid,
+        invalid,
+    ]
+    output = capsys.readouterr().out
+    assert "忽略 1 条" in output
+    assert "product_code=200" in output
+    assert "0×530×360" in output
+
+
+def test_fetch_once_clears_current_snapshot_when_all_candidates_have_invalid_dimensions(
+    tmp_path, monkeypatch
+):
+    invalid = _stock_entry(200, length=0)
+    service = object.__new__(WcsPackingService)
+    service._ds = SimpleNamespace(
+        effective_api_base_url="https://wcs.example",
+        stock_path="/stock",
+        input_dir=tmp_path / "input",
+        output_dir=tmp_path / "output",
+    )
+    service._repo = Mock()
+    service._repo.sync_stock_entries.return_value = SimpleNamespace(
+        unchanged=False,
+        changed=True,
+        deleted=1,
+        inserted=0,
+    )
+    service._repo_all = Mock()
+    service._repo_all.insert_new_stock_entries.return_value = SimpleNamespace(
+        inserted=0,
+        skipped_existing=0,
+    )
+    service._ensure_dirs()
+    monkeypatch.setattr(
+        wcs_service_module,
+        "fetch_stock_response",
+        lambda *_args: {"data": [invalid]},
+    )
+
+    result = service.fetch_once()
+
+    assert result == 1
+    service._repo.sync_stock_entries.assert_called_once_with(
+        [], allow_empty_replace=True
+    )
+    service._repo_all.insert_new_stock_entries.assert_called_once_with([])
+
+
 def _make_service(fetch_results):
     service = object.__new__(WcsPackingService)
     service._stop = _NeverStoppingEvent()
@@ -50,6 +175,34 @@ def _make_service(fetch_results):
     service.fetch_once = Mock(side_effect=list(fetch_results))
     service._reload_reference_data = Mock()
     return service
+
+
+def test_waits_only_for_interval_remainder_after_fast_pack(monkeypatch):
+    service = _make_service([1])
+    service._ds.download_interval = 200
+    monkeypatch.setattr(
+        time,
+        "monotonic",
+        Mock(return_value=200.0),
+    )
+
+    service._wait_for_next_fetch(100.0)
+
+    assert service._stop.wait_calls == [100.0]
+
+
+def test_does_not_wait_after_pack_exceeds_interval(monkeypatch):
+    service = _make_service([1])
+    service._ds.download_interval = 200
+    monkeypatch.setattr(
+        time,
+        "monotonic",
+        Mock(return_value=350.0),
+    )
+
+    service._wait_for_next_fetch(100.0)
+
+    assert service._stop.wait_calls == [0.0]
 
 
 def test_until_success_repeats_until_pack_result_has_success():
@@ -67,7 +220,7 @@ def test_until_success_repeats_until_pack_result_has_success():
 
     assert service.run_until_success() is True
     assert service.pack_once.call_count == 2
-    assert service._stop.wait_calls == [37]
+    assert service._stop.wait_calls == pytest.approx([37], abs=0.01)
 
 
 def test_until_success_does_not_repack_when_fetch_has_no_new_data():
@@ -78,7 +231,7 @@ def test_until_success_does_not_repack_when_fetch_has_no_new_data():
 
     assert service.run_until_success() is True
     service.pack_once.assert_called_once_with()
-    assert service._stop.wait_calls == [37, 37]
+    assert service._stop.wait_calls == pytest.approx([37, 37], abs=0.01)
 
 
 def test_until_success_stops_when_success_and_failed_pallets_coexist():
@@ -126,7 +279,6 @@ def test_effective_url_switches_with_use_real_api():
 def test_handle_fetch_error_stops_only_when_use_real_api():
     service = object.__new__(WcsPackingService)
     service._stop = _NeverStoppingEvent()
-    service._need_repack = Mock()
     service.stopped_by_api_failure = False
     service._ds = SimpleNamespace(use_real_api=True)
 
@@ -135,7 +287,6 @@ def test_handle_fetch_error_stops_only_when_use_real_api():
 
     service2 = object.__new__(WcsPackingService)
     service2._stop = _NeverStoppingEvent()
-    service2._need_repack = Mock()
     service2.stopped_by_api_failure = False
     service2._ds = SimpleNamespace(use_real_api=False)
     assert service2._handle_fetch_error(RuntimeError("boom"), "test") is False
