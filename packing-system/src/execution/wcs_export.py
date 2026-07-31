@@ -14,6 +14,8 @@ from .sequence_planner import (
     plan_execution_report,
 )
 
+WCS_OUTPUT_LAYER_ID = 1
+
 
 def _item_z(item: Dict) -> float:
     return round(float((item.get("position") or {}).get("z", 0) or 0), 3)
@@ -39,14 +41,14 @@ def _layers_in_execution_order(
     for seq, item in enumerate(items, 1):
         z = _item_z(item)
         height = _true_dim(item, "height")
-        layer_id = layer_of[z]
+        geometric_layer_id = layer_of[z]
         total_height = max(total_height, z + height)
-        by_layer.setdefault(layer_id, []).append(
+        by_layer.setdefault(geometric_layer_id, []).append(
             {
                 "length": _true_dim(item, "length"),
                 "width": _true_dim(item, "width"),
                 "height": height,
-                "layer_id": layer_id,
+                "layer_id": WCS_OUTPUT_LAYER_ID,
                 "seq": seq,
                 "product_code": int(item.get("product_code") or 0),
             }

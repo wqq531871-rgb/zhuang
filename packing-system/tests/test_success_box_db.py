@@ -428,7 +428,11 @@ def test_build_wcs_case_from_box_rows_layers_and_height():
     assert case["case_source"] == "DH"
     assert len(case["layers"]) == 2
     assert case["layers"][0]["cartons"][0]["seq"] == 1
-    assert case["layers"][1]["cartons"][0]["layer_id"] == 2
+    assert [
+        carton["layer_id"]
+        for layer in case["layers"]
+        for carton in layer["cartons"]
+    ] == [1, 1]
     assert case["layers"][1]["cartons"][0]["product_code"] == 222
 
 

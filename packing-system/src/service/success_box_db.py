@@ -24,6 +24,7 @@ from src.utils.case_group import normalize_case_group
 # Excel / 缺码时生成的内部码区间（与正式 WCS 短码区分开，仅本表内部用）
 _INTERNAL_PRODUCT_CODE_MIN = 900_000_000_000_000
 _INTERNAL_PRODUCT_CODE_MAX = 999_999_999_999_999
+WCS_OUTPUT_LAYER_ID = 1
 
 # is_send：2=未下传（默认），1=已下传
 IS_SEND_UNSENT = "2"
@@ -229,13 +230,13 @@ def build_wcs_case_from_box_rows(
         z = round(float(row.get("pos_z") or 0.0), 3)
         height = float(row.get("raw_height") or 0.0)
         total_height = max(total_height, z + height)
-        layer_id = layer_of[z]
-        by_layer.setdefault(layer_id, []).append(
+        geometric_layer_id = layer_of[z]
+        by_layer.setdefault(geometric_layer_id, []).append(
             {
                 "length": float(row.get("raw_length") or 0.0),
                 "width": float(row.get("raw_width") or 0.0),
                 "height": height,
-                "layer_id": layer_id,
+                "layer_id": WCS_OUTPUT_LAYER_ID,
                 "seq": int(row.get("seq") or 0),
                 "product_code": _product_code_for_wcs(row.get("product_code")),
             }

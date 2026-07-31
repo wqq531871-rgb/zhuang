@@ -46,6 +46,7 @@ _PRIORITY_LAST = 10 ** 9
 
 # 接口 2 每个托盘 case 标记：固定为我方下传来源
 WCS_CASE_SOURCE = "DH"
+WCS_OUTPUT_LAYER_ID = 1
 
 
 def build_stock_request(msgtime: Optional[str] = None) -> Dict:
@@ -257,9 +258,8 @@ def _build_layers(items: List[Dict]) -> Tuple[List[Dict], float]:
 
     - ``seq``：严格沿用装箱报告中的统一执行顺序并连续编号 1..N；字段缺失时
       才回退当前 ``packed_items`` 数组顺序。WCS、映射和机械臂使用同一编号；
-    - ``layer_id``：按 z 起点分组升序编号 1..L。baseline 整层路径语义精确；
-      GCP 柱式混高时为"按 z 的近似分层"。TODO(§8-4): 机械臂端若强依赖物理
-      整层语义需企业确认；执行顺序以 seq 为准、无歧义。
+    - ``layers`` 仍按 z 起点分组升序排列；WCS carton 的 ``layer_id`` 暂时
+      按现场约定固定输出 1。执行顺序以 seq 为准、无歧义。
     - ``total_height``：实际堆叠高度 max(z + 真实高)。
     """
     ordered = _ordered_items(items)
@@ -271,12 +271,12 @@ def _build_layers(items: List[Dict]) -> Tuple[List[Dict], float]:
         z = _item_xyz(it)[0]
         h = _true_dim(it, 'height')
         total_height = max(total_height, z + h)
-        lid = layer_of[z]
-        by_layer.setdefault(lid, []).append({
+        geometric_layer_id = layer_of[z]
+        by_layer.setdefault(geometric_layer_id, []).append({
             'length': _true_dim(it, 'length'),
             'width': _true_dim(it, 'width'),
             'height': h,
-            'layer_id': lid,
+            'layer_id': WCS_OUTPUT_LAYER_ID,
             'seq': seq,
             # TODO: 本地 Excel 数据无 product_code（接口库存有）；缺失按 0，
             # 联调前确认 WCS 是否接受 0 或需保证必有值。

@@ -2802,15 +2802,15 @@ def test_each_execution_item_records_stack_height_before_placement():
     assert [item["stack_height_before"] for item in items] == [0.0, 100.0]
 
 
-def test_wcs_seq_follows_execution_order_while_layer_id_remains_geometric():
+def test_wcs_seq_follows_execution_order_and_layer_id_is_fixed():
     tall = _box("tall", 0, 0, 0, height=300)
     tall["product_code"] = 1
-    short = _box("short", 200, 0, 0, height=100)
-    short["product_code"] = 2
+    top = _box("top", 0, 0, 300, height=100)
+    top["product_code"] = 2
     report = {
         "pallets": [
             {
-                **_pallet([tall, short]),
+                **_pallet([top, tall]),
                 "mpm_status": "FAILED",
                 "case_group": 0,
             }
@@ -2820,6 +2820,7 @@ def test_wcs_seq_follows_execution_order_while_layer_id_remains_geometric():
     result = report_to_execution_plan_result(report)
 
     assert len(result.cases) == 1
+    assert len(result.cases[0]["layers"]) == 2
     cartons = [
         carton
         for layer in result.cases[0]["layers"]
@@ -2832,7 +2833,7 @@ def test_wcs_seq_follows_execution_order_while_layer_id_remains_geometric():
     assert {carton["layer_id"] for carton in cartons_by_seq} == {1}
     mapped = next(iter(result.plan_by_unique_id.values()))
     assert "execution_sequence_diagnostics" not in mapped
-    assert _ids(mapped["packed_items"]) == ["tall", "short"]
+    assert _ids(mapped["packed_items"]) == ["tall", "top"]
     assert all(
         "stack_height_before" not in item
         for item in mapped["packed_items"]
