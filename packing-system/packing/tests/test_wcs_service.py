@@ -1,6 +1,7 @@
 import copy
 import json
 import sys
+import time
 import types
 from pathlib import Path
 from types import SimpleNamespace
@@ -104,7 +105,6 @@ def test_fetch_once_filters_invalid_dimensions_before_both_stock_tables(
         inserted=1,
         skipped_existing=0,
     )
-    service._need_repack = Mock()
     service._ensure_dirs()
     monkeypatch.setattr(
         wcs_service_module,
@@ -117,7 +117,6 @@ def test_fetch_once_filters_invalid_dimensions_before_both_stock_tables(
     assert result == 1
     service._repo.sync_stock_entries.assert_called_once_with([valid])
     service._repo_all.insert_new_stock_entries.assert_called_once_with([valid])
-    service._need_repack.set.assert_called_once_with()
     raw_files = list(service.raw_dir.glob("*.json"))
     assert len(raw_files) == 1
     assert json.loads(raw_files[0].read_text(encoding="utf-8"))["data"] == [
@@ -153,7 +152,6 @@ def test_fetch_once_clears_current_snapshot_when_all_candidates_have_invalid_dim
         inserted=0,
         skipped_existing=0,
     )
-    service._need_repack = Mock()
     service._ensure_dirs()
     monkeypatch.setattr(
         wcs_service_module,
@@ -168,7 +166,6 @@ def test_fetch_once_clears_current_snapshot_when_all_candidates_have_invalid_dim
         [], allow_empty_replace=True
     )
     service._repo_all.insert_new_stock_entries.assert_called_once_with([])
-    service._need_repack.set.assert_called_once_with()
 
 
 def _make_service(fetch_results):
@@ -178,6 +175,34 @@ def _make_service(fetch_results):
     service.fetch_once = Mock(side_effect=list(fetch_results))
     service._reload_reference_data = Mock()
     return service
+
+
+def test_waits_only_for_interval_remainder_after_fast_pack(monkeypatch):
+    service = _make_service([1])
+    service._ds.download_interval = 200
+    monkeypatch.setattr(
+        time,
+        "monotonic",
+        Mock(return_value=200.0),
+    )
+
+    service._wait_for_next_fetch(100.0)
+
+    assert service._stop.wait_calls == [100.0]
+
+
+def test_does_not_wait_after_pack_exceeds_interval(monkeypatch):
+    service = _make_service([1])
+    service._ds.download_interval = 200
+    monkeypatch.setattr(
+        time,
+        "monotonic",
+        Mock(return_value=350.0),
+    )
+
+    service._wait_for_next_fetch(100.0)
+
+    assert service._stop.wait_calls == [0.0]
 
 
 def test_until_success_repeats_until_pack_result_has_success():
@@ -195,7 +220,7 @@ def test_until_success_repeats_until_pack_result_has_success():
 
     assert service.run_until_success() is True
     assert service.pack_once.call_count == 2
-    assert service._stop.wait_calls == [37]
+    assert service._stop.wait_calls == pytest.approx([37], abs=0.01)
 
 
 def test_until_success_does_not_repack_when_fetch_has_no_new_data():
@@ -206,7 +231,7 @@ def test_until_success_does_not_repack_when_fetch_has_no_new_data():
 
     assert service.run_until_success() is True
     service.pack_once.assert_called_once_with()
-    assert service._stop.wait_calls == [37, 37]
+    assert service._stop.wait_calls == pytest.approx([37, 37], abs=0.01)
 
 
 def test_until_success_stops_when_success_and_failed_pallets_coexist():
@@ -254,7 +279,6 @@ def test_effective_url_switches_with_use_real_api():
 def test_handle_fetch_error_stops_only_when_use_real_api():
     service = object.__new__(WcsPackingService)
     service._stop = _NeverStoppingEvent()
-    service._need_repack = Mock()
     service.stopped_by_api_failure = False
     service._ds = SimpleNamespace(use_real_api=True)
 
@@ -263,7 +287,6 @@ def test_handle_fetch_error_stops_only_when_use_real_api():
 
     service2 = object.__new__(WcsPackingService)
     service2._stop = _NeverStoppingEvent()
-    service2._need_repack = Mock()
     service2.stopped_by_api_failure = False
     service2._ds = SimpleNamespace(use_real_api=False)
     assert service2._handle_fetch_error(RuntimeError("boom"), "test") is False
