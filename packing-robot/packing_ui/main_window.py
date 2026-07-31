@@ -303,7 +303,7 @@ class PackingMainWindow(QMainWindow):
                 self.scene.set_plan(None)
             self._rebuild_actions(selected_index=0)
             return
-        self.order_label.setText(self.current_plan.sales_order_no or "—")
+        self.order_label.setText(self.current_plan.source_key or "—")
         self.type_label.setText(self.current_plan.pallet_type or "—")
         self._live_pallet_uid = self.current_plan.source_key
         for item in self.current_plan.items:
