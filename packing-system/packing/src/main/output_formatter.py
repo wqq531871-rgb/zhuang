@@ -94,6 +94,7 @@ def build_json_output_plan(
             item['original_width'] = raw_width
             item['original_height'] = raw_height
             item.pop('layered_oriented', None)  # 内部旋转标记，不进对外输出
+            item.pop('_normal_order', None)  # 内部正常订单标记，不进对外输出
             item['volume'] = float(
                 raw.get(
                     'volume',

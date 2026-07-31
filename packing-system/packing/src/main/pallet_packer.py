@@ -11,6 +11,12 @@ from copy import deepcopy
 from typing import Callable, Dict, List, Optional, Tuple
 
 from src.geometry.constraint_validator import validate_pallet_constraints
+from src.geometry.flat_top import (
+    check_flat_top_full_perimeter,
+    flat_top_group_required,
+    flat_top_seam_tolerance,
+    trim_items_to_tail,
+)
 from src.geometry.support import calculate_direct_supported_area, direct_support_ratio
 from src.packing.incremental_gate import incremental_pallet_ok
 from src.packing.pool_compactor import PoolCompactor
@@ -25,6 +31,7 @@ from src.rescue import IndexBuilder, PalletEvaluator
 from src.utils.helpers import (
     apply_suction_pose_fields,
     passes_footprint_area_below_constraint,
+    repack_ready_item,
 )
 
 
@@ -79,6 +86,12 @@ class PalletPacker:
             (type_packing_plan, runtime_breakdown, index_diagnostics)
         """
         pallet_dims = boxes_in_group[0]['pallet_dims']
+        # 平顶模式（正常订单 × 范围内托盘类型）：达标盘出盘前做形状把关，
+        # 不合格先拆顶自救、拆不动降级尾盘（见出盘处注释）。
+        flat_required = flat_top_group_required(
+            self._cfg, pallet_type, boxes_in_group,
+        )
+        flat_seam = flat_top_seam_tolerance(self._cfg)
         index_diag = IndexBuilder.build_index_diagnostics(
             boxes_in_group, target_mpm, pallet_dims
         )
@@ -245,6 +258,49 @@ class PalletPacker:
                 break
 
             total_mpm = best["total_mpm"]
+
+            # 平顶模式：达标但形状不合格的盘出盘前拆顶——优先拆出「暴露的
+            # 合规子堆」保住达标盘；拆不出则一路降级为尾盘（尾盘豁免形状
+            # 约束）。拆下的箱恢复原始尺寸退回剩余池装下一盘。不在此拦截
+            # 会命中下方出盘门禁的 RuntimeError，中断整个运行。
+            if (
+                flat_required
+                and target_mpm is not None
+                and total_mpm + 1e-9 >= float(target_mpm)
+                and not check_flat_top_full_perimeter(
+                    packed, seam_tolerance_mm=flat_seam,
+                )['is_valid']
+            ):
+                kept, flat_trimmed = trim_items_to_tail(
+                    packed, float(target_mpm), flat_seam,
+                )
+                if kept:
+                    packed = kept
+                    remaining = [
+                        repack_ready_item(item) for item in flat_trimmed
+                    ] + remaining
+                    total_mpm = sum(
+                        float(box.get('min_pack_multiple', 0) or 0)
+                        for box in packed
+                    )
+                    best["packed_items"] = packed
+                    best["remaining_unfitted"] = remaining
+                    best["total_mpm"] = total_mpm
+                else:
+                    # 防御分支（理论不可达：单箱盘天然形状合规，拆不空）：
+                    # 万一整盘拆空则走守恒兜底，箱子绝不丢
+                    pallet_counter = self._append_conservation_fallback_pallets(
+                        type_plan,
+                        [repack_ready_item(item) for item in packed],
+                        pallet_type,
+                        sales_order_no,
+                        pallet_dims,
+                        target_mpm,
+                        pallet_counter,
+                    )
+                    unfitted = remaining
+                    continue
+
             mpm_gap = None if target_mpm is None else (target_mpm - total_mpm)
             mpm_status = (
                 "UNKNOWN" if target_mpm is None

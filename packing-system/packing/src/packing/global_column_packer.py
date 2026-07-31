@@ -22,6 +22,13 @@ from typing import Dict, List, Optional, Tuple
 
 from ..config.constants import PALLET_INDEX_TARGETS
 from ..geometry.constraint_validator import validate_pallet_constraints
+from ..geometry.flat_top import (
+    check_flat_top_full_perimeter,
+    flat_top_group_required,
+    flat_top_seam_tolerance,
+    rects_ring_complete,
+    trim_items_to_tail,
+)
 from .beam_search_packer import BeamSearchPacker
 from .direct_layer_packer import build_centered_single_box_solution
 from .layered_packer import _assemble, _ffd_columns
@@ -41,11 +48,32 @@ _ILP_TIME = 15.0  # 单组 ILP 时间上限（秒）
 _CPSAT_TIME = 15.0  # 单盘 CP-SAT 精确摆柱时间上限（秒，首盘/每 pattern 首次）
 _CPSAT_RETRY_TIME = 4.0  # 同 pattern 先前装不满时的短重试时限（秒）
 _CPSAT_MAX_FAILS = 2  # 同 pattern 累计装不满次数上限，超过即余盘全退残料
+_FLAT_RESOLVE_ROUNDS = 3  # 平顶模式：铺砌失败 pattern 拉黑后 ILP 重解的最大轮数
 
 
 def _fp_key(col: Dict) -> Tuple[int, int]:
     """柱的底面缓存键（原始 xlen/ylen 取整；同 pattern 内按此配对复用布局）。"""
     return (int(round(float(col['xlen']))), int(round(float(col['ylen']))))
+
+
+def _col_height_key(col: Dict) -> float:
+    """柱总高键（箱高求和，round 到 1e-3）。平顶模式下并入柱类型键，
+    使同 pattern 的柱严格等高（盘内所有柱同顶 → 顶面天然平）。"""
+    return round(sum(
+        float(b.get('height', 0) or 0) for b in col.get('boxes', [])
+    ), 3)
+
+
+def _pattern_key(types: List[tuple], combo) -> tuple:
+    """pattern 的跨轮稳定键：(柱类型, 用量) 非零对。
+
+    平顶模式的 ILP 重解在不同轮次里 types 列表会收缩（空池类型剔除），
+    按索引记失败会串位；用 (类型, 数量) 组合做键在轮间保持一致，
+    黑名单/布局缓存都靠它。铺砌可行性只由底面 multiset 决定，同键必同判。
+    """
+    return tuple(
+        (t, n) for t, n in zip(types, combo) if n
+    )
 
 
 def _apply_layout(layout: List[tuple], plate: List[Dict]) -> List[tuple]:
@@ -575,13 +603,117 @@ def _cpsat_pack_2d(cols: List[Dict], pallet_dims: Dict[str, float],
     return placed, unplaced
 
 
-def _enumerate_patterns(types, counts, target, pallet_dims, tol):
+def _cpsat_tile_2d(cols: List[Dict], pallet_dims: Dict[str, float],
+                   time_limit: float = 8.0) -> Tuple[List[tuple], List[Dict]]:
+    """CP-SAT 完美平铺摆柱（平顶模式的达标盘落地，允许 90° 旋转）。
+
+    与 _cpsat_pack_2d 的区别：不是"尽量多装"，而是要求**全部柱**装入某个
+    候选外接矩形 W×Hy，且 W×Hy == 柱底面积和（÷5 无损缩放后整除枚举）。
+    面积恰好相等 + 无重叠 + 全在界内 ⇒ 完美平铺：无内洞、外圈四壁天然铺满
+    （比"整圈周边不缺"更强，直接免疫缺角）。候选 (W, Hy) 按 W 从大到小
+    尝试（贴近托盘长边、居中后更稳）。
+
+    要求柱底面尺寸为 5 的倍数（本项目箱型均满足）；量化有损时面积等式不
+    成立，自然返回无解 → 调用方按残料兜底（保守安全）。
+    返回 (placed=[(col, x, y)], unplaced)；无解时 ([], cols)。
+    """
+    if not cols:
+        return [], []
+    if not _HAS_ORTOOLS:
+        return [], list(cols)
+    s = 5
+    pw = int(round(float(pallet_dims.get('length', 0) or 0) / s))
+    ph = int(round(float(pallet_dims.get('width', 0) or 0) / s))
+    dims = [
+        (int(round(float(c['xlen']) / s)), int(round(float(c['ylen']) / s)))
+        for c in cols
+    ]
+    area = sum(w * h for w, h in dims)
+    if area <= 0 or pw < 1 or ph < 1:
+        return [], list(cols)
+    min_side = min(min(w, h) for w, h in dims)
+    candidates = []
+    for width in range(min_side, pw + 1):
+        if area % width:
+            continue
+        depth = area // width
+        if min_side <= depth <= ph:
+            candidates.append((width, depth))
+    candidates.sort(key=lambda pair: -pair[0])
+    candidates = candidates[:8]  # 面积整除已筛得很少；上限防病态膨胀
+    if not candidates:
+        return [], list(cols)
+    per_limit = max(1.0, float(time_limit) / len(candidates))
+
+    for width, depth in candidates:
+        m = cp_model.CpModel()
+        xs, ys, rots = [], [], []
+        xivs, yivs = [], []
+        feasible = True
+        for i, (w0, h0) in enumerate(dims):
+            fit0 = (w0 <= width and h0 <= depth)
+            fit1 = (h0 <= width and w0 <= depth)
+            if not (fit0 or fit1):
+                feasible = False
+                break
+            if w0 != h0 and fit0 and fit1:
+                r = m.NewBoolVar(f'r{i}')
+                wi = m.NewIntVar(min(w0, h0), max(w0, h0), f'w{i}')
+                hi = m.NewIntVar(min(w0, h0), max(w0, h0), f'h{i}')
+                m.Add(wi == w0).OnlyEnforceIf(r.Not())
+                m.Add(wi == h0).OnlyEnforceIf(r)
+                m.Add(hi == h0).OnlyEnforceIf(r.Not())
+                m.Add(hi == w0).OnlyEnforceIf(r)
+            elif fit0:
+                r, wi, hi = None, w0, h0
+            else:
+                r, wi, hi = None, h0, w0
+            x = m.NewIntVar(0, width, f'x{i}')
+            y = m.NewIntVar(0, depth, f'y{i}')
+            xe = m.NewIntVar(0, width, f'xe{i}')
+            ye = m.NewIntVar(0, depth, f'ye{i}')
+            m.Add(xe == x + wi)
+            m.Add(ye == y + hi)
+            xivs.append(m.NewIntervalVar(x, wi, xe, f'xi{i}'))
+            yivs.append(m.NewIntervalVar(y, hi, ye, f'yi{i}'))
+            xs.append(x)
+            ys.append(y)
+            rots.append(r)
+        if not feasible:
+            continue
+        m.AddNoOverlap2D(xivs, yivs)
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = per_limit
+        solver.parameters.num_search_workers = 8
+        solver.parameters.random_seed = 42
+        status = solver.Solve(m)
+        if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            continue
+        placed: List[tuple] = []
+        for i, c in enumerate(cols):
+            col2 = dict(c)
+            col2['_src'] = c  # 同 _cpsat_pack_2d：保留原柱引用防重复装箱
+            if rots[i] is not None and solver.Value(rots[i]) == 1:
+                col2['xlen'], col2['ylen'] = c['ylen'], c['xlen']
+            placed.append((
+                col2,
+                float(solver.Value(xs[i]) * s),
+                float(solver.Value(ys[i]) * s),
+            ))
+        return placed, []
+    return [], list(cols)
+
+
+def _enumerate_patterns(types, counts, target, pallet_dims, tol, heights=None):
     """枚举"指数达标 + 面积可行"的候选盘 pattern（柱类型计数向量）。
 
     几何用**面积必要条件**（柱底面积和 ≤ 盘面积）筛，不要求 265 网格能整齐
     摆下——真正的摆放交给落地阶段（先网格、装不下用 CP-SAT 精确摆柱，允许
     旋转/混合列宽）。这样不漏"面积可行但网格量化损失差几根"的达标组合
     （如 93% 填充的混合底面订单）。仅在柱类型少时调用，规模可控、拿全局最优。
+
+    heights：平顶模式（正常订单）时传入与 types 对齐的柱高列表，pattern 只
+    允许使用同一柱高的类型（盘内柱严格等高 → 顶面天然平）。None＝不限制。
     """
     cap_area = (float(pallet_dims.get('length', 0) or 0)
                 * float(pallet_dims.get('width', 0) or 0))
@@ -599,6 +731,12 @@ def _enumerate_patterns(types, counts, target, pallet_dims, tol):
     for combo in itertools.product(*ranges):
         if sum(combo) == 0:
             continue
+        if heights is not None:
+            used_heights = {
+                heights[i] for i in range(len(types)) if combo[i]
+            }
+            if len(used_heights) > 1:
+                continue
         idx = sum(combo[i] * types[i][1] for i in range(len(types)))
         if idx < target - 1e-9 or idx > target + _OVERFLOW + 1e-9:
             continue
@@ -914,18 +1052,30 @@ class GlobalColumnPacker:
             pallet_dims=pallet_dims, constraint_config=self._cfg
         )
         selected_ids = sorted(str(box.get('id')) for box in selected_boxes)
+        # 平顶模式：目标子集盘同样要求柱等高 + 完美平铺落地
+        flat_required = flat_top_group_required(
+            self._cfg,
+            selected_boxes[0].get('pallet_type', pallet_type),
+            selected_boxes,
+        )
+        subset_time_limit = float(getattr(
+            self._cfg,
+            'cpsat_target_subset_time_limit_seconds',
+            3.0,
+        ))
         for _strategy, columns in _build_column_candidates(
             selected_boxes, pallet_dims, target_mpm
         ):
-            placed, unplaced = _cpsat_pack_2d(
-                columns,
-                pallet_dims,
-                time_limit=float(getattr(
-                    self._cfg,
-                    'cpsat_target_subset_time_limit_seconds',
-                    3.0,
-                )),
-            )
+            if flat_required:
+                if len({_col_height_key(c) for c in columns}) > 1:
+                    continue  # 柱高不齐 → 顶面必不平，直接换下一种凑柱
+                placed, unplaced = _cpsat_tile_2d(
+                    columns, pallet_dims, time_limit=subset_time_limit,
+                )
+            else:
+                placed, unplaced = _cpsat_pack_2d(
+                    columns, pallet_dims, time_limit=subset_time_limit,
+                )
             if unplaced or len(placed) != len(columns):
                 continue
             placed = _center_placed(placed, pallet_dims, packer.size_tolerance)
@@ -1065,12 +1215,23 @@ class GlobalColumnPacker:
         plan: List[Dict] = []
         seq = 1
         boards: List[tuple] = []  # [(placed, gap)]：gap=0=CP-SAT 紧贴落地，None=265 网格
+        # 平顶模式（正常订单 × 范围内托盘类型）：达标盘须顶面平 + 整圈不缺。
+        # 生成侧三处收紧：柱类型键并入柱高（盘内柱等高）、pattern 限同高、
+        # 落地要求外圈铺满（网格预检不过改 CP-SAT 完美平铺）。
+        flat_required = flat_top_group_required(
+            self._cfg, pallet_type, boxes_in_group,
+        )
+        flat_seam = flat_top_seam_tolerance(self._cfg)
 
         if target_mpm is not None and cols:
             target = float(target_mpm)
             pools: Dict[tuple, List[Dict]] = defaultdict(list)
             for c in cols:
-                pools[(c['fp'], c['idx'])].append(c)
+                key = (
+                    (c['fp'], c['idx'], _col_height_key(c))
+                    if flat_required else (c['fp'], c['idx'])
+                )
+                pools[key].append(c)
 
             # 1) 小规模 → 精确 ILP（柱类型少 + 枚举空间可控，拿全局最优）
             types = sorted(pools.keys())
@@ -1086,56 +1247,131 @@ class GlobalColumnPacker:
                     break
             use_ilp = _HAS_ORTOOLS and len(types) <= _ILP_MAX_TYPES and prod_scale <= _MAX_ENUM
             if use_ilp:
-                patterns = _enumerate_patterns(types, counts, target, pallet_dims, tol)
-                if patterns:
-                    usage = _solve_ilp(patterns, counts, time_limit=_ILP_TIME)
-                    pool_idx = {t: 0 for t in types}
-                    # 同 pattern 的盘柱型构成完全相同（2D 摆放只看底面）：
-                    # - 成功布局缓存：首盘 CP-SAT 解出满解后，后续同 pattern 盘
-                    #   直接按底面复用该布局（零耗时、消除同 run 内多线程波动）；
-                    # - 失败短重试：装不满的 pattern 后续盘只给短时限重试，最多
-                    #   _CPSAT_MAX_FAILS 次后跳过——不再对注定失败的重复 pattern
-                    #   反复烧满时限（慢机器上这是 GCP 回退前的主要耗时）。
-                    layout_cache: Dict[int, List[tuple]] = {}
+                # 同 pattern 的盘柱型构成完全相同（2D 摆放只看底面）：
+                # - 成功布局缓存：首盘 CP-SAT 解出满解后，后续同 pattern 盘
+                #   直接按底面复用该布局（零耗时、消除同 run 内多线程波动）；
+                # - 失败短重试：装不满的 pattern 后续盘只给短时限重试，最多
+                #   _CPSAT_MAX_FAILS 次后跳过——不再对注定失败的重复 pattern
+                #   反复烧满时限（慢机器上这是 GCP 回退前的主要耗时）。
+                # 平顶模式多轮重解：pattern 可能"指数/面积可行但铺不成完整
+                # 矩形"——铺砌失败的 pattern 进黑名单，用剩余柱重新枚举+重解
+                # ILP（最多 _FLAT_RESOLVE_ROUNDS 轮），让库存换组合再凑达标盘；
+                # 否则失败 pattern 的柱整批退残料，白丢达标机会。非平顶模式
+                # 单轮，行为与历史一致（零回归）。
+                layout_cache: Dict[tuple, List[tuple]] = {}
+                banned_patterns: set = set()
+                remaining_pools = {t: list(pools[t]) for t in types}
+                rounds = _FLAT_RESOLVE_ROUNDS if flat_required else 1
+                for _round in range(rounds):
+                    round_types = [t for t in types if remaining_pools[t]]
+                    if not round_types:
+                        break
+                    round_counts = [
+                        len(remaining_pools[t]) for t in round_types
+                    ]
+                    patterns = _enumerate_patterns(
+                        round_types, round_counts, target, pallet_dims, tol,
+                        heights=(
+                            [t[2] for t in round_types]
+                            if flat_required else None
+                        ),
+                    )
+                    if banned_patterns:
+                        patterns = [
+                            combo for combo in patterns
+                            if _pattern_key(round_types, combo)
+                            not in banned_patterns
+                        ]
+                    if not patterns:
+                        break
+                    usage = _solve_ilp(
+                        patterns, round_counts, time_limit=_ILP_TIME,
+                    )
+                    if not any(usage):
+                        break
+                    pool_idx = {t: 0 for t in round_types}
                     fail_count: Dict[int, int] = {}
+                    placed_col_ids: set = set()
+                    round_failed = False
                     for p, v in enumerate(usage):
+                        pkey = _pattern_key(round_types, patterns[p])
                         for _ in range(v):
                             plate = []
-                            for i, t in enumerate(types):
+                            for i, t in enumerate(round_types):
                                 for _k in range(patterns[p][i]):
-                                    plate.append(pools[t][pool_idx[t]])
+                                    plate.append(
+                                        remaining_pools[t][pool_idx[t]]
+                                    )
                                     pool_idx[t] += 1
                             # 先试 265 网格（快、无缝）；网格量化损失装不下时用
-                            # CP-SAT 精确摆柱（允许旋转/混合列宽，多装；达标盘免 gap）。
+                            # CP-SAT 精确摆柱（允许旋转/混合列宽，多装；达标盘免
+                            # gap）。平顶模式额外要求网格结果外圈铺满，否则改走
+                            # CP-SAT 完美平铺（面积精确 ⇒ 无内洞、四壁不缺角）。
                             placed, unpl = _grid_pack(plate, pallet_dims, tol)
-                            if unpl:
-                                cached = layout_cache.get(p)
+                            grid_ok = not unpl and placed
+                            if grid_ok and flat_required:
+                                grid_ok = rects_ring_complete(
+                                    [(x, y, float(c2['xlen']),
+                                      float(c2['ylen']))
+                                     for c2, x, y in placed],
+                                    seam_tolerance_mm=flat_seam,
+                                )
+                            if not grid_ok:
+                                cached = layout_cache.get(pkey)
                                 if cached is not None:
                                     placed = _apply_layout(cached, plate)
                                     if placed:
                                         boards.append((placed, 0.0))
+                                        placed_col_ids |= {
+                                            id(c2.get('_src', c2))
+                                            for c2, _x, _y in placed
+                                        }
                                         continue
                                 fails = fail_count.get(p, 0)
                                 if fails >= _CPSAT_MAX_FAILS:
                                     continue  # 该 pattern 已多次证明装不满 → 退残料
-                                tl = _CPSAT_TIME if fails == 0 else _CPSAT_RETRY_TIME
-                                placed, unpl = _cpsat_pack_2d(
-                                    plate, pallet_dims, time_limit=tl)
+                                tl = (_CPSAT_TIME if fails == 0
+                                      else _CPSAT_RETRY_TIME)
+                                if flat_required:
+                                    placed, unpl = _cpsat_tile_2d(
+                                        plate, pallet_dims, time_limit=tl)
+                                else:
+                                    placed, unpl = _cpsat_pack_2d(
+                                        plate, pallet_dims, time_limit=tl)
                                 if unpl:
                                     fail_count[p] = fails + 1
+                                    banned_patterns.add(pkey)
+                                    round_failed = True
                                 if placed:
-                                    placed = _center_placed(placed, pallet_dims, tol)
+                                    placed = _center_placed(
+                                        placed, pallet_dims, tol,
+                                    )
                                     if not unpl:
                                         # 满解 → 缓存居中后布局，供同 pattern 复用
-                                        layout_cache[p] = [
+                                        layout_cache[pkey] = [
                                             (_fp_key(c2.get('_src', c2)),
-                                             c2['xlen'] != c2.get('_src', c2)['xlen'],
+                                             c2['xlen'] != c2.get(
+                                                 '_src', c2)['xlen'],
                                              x, y)
                                             for c2, x, y in placed
                                         ]
                                     boards.append((placed, 0.0))
-                            elif placed:
+                                    placed_col_ids |= {
+                                        id(c2.get('_src', c2))
+                                        for c2, _x, _y in placed
+                                    }
+                            else:
                                 boards.append((placed, None))
+                                placed_col_ids |= {
+                                    id(c2) for c2, _x, _y in placed
+                                }
+                    for t in round_types:
+                        remaining_pools[t] = [
+                            c for c in remaining_pools[t]
+                            if id(c) not in placed_col_ids
+                        ]
+                    if not round_failed:
+                        break
             else:
                 # 2) 大组 → 同类满盘（无损）+ 贪心混合（快、鲁棒）
                 for placed in _same_type_boards(pools, target, pallet_dims, tol):
@@ -1201,6 +1437,22 @@ class GlobalColumnPacker:
                     residual_boxes, target_mpm=target_mpm,
                     num_restarts=2, beam_width=4, candidate_limit=16,
                     stop_when_target_met=True, allow_skip_items=True,
+                )
+            # 平顶模式：残料盘若"达标但形状不合格"，拆顶降级为尾盘（尾盘
+            # 豁免形状约束）；拆下的箱仍在 residual_boxes（按保留箱 id 过滤），
+            # 留给下一盘。拆箱在"暴露合规子堆"上提前停止，能保住达标盘。
+            if (
+                placed_items
+                and flat_required
+                and target_mpm is not None
+                and sum(float(b.get('min_pack_multiple', 0) or 0)
+                        for b in placed_items) + 1e-9 >= float(target_mpm)
+                and not check_flat_top_full_perimeter(
+                    placed_items, seam_tolerance_mm=flat_seam,
+                )['is_valid']
+            ):
+                placed_items, _flat_trimmed = trim_items_to_tail(
+                    placed_items, float(target_mpm), flat_seam,
                 )
             if not placed_items:
                 # beam 一个都装不下（极罕见）→ 取首箱单独成盘兜底，守恒优先（即便门禁

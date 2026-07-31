@@ -40,6 +40,12 @@ constraints:
   footprint_area_below_enabled: true
   same_size_heavier_below_enabled: true
   height_multiple_layering_enabled: true
+  # 平顶不缺角（甲方 2026-07 需求）：正常订单（全规则箱订单）的达标盘必须
+  # 顶面平（零容差）且整圈周边无缺口（箱间缝 ≤ flat_top_seam_tolerance_mm）；
+  # 尾盘（未达标盘）豁免。仅对 flat_top_pallet_types 内的托盘类型生效。
+  flat_top_full_perimeter_enabled: true
+  flat_top_pallet_types: [MH423C]
+  flat_top_seam_tolerance_mm: 6.0
   suction_cup_length: 600.0
   suction_cup_width: 800.0
   suction_xy_clearance: 0.0

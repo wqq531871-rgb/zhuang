@@ -8,6 +8,11 @@ still satisfies the hard geometric and handling constraints.
 from typing import Dict, List
 
 from .center_of_mass import validate_center_of_mass
+from .flat_top import (
+    check_flat_top_full_perimeter,
+    flat_top_required_target,
+    flat_top_seam_tolerance,
+)
 from .gap_checker import passes_box_gap_constraint
 from .overlap import axis_overlap_len
 from .support import direct_support_ratio
@@ -207,6 +212,25 @@ def validate_pallet_constraints(
                 "type": "center_of_mass",
                 "detail": com,
             })
+
+        # 平顶不缺角（可关约束，甲方 2026-07 需求）：正常订单（全部箱子带
+        # _normal_order 标记）的达标盘必须顶面平（零容差）且整圈周边无缺口；
+        # 尾盘（未达标）/守恒兜底盘/范围外托盘类型豁免，判定与 target 解析
+        # 见 flat_top_required_target。未打标箱子（旧测试、外部构造）＝跳过，
+        # 历史行为不变。
+        flat_target = flat_top_required_target(
+            items, pallet_plan, target_mpm, constraint_config,
+        )
+        if flat_target is not None:
+            shape = check_flat_top_full_perimeter(
+                items,
+                seam_tolerance_mm=flat_top_seam_tolerance(constraint_config),
+            )
+            if not shape.get("is_valid"):
+                violations.append({
+                    "type": "flat_top_perimeter",
+                    "detail": shape.get("violations", [])[:5],
+                })
 
     return {
         "is_valid": not violations,
