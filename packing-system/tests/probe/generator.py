@@ -111,7 +111,7 @@ def _boxes_of(arch: Archetype, order_no: str, pallet_seq: int) -> List[Dict]:
             'type': arch.label,
             'length': float(arch.length), 'width': float(arch.width),
             'height': float(arch.height), 'weight': 1.0,
-            'min_pack_multiple': float(arch.mpm), 'is_small_box': False,
+            'min_pack_multiple': float(arch.mpm),
             'pallet_type': PALLET_TYPE, 'sales_order_no': order_no,
             'pallet_dims': dict(PALLET),
         })
@@ -234,7 +234,7 @@ def build_balanced_order(name: str, n_pallets: int,
                     'id': f'{lab}-{order_no}-{p}-{k}', 'type': lab,
                     'length': 350.0, 'width': 265.0, 'height': 240.0,
                     'weight': 1.0, 'min_pack_multiple': mpm,
-                    'is_small_box': False, 'pallet_type': PALLET_TYPE,
+                    'pallet_type': PALLET_TYPE,
                     'sales_order_no': order_no, 'pallet_dims': dict(PALLET),
                 })
     total = sum(b['min_pack_multiple'] for b in boxes)
@@ -286,7 +286,7 @@ def build_mixed_characteristics_order(name: str = 'mega',
                 boxes.append({
                     'id': f'HET-{order_no}-{seq}-{int(mpm)}-{k}', 'type': 'HET700x265',
                     'length': 700.0, 'width': 265.0, 'height': 240.0, 'weight': 1.0,
-                    'min_pack_multiple': mpm, 'is_small_box': False,
+                    'min_pack_multiple': mpm,
                     'pallet_type': PALLET_TYPE, 'sales_order_no': order_no,
                     'pallet_dims': dict(PALLET),
                 })
@@ -383,7 +383,7 @@ def build_dense_mixed_order(name: str, n_pallets: int,
                     'id': f'{arch.label}-{order_no}-{p}-{k}', 'type': arch.label,
                     'length': float(arch.length), 'width': float(arch.width),
                     'height': float(arch.height), 'weight': 1.0,
-                    'min_pack_multiple': float(arch.mpm), 'is_small_box': False,
+                    'min_pack_multiple': float(arch.mpm),
                     'pallet_type': PALLET_TYPE, 'sales_order_no': order_no,
                     'pallet_dims': dict(PALLET),
                 })

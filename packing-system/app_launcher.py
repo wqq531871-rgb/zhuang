@@ -58,7 +58,14 @@ def ensure_runtime_env() -> Path:
     os.environ.setdefault("PACKING_APP_ROOT", str(root))
     os.environ.setdefault("PYTHONNOUSERSITE", "1")
     if not os.environ.get("PACKING_WORKSPACE", "").strip():
-        os.environ["PACKING_WORKSPACE"] = str(root / "packing-workspace")
+        # 冻结态：工作区在 exe 旁；开发态：在仓库同级（与 constants._resolve_workspace 一致）。
+        # 开发态下 root/packing-workspace 会是空壳目录，指过去就读不到数据集。
+        ws = root / "packing-workspace"
+        if not is_frozen():
+            sibling = root.parent / "packing-workspace"
+            if sibling.is_dir():
+                ws = sibling
+        os.environ["PACKING_WORKSPACE"] = str(ws)
 
     if is_frozen():
         # 冻结态保持现有行为；本次只修源码启动路径。

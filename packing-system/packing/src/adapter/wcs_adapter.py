@@ -28,8 +28,8 @@ import pandas as pd
 
 from src.config import ConfigLoader, DEFAULT_PACKING_CONFIG
 from src.config.constants import SMALL_BOX_BMS_SHEET
-# 复用既有口径：BMS 列校验/解析、is_small_box 体积分位标记（与增量三表同策略）
-from src.incremental.loader import _apply_small_box_flags, _build_mpm_index
+# 复用既有口径：BMS 列校验/解析
+from src.incremental.loader import _build_mpm_index
 from src.utils.case_group import normalize_case_group
 
 # 托盘尺寸兜底（与 config/packing_config.yaml 的 MH423C 一致）。正式来源是
@@ -168,8 +168,6 @@ def stock_to_boxes(
                 'product_code': coerce_product_code(entry.get('product_code')),
                 'priority': entry.get('priority'),
             })
-    # is_small_box：与增量三表同策略（体积 25% 分位以下记小箱）
-    _apply_small_box_flags(boxes)
     return boxes
 
 

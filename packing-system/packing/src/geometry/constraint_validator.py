@@ -12,7 +12,7 @@ from .gap_checker import passes_box_gap_constraint
 from .overlap import axis_overlap_len
 from .support import direct_support_ratio
 from ..utils.case_group import find_case_group_violation
-from ..utils.helpers import passes_small_box_not_on_larger_constraint
+from ..utils.helpers import passes_footprint_area_below_constraint
 
 
 REQUIRED_SUCTION_FIELDS = (
@@ -35,7 +35,7 @@ def validate_pallet_constraints(
     max_gap: float = 6.0,
     require_suction: bool = True,
     center_of_mass_tolerance: float = 1.0 / 3.0,
-    small_box_below_enabled: bool = True,
+    footprint_area_below_enabled: bool = True,
     same_size_heavier_below_enabled: bool = True,
     constraint_config=None,
     target_mpm=None,
@@ -43,12 +43,12 @@ def validate_pallet_constraints(
     """校验单个托盘方案的全部硬约束。
 
     必须约束（恒查，仅阈值可配）：越界、重叠、间隙、支撑率、重心稳定。
-    可关约束：小箱在下（small_box_below_enabled）、同尺寸重箱在下
+    可关约束：小面积在下（footprint_area_below_enabled）、同尺寸重箱在下
     （same_size_heavier_below_enabled）、吸盘字段（require_suction）。
 
     Args:
         center_of_mass_tolerance: 重心相对托盘中心的最大允许偏移比例。
-        small_box_below_enabled: 是否校验「小箱在下」。
+        footprint_area_below_enabled: 是否校验「小面积在下」。
         same_size_heavier_below_enabled: 是否校验「同尺寸重箱在下」。
         constraint_config: 可选 ConstraintConfig，提供时统一覆盖上述阈值/开关，
             保证门禁与放置层同源。不提供时沿用各参数默认值（行为不变）。
@@ -62,7 +62,9 @@ def validate_pallet_constraints(
         max_gap = constraint_config.max_box_gap_mm
         require_suction = constraint_config.suction_reachability_enabled
         center_of_mass_tolerance = constraint_config.center_of_mass_tolerance
-        small_box_below_enabled = constraint_config.small_box_below_enabled
+        footprint_area_below_enabled = (
+            constraint_config.footprint_area_below_enabled
+        )
         same_size_heavier_below_enabled = (
             constraint_config.same_size_heavier_below_enabled
         )
@@ -154,12 +156,12 @@ def validate_pallet_constraints(
                     "support_ratio": ratio,
                 })
 
-        # 小箱在下（可关约束）：小箱不得直接置于体积更大的箱子之上
-        if small_box_below_enabled and not (
-            passes_small_box_not_on_larger_constraint(item, pos, dims, others)
+        # 小面积在下（可关约束）：箱子正下方不得有投影面积更大的箱子
+        if footprint_area_below_enabled and not (
+            passes_footprint_area_below_constraint(item, pos, dims, others)
         ):
             violations.append({
-                "type": "small_box_on_larger",
+                "type": "footprint_area_below",
                 "box_id": item_id,
             })
 

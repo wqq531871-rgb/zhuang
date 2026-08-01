@@ -1,19 +1,40 @@
 """
 全局常量定义
 
-从原 zhuangxiang.py 提取的硬编码常量。
+路径约定（与 packing/src/config/constants.py 保持一致）：
+- 本仓库（packing-system）只放源码
+- 输入 / 输出 / 运行时数据在同级 packing-workspace（或环境变量 PACKING_WORKSPACE）
 """
 
+from __future__ import annotations
+
+import os
 from pathlib import Path
 
 # ============================================================================
 # 项目路径配置
 # ============================================================================
-# 项目根目录：本文件位于 code2/src/config/，向上 4 级 = zhuangxiang_code/
-# 与原 zhuangxiang.py 保持一致（zhuangxiang.py 在 code2/，parent.parent = zhuangxiang_code/）
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-OUTPUT_DIR = PROJECT_ROOT / "output"
+# src/config/constants.py → 上 3 级 = 仓库根 packing-system/
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+CODE_ROOT = REPO_ROOT  # 本树源码根即仓库根（packing/ 树中二者不同）
+# 兼容旧名：以前 PROJECT_ROOT 指向含 data/output 的目录；现改指仓库根
+PROJECT_ROOT = REPO_ROOT
+
+# 唯一默认配置：packing-system/config/packing_config.yaml（算法/UI/部署共用）
+DEFAULT_PACKING_CONFIG = REPO_ROOT / "config" / "packing_config.yaml"
+
+
+def _resolve_workspace() -> Path:
+    env = os.environ.get("PACKING_WORKSPACE", "").strip()
+    if env:
+        return Path(env).expanduser().resolve()
+    return (REPO_ROOT.parent / "packing-workspace").resolve()
+
+
+WORKSPACE_ROOT = _resolve_workspace()
+DATA_DIR = WORKSPACE_ROOT / "data"
+OUTPUT_DIR = WORKSPACE_ROOT / "output"
+INPUT_DIR = WORKSPACE_ROOT / "input"
 
 # ============================================================================
 # 托盘类型和要求的指数
@@ -41,10 +62,3 @@ SMALL_BOX_SOURCE_FILE = DATA_DIR / "668箱子数据集.xlsx"
 SMALL_BOX_SOURCE_SHEET = "最终挑选结果"
 SMALL_BOX_BMS_SHEET = "包装物料主数据(BMS)"
 
-# 小箱子体积阈值检测参数（基于密度/体积指数曲线）
-SMALL_BOX_INDEX_SMOOTH_WINDOW = 5
-SMALL_BOX_INDEX_PLATEAU_WINDOW = 6
-SMALL_BOX_INDEX_PLATEAU_REL_TOL = 0.02
-SMALL_BOX_INDEX_PLATEAU_ABS_TOL = 0.8
-SMALL_BOX_INDEX_MIN_SLOPE_WINDOW = 3
-SMALL_BOX_INDEX_NEAR_PEAK_GAP = 0.15

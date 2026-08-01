@@ -30,8 +30,8 @@ class BeamSearchPacker:
         self,
         pallet_dims: Dict[str, float],
         support_ratio_threshold: float = 0.8,
-        size_tolerance: float = 2.0,
-        z_tolerance: float = 0.0,
+        size_tolerance: Optional[float] = None,
+        z_tolerance: Optional[float] = None,
         max_candidate_points: int = 200,
         max_points_per_layer: int = 40,
         robot_reachability_enabled: bool = True,
@@ -48,8 +48,10 @@ class BeamSearchPacker:
         Args:
             pallet_dims: 托盘尺寸 {'length': float, 'width': float, 'height': float}
             support_ratio_threshold: 支撑比例阈值
-            size_tolerance: XY方向尺寸容差（毫米）
-            z_tolerance: Z方向尺寸容差（毫米）
+            size_tolerance: XY方向尺寸容差（毫米）。None = 从 constraint_config
+                读 xy_tolerance（配置未给则 2.0）。救援链的「紧贴塞洞」路径显式
+                传 0.0 覆盖，不受配置影响。
+            z_tolerance: Z方向尺寸容差（毫米）。None 同上，读 z_tolerance。
             max_candidate_points: 最大候选点数量
             max_points_per_layer: 每层最大候选点数量
             robot_reachability_enabled: 是否启用机器人可达性检查
@@ -79,8 +81,8 @@ class BeamSearchPacker:
             self.center_of_mass_tolerance = (
                 constraint_config.center_of_mass_tolerance
             )
-            self.small_box_below_enabled = (
-                constraint_config.small_box_below_enabled
+            self.footprint_area_below_enabled = (
+                constraint_config.footprint_area_below_enabled
             )
             self.same_size_heavier_below_enabled = (
                 constraint_config.same_size_heavier_below_enabled
@@ -88,13 +90,24 @@ class BeamSearchPacker:
             self.height_multiple_layering_enabled = (
                 constraint_config.height_multiple_layering_enabled
             )
+            # 放置容差：仅在调用方未显式指定时才从配置取。救援链的紧贴塞洞
+            # 路径显式传 0.0，必须保留其覆盖能力。
+            if size_tolerance is None:
+                size_tolerance = getattr(constraint_config, 'xy_tolerance', 2.0)
+            if z_tolerance is None:
+                z_tolerance = getattr(constraint_config, 'z_tolerance', 0.0)
         else:
             from ..config.constants import MAX_BOX_GAP_MM
             self.max_gap = MAX_BOX_GAP_MM
             self.center_of_mass_tolerance = 1.0 / 3.0
-            self.small_box_below_enabled = True
+            self.footprint_area_below_enabled = True
             self.same_size_heavier_below_enabled = True
             self.height_multiple_layering_enabled = True
+
+        if size_tolerance is None:
+            size_tolerance = 2.0
+        if z_tolerance is None:
+            z_tolerance = 0.0
 
         self.pallet_dims = pallet_dims
         self.support_ratio_threshold = support_ratio_threshold
@@ -171,11 +184,19 @@ class BeamSearchPacker:
             return [], list(pre_unfitted)
 
         # 定义物品排序策略列表
+        # 底面积策略随「小面积在下」开关换方向：开启时用升序——先喂大底面箱
+        # 等于自断后路（大底面落地后上方只能再放同样大的箱），升序让小底面先
+        # 铺地、大底面往上叠，才是该约束允许的堆法；关闭时沿用改造前的降序，
+        # 保证开关是真开关。策略数恒为 5，restart_idx % len 映射不变，
+        # 重启次数不变故不增耗时。
         order_strategies = [
             "volume_asc",
             "volume_desc",
             "weight_desc",
-            "base_area_desc",
+            (
+                "base_area_asc" if self.footprint_area_below_enabled
+                else "base_area_desc"
+            ),
             "random"
         ]
 
@@ -231,6 +252,7 @@ class BeamSearchPacker:
                      - "volume_asc": 按体积升序排列
                      - "volume_desc": 按体积降序排列
                      - "weight_desc": 按重量降序排列
+                     - "base_area_asc": 按底面积（长×宽）升序排列
                      - "base_area_desc": 按底面积（长×宽）降序排列
                      - "random": 随机打乱顺序
             rng: 随机数生成器对象
@@ -252,6 +274,8 @@ class BeamSearchPacker:
             items_copy.sort(key=lambda x: x['length'] * x['width'] * x['height'], reverse=True)
         elif strategy == "weight_desc":
             items_copy.sort(key=lambda x: x.get('weight', 0), reverse=True)
+        elif strategy == "base_area_asc":
+            items_copy.sort(key=lambda x: x['length'] * x['width'])
         elif strategy == "base_area_desc":
             items_copy.sort(key=lambda x: x['length'] * x['width'], reverse=True)
         elif strategy == "random":
@@ -407,9 +431,9 @@ class BeamSearchPacker:
                 ):
                     continue
 
-                # 小箱在下：小箱不得直接置于体积更大的箱子之上（可关约束）
-                if self.small_box_below_enabled and not (
-                    self.placement_validator.satisfies_small_box_support_order(
+                # 小面积在下：正下方不得有投影面积更大的箱子（可关约束）
+                if self.footprint_area_below_enabled and not (
+                    self.placement_validator.satisfies_footprint_area_order(
                         item, point, dims, placed_boxes
                     )
                 ):

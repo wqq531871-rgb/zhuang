@@ -23,7 +23,7 @@ from src.geometry.support import calculate_direct_supported_area, direct_support
 from src.utils.dimensions import raw_dims as get_raw_dims
 from src.utils.helpers import (
     apply_suction_pose_fields,
-    passes_small_box_not_on_larger_constraint,
+    passes_footprint_area_below_constraint,
     item_volume as get_item_volume,
 )
 
@@ -95,7 +95,9 @@ def build_direct_layer_packing_solution(
         support_ratio_threshold = constraint_config.support_ratio_threshold
         max_gap = constraint_config.max_box_gap_mm
         com_tolerance = constraint_config.center_of_mass_tolerance
-        small_box_below_enabled = constraint_config.small_box_below_enabled
+        footprint_area_below_enabled = (
+            constraint_config.footprint_area_below_enabled
+        )
         same_size_heavier_below_enabled = (
             constraint_config.same_size_heavier_below_enabled
         )
@@ -103,7 +105,7 @@ def build_direct_layer_packing_solution(
     else:
         max_gap = MAX_BOX_GAP_MM
         com_tolerance = 1.0 / 3.0
-        small_box_below_enabled = True
+        footprint_area_below_enabled = True
         same_size_heavier_below_enabled = True
         reachability_enabled = True
 
@@ -156,7 +158,15 @@ def build_direct_layer_packing_solution(
         layer_area = (
             min(len(group), per_layer) * effective_length * effective_width
         )
+        # 主键 = 原始底面积升序，与「小面积在下」硬约束同向。
+        # _try_pack_pool 按本顺序逐组抬高 current_z，每组恰好占整数层带，所以
+        # 约束退化成「组底面积沿栈单调不减」——按升序排即结构性满足，不会出现
+        # 放置层自相矛盾导致整池返回 [] 退回 beam。口径必须用原始 length*width，
+        # 与 helpers.footprint_area 一致（含容差的面积对不同长宽比会失序）。
+        # 其余键顺序原样保留：同底面积的池排序结果与改造前逐项相同。
+        # 约束关闭时主键取常量 0，整个排序逐项退回改造前——开关是真开关。
         return (
+            (length * width) if footprint_area_below_enabled else 0,
             -layer_area,
             -group_multiple_bonus.get((length, width, height, mpm), 0.0),
             -effective_length * effective_width,
@@ -220,8 +230,8 @@ def build_direct_layer_packing_solution(
                     )
                 ):
                     return []
-                if small_box_below_enabled and not (
-                    passes_small_box_not_on_larger_constraint(
+                if footprint_area_below_enabled and not (
+                    passes_footprint_area_below_constraint(
                         item,
                         point,
                         dims,

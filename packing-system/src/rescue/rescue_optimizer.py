@@ -501,8 +501,8 @@ class RescueOptimizer:
         if len(pool) <= 120:
             compact = PoolCompactor(
                 self.pallet_dims,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 support_ratio_threshold=self._cfg.support_ratio_threshold,
                 constraint_config=self._cfg,
             ).compact(pool, max_pallets=1)
@@ -651,7 +651,7 @@ class RescueOptimizer:
     ) -> List[Dict]:
         """把配方实例的箱子重映射到尽量少的源托盘（同规格箱可互换）。
 
-        配方只关心箱型与数量；同(尺寸/重量/指数/小箱标记)的箱子互换不影响
+        配方只关心箱型与数量；同(尺寸/重量/指数)的箱子互换不影响
         实例可装性。贪心：每轮选"还能供给最多所需箱"的源托盘取箱，直至
         配齐。凑标因此只"打散"极少数源托盘，其余失败盘保持原样——这是
         局部提交能秒级完成、且失败盘数不膨胀的关键。配不齐（防御性）时
@@ -664,7 +664,6 @@ class RescueOptimizer:
                 round(float(b.get('height', 0) or 0), 1),
                 round(float(b.get('weight', 0) or 0), 3),
                 float(b.get('min_pack_multiple', 0) or 0),
-                bool(b.get('is_small_box')),
             )
 
         need: Dict = {}
@@ -1065,8 +1064,8 @@ class RescueOptimizer:
         if len(pool) <= 60:
             compact = PoolCompactor(
                 self.pallet_dims,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 support_ratio_threshold=self._cfg.support_ratio_threshold,
                 constraint_config=self._cfg,
             ).compact(pool, max_pallets=3)
@@ -1156,8 +1155,8 @@ class RescueOptimizer:
         if len(pool2) <= 60:
             compact = PoolCompactor(
                 self.pallet_dims,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._cfg.xy_tolerance,
+                z_tolerance=self._cfg.z_tolerance,
                 support_ratio_threshold=self._cfg.support_ratio_threshold,
                 constraint_config=self._cfg,
             ).compact(pool2, max_pallets=len(tail) - 1)
@@ -1197,8 +1196,8 @@ class RescueOptimizer:
             target_mpm=float(target_mpm),
             pallet_dims=self.pallet_dims,
             seed=seed,
-            xy_tolerance=2.0,
-            z_tolerance=0.0,
+            xy_tolerance=self._cfg.xy_tolerance,
+            z_tolerance=self._cfg.z_tolerance,
             candidate_count=12,
             prefer_fill=True,
             constraint_config=self._cfg,
@@ -1240,8 +1239,8 @@ class RescueOptimizer:
                         target_mpm=homo_target,
                         pallet_dims=self.pallet_dims,
                         seed=seed,
-                        xy_tolerance=2.0,
-                        z_tolerance=0.0,
+                        xy_tolerance=self._cfg.xy_tolerance,
+                        z_tolerance=self._cfg.z_tolerance,
                         candidate_count=12,
                         prefer_fill=True,
                         constraint_config=self._cfg,
@@ -1253,7 +1252,6 @@ class RescueOptimizer:
             packer = self._CustomPacker(
                 self.pallet_dims,
                 support_ratio_threshold=self._cfg.support_ratio_threshold,
-                size_tolerance=2.0,
                 max_candidate_points=200,
                 max_points_per_layer=40,
                 constraint_config=self._cfg,
@@ -1324,8 +1322,8 @@ class RescueOptimizer:
         return build_centered_single_box_solution(
             [box],
             self.pallet_dims,
-            xy_tolerance=2.0,
-            z_tolerance=0.0,
+            xy_tolerance=self._cfg.xy_tolerance,
+            z_tolerance=self._cfg.z_tolerance,
             support_ratio_threshold=self._cfg.support_ratio_threshold,
             constraint_config=self._cfg,
         )

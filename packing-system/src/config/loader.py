@@ -70,9 +70,17 @@ class ConfigLoader:
 
         从 YAML 的 ``constraints`` 段读取（开关 + 间隙/支撑率/重心数值 +
         吸盘几何）。为兼容旧模板，吸盘几何也接受来自 ``robot`` 段的字段，
-        ``constraints`` 段优先级更高。
+        放置容差也接受来自 ``tolerances`` 段的字段，``constraints`` 段优先级更高。
         """
         constraints = dict(self.config_data.get('constraints') or {})
+
+        # 放置容差来自独立的 tolerances 段（历史布局）：仅在 constraints 未覆盖时回填。
+        # 注入 ConstraintConfig 而非 PackingAlgorithmConfig，因为后者没有任何生产
+        # 调用方；ConstraintConfig 已经全局注入主装箱/救援/门禁三条链路。
+        tolerances = self.config_data.get('tolerances') or {}
+        for key in ('xy_tolerance', 'z_tolerance'):
+            if key not in constraints and key in tolerances:
+                constraints[key] = tolerances[key]
 
         # 兼容旧 robot 段的吸盘几何：仅在 constraints 未覆盖时回填
         robot = self.config_data.get('robot') or {}
@@ -87,6 +95,17 @@ class ConfigLoader:
         for old_key, new_key in robot_alias.items():
             if new_key not in constraints and old_key in robot:
                 constraints[new_key] = robot[old_key]
+
+        # 兼容旧键 small_box_below_enabled（「小箱在下」按体积只约束小箱）：
+        # 该约束已推广为 footprint_area_below_enabled（「小面积在下」按投影面积
+        # 约束全部箱子）。新键缺省时沿用旧键值，现场旧 yaml 不改也能运行。
+        if (
+            'footprint_area_below_enabled' not in constraints
+            and 'small_box_below_enabled' in constraints
+        ):
+            constraints['footprint_area_below_enabled'] = (
+                constraints['small_box_below_enabled']
+            )
 
         return ConstraintConfig.from_dict(constraints)
 
@@ -183,7 +202,7 @@ def create_default_config_yaml(output_path: Path) -> None:
             'center_of_mass_tolerance': 1.0 / 3.0,
             # —— 可关约束开关（默认 True，可改 False 关闭）——
             'suction_reachability_enabled': True,
-            'small_box_below_enabled': True,
+            'footprint_area_below_enabled': True,
             'same_size_heavier_below_enabled': True,
             'height_multiple_layering_enabled': True,
             # —— 吸盘几何（仅 suction_reachability_enabled=True 时生效）——

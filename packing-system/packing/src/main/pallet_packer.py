@@ -22,7 +22,10 @@ from src.packing.stacking_policy import (
 )
 from src.packing.suction_planner import SuctionPlanner
 from src.rescue import IndexBuilder, PalletEvaluator
-from src.utils.helpers import apply_suction_pose_fields
+from src.utils.helpers import (
+    apply_suction_pose_fields,
+    passes_footprint_area_below_constraint,
+)
 
 
 class PalletPacker:
@@ -51,11 +54,16 @@ class PalletPacker:
             constraint_config = ConstraintConfig()
         self._cfg = constraint_config
         self._support_ratio = constraint_config.support_ratio_threshold
+        self._xy_tolerance = constraint_config.xy_tolerance
+        self._z_tolerance = constraint_config.z_tolerance
         self._reachability_enabled = (
             constraint_config.suction_reachability_enabled
         )
         self._same_size_enabled = (
             constraint_config.same_size_heavier_below_enabled
+        )
+        self._footprint_area_below_enabled = (
+            constraint_config.footprint_area_below_enabled
         )
 
     def pack_group(
@@ -343,8 +351,8 @@ class PalletPacker:
     ) -> Tuple[List[Dict], Dict]:
         compactor = PoolCompactor(
             pallet_dims,
-            xy_tolerance=2.0,
-            z_tolerance=0.0,
+            xy_tolerance=self._xy_tolerance,
+            z_tolerance=self._z_tolerance,
             support_ratio_threshold=self._support_ratio,
             constraint_config=self._cfg,
         )
@@ -478,7 +486,6 @@ class PalletPacker:
             packer = self._CustomPacker(
                 pallet_dims,
                 support_ratio_threshold=self._support_ratio,
-                size_tolerance=2.0,
                 max_candidate_points=240,
                 max_points_per_layer=70,
                 constraint_config=self._cfg,
@@ -561,8 +568,8 @@ class PalletPacker:
             packed = self._build_centered_single_box(
                 [item],
                 pallet_dims,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._xy_tolerance,
+                z_tolerance=self._z_tolerance,
                 support_ratio_threshold=self._support_ratio,
                 constraint_config=self._cfg,
             )
@@ -603,7 +610,6 @@ class PalletPacker:
         packer = self._CustomPacker(
             pallet_dims,
             support_ratio_threshold=self._support_ratio,
-            size_tolerance=2.0,
             max_candidate_points=120,
             max_points_per_layer=35,
             constraint_config=self._cfg,
@@ -942,8 +948,8 @@ class PalletPacker:
                 target_mpm=target_mpm,
                 pallet_dims=pallet_dims,
                 seed=pallet_counter,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._xy_tolerance,
+                z_tolerance=self._z_tolerance,
                 candidate_count=12,
                 prefer_fill=fill_aware,
                 constraint_config=self._cfg,
@@ -963,7 +969,6 @@ class PalletPacker:
         packer = self._CustomPacker(
             pallet_dims,
             support_ratio_threshold=self._support_ratio,
-            size_tolerance=2.0,
             max_candidate_points=100 if fill_first else 120,
             max_points_per_layer=30 if fill_first else 25,
             constraint_config=self._cfg,
@@ -1005,8 +1010,8 @@ class PalletPacker:
             packed = self._build_centered_single_box(
                 unfitted,
                 pallet_dims,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._xy_tolerance,
+                z_tolerance=self._z_tolerance,
                 support_ratio_threshold=self._support_ratio,
                 constraint_config=self._cfg,
             )
@@ -1112,8 +1117,8 @@ class PalletPacker:
                 target_mpm=target_mpm,
                 pallet_dims=pallet_dims,
                 seed=seed,
-                xy_tolerance=2.0,
-                z_tolerance=0.0,
+                xy_tolerance=self._xy_tolerance,
+                z_tolerance=self._z_tolerance,
                 candidate_count=16,
                 prefer_fill=True,
                 constraint_config=self._cfg,
@@ -1358,6 +1363,17 @@ class PalletPacker:
                 current,
             ):
                 return []
+            # 小面积在下：整层组的底层直接压在 placed 之上，跨底面时会违例。
+            # 放置层不预检会让整盘门禁在最后拒收，整盘白装一次。
+            if self._footprint_area_below_enabled and not (
+                passes_footprint_area_below_constraint(
+                    item,
+                    point,
+                    dims,
+                    current,
+                )
+            ):
+                return []
             if self._reachability_enabled:
                 suction_pose = reachability.find_reachable_suction_pose(
                     point, dims, current, raw_dims=raw_dims
@@ -1456,6 +1472,18 @@ class PalletPacker:
                 x += dims['length']
                 row_width = max(row_width, dims['width'])
                 continue
+            # 小面积在下：顶层散铺整排压在 base 之上，小底面箱压大底面箱会违例。
+            if self._footprint_area_below_enabled and not (
+                passes_footprint_area_below_constraint(
+                    item,
+                    point,
+                    dims,
+                    current,
+                )
+            ):
+                x += dims['length']
+                row_width = max(row_width, dims['width'])
+                continue
             if self._reachability_enabled:
                 suction_pose = reachability.find_reachable_suction_pose(
                     point, dims, current, raw_dims=raw_dims
@@ -1542,7 +1570,6 @@ class PalletPacker:
         probe = self._CustomPacker(
             pallet_dims,
             support_ratio_threshold=self._support_ratio,
-            size_tolerance=2.0,
             max_candidate_points=180,
             max_points_per_layer=45,
             constraint_config=self._cfg,
@@ -1575,7 +1602,7 @@ class PalletPacker:
                     str(item.get('id')),
                 ),
             )
-            # 同型箱剪枝：尺寸/重量/指数/小箱标记全同的箱子，本轮可行性
+            # 同型箱剪枝：尺寸/重量/指数全同的箱子，本轮可行性
             # 判定完全同构——一个试放失败即全型失败，直接跳过（每轮扫描
             # 从 O(剩余箱数) 降到 O(箱型数)，判定语义不变）。
             failed_types = set()
@@ -1588,7 +1615,6 @@ class PalletPacker:
                     round(float(item.get('height', 0) or 0), 1),
                     round(float(item.get('weight', 0) or 0), 3),
                     float(item.get('min_pack_multiple', 0) or 0),
-                    bool(item.get('is_small_box')),
                 )
                 if type_key in failed_types:
                     continue
@@ -1746,7 +1772,6 @@ class PalletPacker:
             packer = self._CustomPacker(
                 pallet_dims,
                 support_ratio_threshold=self._support_ratio,
-                size_tolerance=2.0,
                 max_candidate_points=150,
                 max_points_per_layer=30,
                 constraint_config=self._cfg,

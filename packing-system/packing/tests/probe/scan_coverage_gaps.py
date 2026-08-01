@@ -41,7 +41,7 @@ def _mk(prefix: str, count: int, L: float, W: float, H: float, mpm: float,
         b = {
             'id': f'{prefix}{i}', 'type': prefix, 'length': float(L),
             'width': float(W), 'height': float(H), 'weight': 1.0,
-            'min_pack_multiple': float(mpm), 'is_small_box': False,
+            'min_pack_multiple': float(mpm),
             'pallet_type': pallet_type, 'sales_order_no': order,
             'pallet_dims': dict(pallet),
         }

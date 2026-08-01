@@ -106,7 +106,7 @@ python code/run_packing.py --safe
 | 约束 | 说明 | 开关（默认 `true`） | 位置 |
 |---|---|---|---|
 | 吸盘可达 | 吸盘垂直下放路径不得被遮挡；吸盘尺寸 `suction_cup_length/width` 等可配 | `suction_reachability_enabled` | `src/packing/suction_planner.py` |
-| 小箱在下(不压大箱) | 小箱(`is_small_box`)正下方不得有体积更大的箱子，防较重小箱压坏大箱 | `small_box_below_enabled` | `src/utils/helpers.py`、`src/geometry/constraint_validator.py` |
+| 小面积在下 | 任一箱子正下方不得有投影面积更大的箱子（对全部箱子生效）；面积按原始长×宽，相等通过 | `footprint_area_below_enabled`（旧键 `small_box_below_enabled` 仍被识别） | `src/utils/helpers.py`、`src/geometry/constraint_validator.py` |
 | 同尺寸重箱在下 | 同尺寸箱子上下叠放时，重箱必须在下、轻箱必须在上 | `same_size_heavier_below_enabled` | `src/packing/stacking_policy.py` |
 | 按倍数凑层 | 同 footprint、不同高度且存在整数倍关系时，优先同层堆叠（软偏好，只影响搜索顺序） | `height_multiple_layering_enabled` | `src/packing/stacking_policy.py`、`src/packing/layer_pool_builder.py` |
 
@@ -341,7 +341,7 @@ python code/tests/test_index_swap.py
 python code/tests/test_incremental.py
 python code/tests/test_recipe_planner.py
 python code/tests/test_incremental_gate.py
-python code/tests/test_small_box_constraint.py
+python code/tests/test_footprint_area_below.py
 python code/tests/test_constraint_config.py
 ```
 

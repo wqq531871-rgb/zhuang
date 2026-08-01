@@ -199,8 +199,8 @@ class LowFillRepacker:
                     target_mpm=target,
                     pallet_dims=pallet_dims,
                     seed=seed,
-                    xy_tolerance=2.0,
-                    z_tolerance=0.0,
+                    xy_tolerance=self._cfg.xy_tolerance,
+                    z_tolerance=self._cfg.z_tolerance,
                     candidate_count=18,
                     constraint_config=self._cfg,
                 )
@@ -208,7 +208,6 @@ class LowFillRepacker:
                 packer = self._CustomPacker(
                     pallet_dims,
                     support_ratio_threshold=self._cfg.support_ratio_threshold,
-                    size_tolerance=2.0,
                     max_candidate_points=260,
                     max_points_per_layer=80,
                     constraint_config=self._cfg,

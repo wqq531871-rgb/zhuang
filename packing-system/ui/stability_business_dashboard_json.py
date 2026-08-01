@@ -1129,7 +1129,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 "lz": safe_float(item.get("height"), 0.0),
                 "min_pack_multiple": safe_float(item.get("min_pack_multiple"), np.nan),
                 "volume": safe_float(item.get("volume"), np.nan),
-                "is_small_box": bool(item.get("is_small_box", False)),
                 "support_ratio_json": safe_float(item.get("support_ratio"), np.nan),
                 "supported_area_json": safe_float(item.get("supported_area"), np.nan),
                 "suction_box_corner": safe_str(item.get("suction_box_corner"), "--"),

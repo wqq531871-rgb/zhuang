@@ -184,7 +184,7 @@ def rescue_by_recipe_rebuild(
             pallet_dims=pallet_dims,
             seed=seed_base + 1000 + residual_counter,
             xy_tolerance=0.0,
-            z_tolerance=0.0,
+            z_tolerance=constraint_config.z_tolerance,
             candidate_count=12,
             constraint_config=constraint_config,
         )

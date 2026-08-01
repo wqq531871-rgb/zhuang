@@ -2,7 +2,7 @@
 
 用代码库里的真实约束函数，对一份装箱方案 JSON 的每个托盘逐项核验：
 - 整盘硬约束 validate_pallet_constraints（越界/间隙/支撑/重叠/吸盘字段/重心）；
-- 小箱在下 passes_small_box_not_on_larger_constraint（逐箱：小箱正下方不得有更大箱）；
+- 小面积在下 passes_footprint_area_below_constraint（逐箱：正下方不得有投影面积更大的箱）；
 - 同尺寸重箱在下 passes_same_size_heavier_below_constraint；
 并统计层级规整度（自底向上的层数、是否锚定角点、整层格栅）。
 
@@ -24,7 +24,7 @@ sys.path.insert(0, str(project_root))
 
 from src.geometry.constraint_validator import validate_pallet_constraints
 from src.utils.helpers import (
-    passes_small_box_not_on_larger_constraint,
+    passes_footprint_area_below_constraint,
 )
 from src.packing.stacking_policy import passes_same_size_heavier_below_constraint
 
@@ -39,7 +39,6 @@ def _dims(box):
 
 def check_constraints(pallets):
     violations = defaultdict(list)
-    small_box_total = 0
     for pal in pallets:
         items = pal.get('packed_items', []) or []
         if not items:
@@ -53,20 +52,18 @@ def check_constraints(pallets):
             for v in gate['violations']:
                 violations[v['type']].append((pid, v.get('box_id')))
 
-        # 2/3. 逐箱：小箱在下 + 同尺寸重箱在下（放置时约束的静态等价核验）
+        # 2/3. 逐箱：小面积在下 + 同尺寸重箱在下（放置时约束的静态等价核验）
         for i, box in enumerate(items):
             pos = box.get('position')
             if not pos:
                 continue
             others = items[:i] + items[i + 1:]
             dims = _dims(box)
-            if box.get('is_small_box'):
-                small_box_total += 1
-            if not passes_small_box_not_on_larger_constraint(box, pos, dims, others):
-                violations['small_box_on_larger'].append((pid, box.get('id')))
+            if not passes_footprint_area_below_constraint(box, pos, dims, others):
+                violations['footprint_area_below'].append((pid, box.get('id')))
             if not passes_same_size_heavier_below_constraint(box, pos, dims, others):
                 violations['same_size_heavier_below'].append((pid, box.get('id')))
-    return violations, small_box_total
+    return violations
 
 
 def analyze_regularity(pallets):
@@ -128,7 +125,7 @@ def print_sample_layout(pallets, n=2):
             p = b['position']
             print('    z=%-5g (x=%-5g y=%-5g) %gx%gx%g type=%s%s'
                   % (p['z'], p['x'], p['y'], b['length'], b['width'], b['height'],
-                     b.get('type'), ' [小箱]' if b.get('is_small_box') else ''))
+                     b.get('type'), ''))
 
 
 def main(path):
@@ -138,10 +135,10 @@ def main(path):
     print('=' * 64)
     print('校验方案:', path, '  托盘数:', len(pallets))
 
-    violations, small_box_total = check_constraints(pallets)
-    print('\n[硬约束 + 堆叠约束]  共扫描小箱 %d 个' % small_box_total)
+    violations = check_constraints(pallets)
+    print('\n[硬约束 + 堆叠约束]')
     if not violations:
-        print('  ✅ 全部托盘通过：越界/间隙/支撑/重叠/吸盘/重心/小箱在下(小箱不压大箱)/同尺寸重箱在下，0 违例。')
+        print('  ✅ 全部托盘通过：越界/间隙/支撑/重叠/吸盘/重心/小面积在下(下方无更大投影面积)/同尺寸重箱在下，0 违例。')
     else:
         for vtype, lst in violations.items():
             print('  ❌ %s: %d 例，例如 %s' % (vtype, len(lst), lst[:3]))

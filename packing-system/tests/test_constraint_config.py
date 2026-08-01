@@ -12,13 +12,13 @@ from src.config import ConstraintConfig, ConfigLoader
 from src.geometry.constraint_validator import validate_pallet_constraints
 
 
-def _box(box_id, x, y, z, l, w, h, weight=10.0, is_small=False):
+def _box(box_id, x, y, z, l, w, h, weight=10.0):
     """构造一个带必要字段的已放置箱（含吸盘字段以通过 require_suction）。"""
     b = {
         'id': box_id, 'position': {'x': x, 'y': y, 'z': z},
         'length': l, 'width': w, 'height': h,
         'raw_length': l, 'raw_width': w, 'raw_height': h,
-        'weight': weight, 'is_small_box': is_small,
+        'weight': weight,
         'pallet_dims': {'length': 1200, 'width': 1000, 'height': 1450},
     }
     for f in (
@@ -37,7 +37,7 @@ def test_defaults():
     assert c.support_ratio_threshold == 0.8
     assert abs(c.center_of_mass_tolerance - 1.0 / 3.0) < 1e-12
     assert c.suction_reachability_enabled
-    assert c.small_box_below_enabled
+    assert c.footprint_area_below_enabled
     assert c.same_size_heavier_below_enabled
     assert c.height_multiple_layering_enabled
     assert c.suction_cup_length == 600.0 and c.suction_cup_width == 800.0
@@ -46,10 +46,10 @@ def test_defaults():
 
 def test_from_dict_tolerant():
     c = ConstraintConfig.from_dict(
-        {'max_box_gap_mm': 8.0, 'small_box_below_enabled': False, 'X': 1}
+        {'max_box_gap_mm': 8.0, 'footprint_area_below_enabled': False, 'X': 1}
     )
     assert c.max_box_gap_mm == 8.0
-    assert c.small_box_below_enabled is False
+    assert c.footprint_area_below_enabled is False
     assert c.support_ratio_threshold == 0.8  # 未提供 → 默认
     assert ConstraintConfig.from_dict(None).max_box_gap_mm == 6.0
     assert ConstraintConfig.from_dict({}).support_ratio_threshold == 0.8
@@ -77,27 +77,51 @@ def test_loader_robot_alias():
     print('[PASS] loader 兼容旧 robot 段')
 
 
-def test_gate_small_box_switch():
-    """小箱在下开关：关闭后门禁不再判违例。"""
+def test_gate_footprint_area_below_switch():
+    """小面积在下开关：关闭后门禁不再判违例。"""
     pallet_dims = {'length': 1200, 'width': 1000, 'height': 1450}
-    # 小箱(体积小)压在大箱(体积大)上 → 违反「小箱在下」
+    # 小底面(200×200)压在大底面(400×400)上 → 违反「小面积在下」
     big = _box('big', 0, 0, 0, 400, 400, 100, weight=5.0)
-    small = _box('small', 0, 0, 100, 200, 200, 100, weight=20.0, is_small=True)
+    small = _box('small', 0, 0, 100, 200, 200, 100, weight=20.0)
     plan = {'packed_items': [big, small]}
 
     on = validate_pallet_constraints(
         plan, pallet_dims, constraint_config=ConstraintConfig()
     )
     types_on = {v['type'] for v in on['violations']}
-    assert 'small_box_on_larger' in types_on, types_on
+    assert 'footprint_area_below' in types_on, types_on
 
     off = validate_pallet_constraints(
         plan, pallet_dims,
-        constraint_config=ConstraintConfig(small_box_below_enabled=False),
+        constraint_config=ConstraintConfig(footprint_area_below_enabled=False),
     )
     types_off = {v['type'] for v in off['violations']}
-    assert 'small_box_on_larger' not in types_off, types_off
-    print('[PASS] 门禁「小箱在下」开关生效（开→拦，关→放行）')
+    assert 'footprint_area_below' not in types_off, types_off
+    print('[PASS] 门禁「小面积在下」开关生效（开→拦，关→放行）')
+
+
+def test_legacy_small_box_key_maps_to_new_key():
+    """旧 yaml 键 small_box_below_enabled 映射到 footprint_area_below_enabled。"""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        old = Path(d) / 'old.yaml'
+        old.write_text(
+            'constraints:\n  small_box_below_enabled: false\n', encoding='utf-8'
+        )
+        assert ConfigLoader(old).load_constraint_config(
+        ).footprint_area_below_enabled is False
+
+        both = Path(d) / 'both.yaml'
+        both.write_text(
+            'constraints:\n'
+            '  small_box_below_enabled: false\n'
+            '  footprint_area_below_enabled: true\n',
+            encoding='utf-8',
+        )
+        assert ConfigLoader(both).load_constraint_config(
+        ).footprint_area_below_enabled is True
+    print('[PASS] 旧键别名生效，新键优先')
 
 
 def test_gate_gap_value_configurable():
@@ -200,7 +224,8 @@ if __name__ == '__main__':
     test_from_dict_tolerant()
     test_frozen()
     test_loader_robot_alias()
-    test_gate_small_box_switch()
+    test_gate_footprint_area_below_switch()
+    test_legacy_small_box_key_maps_to_new_key()
     test_gate_gap_value_configurable()
     test_gate_com_tolerance_configurable()
     test_gate_same_size_heavier_below_switch()

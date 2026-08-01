@@ -55,7 +55,6 @@ def _grid_plan(pallet_id: str, n_boxes: int, id_prefix: str,
                          'z': layer * 240.0},
             'weight': 1.0,
             'min_pack_multiple': mpm,
-            'is_small_box': False,
             'volume': 350.0 * 265.0 * 240.0,
             'pallet_dims': dict(PALLET),
             'supported_area': 352.0 * 267.0,
@@ -92,7 +91,7 @@ def _packed_plan(pallet_id: str, id_prefix: str, n_boxes: int,
     boxes = [{
         'id': f'{id_prefix}-{k:03d}', 'type': f'T{int(L)}',
         'length': L, 'width': W, 'height': H, 'weight': 5.0,
-        'min_pack_multiple': mpm, 'is_small_box': False,
+        'min_pack_multiple': mpm,
         'volume': L * W * H, 'pallet_dims': dict(PALLET),
     } for k in range(n_boxes)]
     packer = BeamSearchPacker(PALLET, constraint_config=ConstraintConfig())
@@ -198,7 +197,7 @@ def _mk_boxes(prefix, n, dims, mpm):
     return [{
         'id': f'{prefix}-{k:03d}', 'type': f'T{prefix}',
         'length': L, 'width': W, 'height': H, 'weight': 5.0,
-        'min_pack_multiple': mpm, 'is_small_box': False,
+        'min_pack_multiple': mpm,
         'volume': L * W * H, 'pallet_dims': dict(PALLET),
     } for k in range(n)]
 
