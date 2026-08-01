@@ -1,8 +1,12 @@
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
-from realtime_dashboard_v3_clean import list_result_json_files
+from realtime_dashboard_v3_clean import (
+    IndustrialPackingWorkbenchClean,
+    list_result_json_files,
+)
 from realtime_dashboard_v2 import find_latest_json
 
 
@@ -61,3 +65,36 @@ def test_history_hides_exports_base_when_execution_in_success(tmp_path):
     assert execution.name in names
     assert base.name not in names
 
+
+def test_new_backend_result_keeps_selected_history_and_running_state(tmp_path):
+    history = tmp_path / "packing_plan_history.json"
+    latest = tmp_path / "packing_plan_latest.json"
+    _write_report(history)
+    _write_report(latest)
+
+    loaded = []
+    refreshed = []
+    statuses = []
+    window = SimpleNamespace(
+        cmb_result_history=SimpleNamespace(currentData=lambda: str(history)),
+        _current_result_path=history.resolve(),
+        _live_result_path=history.resolve(),
+        _api_service_active=True,
+        _active_run_mode="continuous",
+        _write_log=lambda _message: None,
+        load_json_file=lambda path: loaded.append(path),
+        show_final_result=lambda: None,
+        refresh_result_history=lambda **kwargs: refreshed.append(kwargs),
+        _set_status=lambda state: statuses.append(state),
+        workspace_tabs=SimpleNamespace(setCurrentIndex=lambda _index: None),
+        step_run=SimpleNamespace(set_state=lambda *_args: None),
+        step_result=SimpleNamespace(set_state=lambda *_args: None),
+    )
+
+    IndustrialPackingWorkbenchClean.on_backend_finished_json(window, str(latest))
+
+    assert window._live_result_path == latest.resolve()
+    assert window._current_result_path == history.resolve()
+    assert loaded == []
+    assert refreshed == [{"select_path": history.resolve(), "select_current": False}]
+    assert statuses == []

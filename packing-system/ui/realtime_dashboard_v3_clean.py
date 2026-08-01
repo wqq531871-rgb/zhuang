@@ -2188,12 +2188,29 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         super().closeEvent(event)
 
     def on_backend_finished_json(self, json_path: str) -> None:
-        path = Path(json_path)
+        path = Path(json_path).resolve()
+        selected_history_path: Optional[Path] = None
+        if hasattr(self, "cmb_result_history"):
+            selected_result = self.cmb_result_history.currentData()
+            if selected_result and selected_result != _HISTORY_CURRENT_TOKEN:
+                selected_history_path = Path(str(selected_result)).resolve()
+
         self._write_log(f"[UI] 后端完成，正在自动加载结果：{path}")
+        self._live_result_path = path
+        if selected_history_path is not None:
+            self.refresh_result_history(
+                select_path=selected_history_path,
+                select_current=False,
+            )
+            self._write_log(
+                f"[UI] 新结果已就绪（{path.name}），后台继续运行；当前保持查看历史结果。"
+            )
+            return
+
         try:
             self.load_json_file(path)
             self.show_final_result()
-            self._current_result_path = path.resolve()
+            self._current_result_path = path
             self._live_result_path = self._current_result_path
             self.refresh_result_history(select_current=True)
             if hasattr(self, "file_info"):

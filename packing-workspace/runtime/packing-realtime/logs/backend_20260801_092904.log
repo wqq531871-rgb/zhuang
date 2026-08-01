@@ -1,0 +1,26 @@
+[LOG] 后端日志文件：D:\research_code\final\zhuang\packing-workspace\runtime\packing-realtime\logs\backend_20260801_092904.log
+[LOG] 接口模式：每 200 秒拉取并计算，直到手动停止。
+[CMD] D:\research_code\zhuang-ui-m\.venvs\packing-realtime\python.exe D:\research_code\final\zhuang\packing-system\packing\run_wcs_service.py --config D:\research_code\final\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260801_092904.yaml --run-mode continuous
+[WCS] 已加载 BMS 参考表：D:\research_code\final\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+============================================================
+WCS 接口装箱服务（DB 模式）
+  接口模式：真实 WCS（use_real_api=True）
+  接口地址：http://10.222.10.1:8092
+  接口1：http://10.222.10.1:8092/api/wcs/reqstockinfo
+  接口2：http://10.222.10.1:8092/api/wcs/sendpalletplanresult
+  拉取间隔：200 秒（仅拉取）
+  原始 JSON：D:\research_code\final\zhuang\packing-workspace\input\raw
+  数据库：localhost:3306/zhuangdb 表 wcs_stock_box（当前） / wcs_stock_box_all（历史）
+  BMS 参考：D:\research_code\final\zhuang\packing-workspace\data\selected_5000_boxes_9_1_concentrated_3orders.xlsx
+  输出目录：D:\research_code\final\zhuang\packing-workspace\output
+  触发：wcs_stock_box 的 product_code 集合相对立库有变化才全量替换并开算；拉取与装箱串行；历史表只追加
+  约束配置：D:\research_code\final\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20260801_092904.yaml
+  按 Ctrl+C 或由 UI 停止按钮结束进程
+============================================================
+============================================================
+[WCS-拉] 20260801_092907：拉取接口 1 …
+[WCS-拉] 原始响应已保存：D:\research_code\final\zhuang\packing-workspace\input\raw\20260801_092907.json
+[WCS-拉] 已剔除 case_type≠MH423C 的品类 63 条（类型：['MH113', 'WR246']），保留 1927 条。
+[WCS-拉] 忽略 4 条零尺寸/非法尺寸库存；有效记录 1923 条；样例：product_code=30086366/box_type=YZX507/0×0×0, product_code=30086359/box_type=YZX507/0×0×0, product_code=30086364/box_type=YZX507/0×0×0, product_code=30086358/box_type=YZX507/0×0×0
+[WCS-STOP] 真实接口调用失败（本轮拉取），服务停止：(2003, "Can't connect to MySQL server on 'localhost' ([WinError 10061] 由于目标计算机积极拒绝，无法连接。)")
+[UI] 接口装箱服务已停止。
