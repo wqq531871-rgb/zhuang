@@ -21,7 +21,7 @@ import time
 import math
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 # -----------------------------------------------------------------------------
 # Qt runtime fix: set plugin path before importing PyQt5.
@@ -434,7 +434,12 @@ class PalletPreviewCanvas(QtWidgets.QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(210)
+        # 1080p / 高 DPI 缩放下降低最小高度，避免六宫格互相顶死
+        min_h = 210
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is not None and screen.availableGeometry().height() <= 1100:
+            min_h = 140
+        self.setMinimumHeight(min_h)
         self.pallet = None
         self.scene_items = []
         self.has_gl = False
@@ -1123,14 +1128,40 @@ class IndustrialPackingWorkbench(BaseDashboard):
         ensure_runtime_dirs(self.project_dir)
         super().__init__()
         self.setWindowTitle("面向控序混码场景智能装箱规划系统 V2 - 后端装箱 + 前端可视化")
-        self.resize(1840, 1060)
+        self._fit_window_to_screen(preferred=(1840, 1060))
         self._set_status("idle")
         self._write_log(f"[UI] 工作区目录：{workspace_dir_from_project(self.project_dir)}")
         self._write_log(f"[UI] 算法源码目录：{self.project_dir}")
         self._write_log(f"[UI] 默认配置：{self.config_path}")
         self._write_log(f"[UI] 当前 Python：{sys.executable}")
 
+    def _fit_window_to_screen(self, preferred: Tuple[int, int] = (1840, 1060)) -> None:
+        """Clamp initial size to the usable desktop area (taskbar excluded)."""
+        pref_w, pref_h = preferred
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is None:
+            self.resize(pref_w, pref_h)
+            return
+        avail = screen.availableGeometry()
+        width = min(pref_w, avail.width())
+        height = min(pref_h, avail.height())
+        self.resize(width, height)
+        frame = self.frameGeometry()
+        frame.moveCenter(avail.center())
+        self.move(frame.topLeft())
+
     # ------------------------------------------------------------------ UI
+    @staticmethod
+    def _wrap_scroll_panel(panel: QtWidgets.QWidget) -> QtWidgets.QScrollArea:
+        """Put side panels in a scroll area so short screens don't crush/overlaps widgets."""
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        scroll.setWidget(panel)
+        return scroll
+
     def _build_ui(self) -> None:
         central = QtWidgets.QWidget()
         central.setObjectName("Root")
@@ -1144,9 +1175,9 @@ class IndustrialPackingWorkbench(BaseDashboard):
         body = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         body.setObjectName("BodySplitter")
         body.setChildrenCollapsible(False)
-        body.addWidget(self._build_left_workflow())
+        body.addWidget(self._wrap_scroll_panel(self._build_left_workflow()))
         body.addWidget(self._build_center_workspace())
-        body.addWidget(self._build_right_summary())
+        body.addWidget(self._wrap_scroll_panel(self._build_right_summary()))
         body.setSizes([350, 1030, 410])
         root.addWidget(body, 1)
 
@@ -1332,7 +1363,11 @@ class IndustrialPackingWorkbench(BaseDashboard):
         form.addRow("摩擦系数", self.sp_mu)
         self.param_box.setVisible(False)
         layout.addWidget(self.param_box)
-        layout.addStretch(1)
+        # 不使用 stretch：左右栏包在 QScrollArea 里时，应由内容撑开高度才能出现滚动条
+        panel.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred,
+            QtWidgets.QSizePolicy.Minimum,
+        )
         return panel
 
     def _build_center_workspace(self) -> QtWidgets.QWidget:
@@ -1492,7 +1527,11 @@ class IndustrialPackingWorkbench(BaseDashboard):
         layout.addLayout(tools)
 
         self.zoom_canvas = PalletPreviewCanvas()
-        self.zoom_canvas.setMinimumHeight(560)
+        zoom_min_h = 560
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is not None and screen.availableGeometry().height() <= 1100:
+            zoom_min_h = 320
+        self.zoom_canvas.setMinimumHeight(zoom_min_h)
         layout.addWidget(self.zoom_canvas, 1)
 
         self.zoom_timer = QtCore.QTimer(self)
@@ -1693,7 +1732,8 @@ class IndustrialPackingWorkbench(BaseDashboard):
         self.warning_list.itemClicked.connect(self.on_warning_item_clicked)
         r_layout.addWidget(r_title)
         r_layout.addWidget(self.warning_list, 1)
-        layout.addWidget(risk_box, 1)
+        # 风险区用固定最小高度即可；外层滚动条负责矮屏适配（勿再 stretch 挤扁）
+        layout.addWidget(risk_box, 0)
 
         detail_box = QtWidgets.QFrame()
         detail_box.setObjectName("DetailBox")
@@ -1710,6 +1750,10 @@ class IndustrialPackingWorkbench(BaseDashboard):
         d_layout.addWidget(d_title)
         d_layout.addWidget(self.box_detail, 0)
         layout.addWidget(detail_box, 0)
+        panel.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred,
+            QtWidgets.QSizePolicy.Minimum,
+        )
         return panel
 
     def _build_bottom_log(self) -> QtWidgets.QWidget:
@@ -1757,6 +1801,13 @@ class IndustrialPackingWorkbench(BaseDashboard):
             color: #111827;
         }
         QWidget#Root, QWidget#LeftPanel, QWidget#CenterPanel, QWidget#RightPanel {
+            background: #F3F6FA;
+        }
+        QScrollArea {
+            background: #F3F6FA;
+            border: none;
+        }
+        QScrollArea > QWidget > QWidget {
             background: #F3F6FA;
         }
         QFrame#Header {
@@ -3025,7 +3076,7 @@ def main() -> None:
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("Industrial Packing Workbench V2")
     win = IndustrialPackingWorkbench(Path(args.project))
-    win.show()
+    win.showMaximized()
     sys.exit(app.exec_())
 
 
