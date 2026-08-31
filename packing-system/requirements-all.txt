@@ -1,0 +1,25 @@
+# 装箱系统一键环境（UI + 算法 + 本地 WCS 接收端）
+# 推荐：Python 3.11 + conda 环境 packing-zhuang
+# 安装：packing-system\tools\setup\setup_packing_env.ps1
+
+# --- 算法核心 ---
+ortools==9.12.4544
+protobuf>=4.25.3,<6
+
+# --- 数据 / 配置 ---
+numpy==1.26.4
+pandas==2.2.2
+openpyxl==3.1.5
+PyYAML==6.0.2
+PyMySQL==1.0.2
+
+# --- 界面 / 3D ---
+PyQt5==5.15.10
+pyqtgraph==0.13.7
+PyOpenGL==3.1.7
+requests>=2.28.0
+
+# --- 本地 WCS 接收端（V3 会自动拉起）---
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.0

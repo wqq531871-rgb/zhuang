@@ -1,0 +1,47 @@
+[LOG] 后端日志文件：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\logs\backend_20260831_131211.log
+[LOG] 本次结果将输出到：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260831_131211.json
+[CMD] D:\ProgramData\anaconda3\envs\packing-zhuang\python.exe E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\packing\run_packing.py --config E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20260831_131201.yaml --out E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260831_131211.json
+已加载约束配置：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20260831_131201.yaml
+load D:\ProgramData\anaconda3\envs\packing-zhuang\Lib\site-packages\ortools\.libs\zlib1.dll...
+load D:\ProgramData\anaconda3\envs\packing-zhuang\Lib\site-packages\ortools\.libs\abseil_dll.dll...
+load D:\ProgramData\anaconda3\envs\packing-zhuang\Lib\site-packages\ortools\.libs\utf8_validity.dll...
+load D:\ProgramData\anaconda3\envs\packing-zhuang\Lib\site-packages\ortools\.libs\re2.dll...
+load D:\ProgramData\anaconda3\envs\packing-zhuang\Lib\site-packages\ortools\.libs\libprotobuf.dll...
+load D:\ProgramData\anaconda3\envs\packing-zhuang\Lib\site-packages\ortools\.libs\highs.dll...
+load D:\ProgramData\anaconda3\envs\packing-zhuang\Lib\site-packages\ortools\.libs\ortools.dll...
+已加载配置数据集：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\data\ui_inputs\20260831_131201_668.xlsx
+数据预处理和箱子分组完成（按托盘类型+销售订单号）。
+----------------------------------------
+正在处理托盘类型：MH423C，销售订单号：ANALYSIS_001
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（less_than_2_consolidatable）。
+托盘类型 MH423C（销售订单号：ANALYSIS_001）处理完成：总托盘 11，指数达标 11，未达标 0，平均缺口 0.00，最大缺口 0.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/0，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=44.76s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=0.01s，total=44.77s。
+========================================
+统计汇总：总托盘 11，指数达标 11，未达标 0，未知 0，平均缺口 0.00，最大缺口 0.00，失败托盘互借修复成功 0
+KPI汇总：near/mid/deep=0/0/0，pair尝试=0，pair改进=0，pair效率=0.00%
+耗时汇总：packing=44.76s，main_topup=0.00s，retry=0.00s，repack=0.01s，end_to_end=50.87s
+========================================
+========================================
+[success] 装箱方案：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_20260831_131302.json
+[success] 托盘统计：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\packing_plan_summary_20260831_131302.xlsx
+========================================
+算法总运行时间：50.87 秒
+========================================
+方案另存为: E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260831_131211.json
+[执行规划] 产物目录：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success（success）
+[执行规划] 开始：D:\ProgramData\anaconda3\envs\packing-zhuang\python.exe E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\run_execution_planning.py E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260831_131211.json --config E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20260831_131201.yaml --output E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\ui_packing_plan_20260831_131211_execution.json --wcs-output E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\ui_packing_plan_20260831_131211_execution_wcs.json --wcs-map-output E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\ui_packing_plan_20260831_131211_execution_wcs_map.json
+[现场会话] 新计算结果已入库，当前没有未完成托盘
+execution plan written: pallets=11 boxes=668 reordered_pallets=11 path=E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\ui_packing_plan_20260831_131211_execution.json
+WCS execution cases written: E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\ui_packing_plan_20260831_131211_execution_wcs.json
+WCS execution plan map written: E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\ui_packing_plan_20260831_131211_execution_wcs_map.json
+execution scan deviations pallet='MH423C-ANALYSIS_001-5' count=6: expected=236 selected=511 box=236 after=511 reason=open_direction lookahead=true; expected=264 selected=523 box=264 after=523 reason=open_direction lookahead=true; expected=237 selected=243 box=237 after=243 reason=open_direction lookahead=true; expected=265 selected=568 box=265 after=568 reason=open_direction lookahead=true; expected=238 selected=244 box=238 after=244 reason=open_direction lookahead=true; expected=266 selected=272 box=266 after=272 reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-ANALYSIS_001-10' count=3: expected=471 selected=88 box=471 after=88 reason=open_direction lookahead=true; expected=472 selected=504 box=472 after=504 reason=open_direction lookahead=true; expected=473 selected=505 box=473 after=505 reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-ANALYSIS_001-11' count=8: expected=662 selected=75 box=662 after=75 reason=open_direction lookahead=true; expected=644 selected=78 box=644 after=78 reason=open_direction lookahead=true; expected=653 selected=632 box=653 after=632 reason=open_direction lookahead=true; expected=645 selected=84 box=645 after=84 reason=open_direction lookahead=true; expected=654 selected=633 box=654 after=633 reason=open_direction lookahead=true; expected=646 selected=657 box=646 after=657 reason=open_direction lookahead=true; expected=655 selected=634 box=655 after=634 reason=open_direction lookahead=true; expected=76 selected=108 box=76 after=108 reason=open_direction lookahead=true
+[WCS-DB] wcs_success_box 后置写入异常：No module named 'pymysql'
+[WCS-DB] wcs_box_orientation 后置写入异常：No module named 'pymysql'
+[现场码垛] 清空旧队列失败：No module named 'pymysql'
+[执行规划] 已删除原方案（仅保留 execution）：ui_packing_plan_20260831_131211.json
+[执行规划] 完成；统一使用：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\ui_packing_plan_20260831_131211_execution.json
+[UI] 可视化将加载执行方案：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\output\success\ui_packing_plan_20260831_131211_execution.json
