@@ -8,9 +8,15 @@ still satisfies the hard geometric and handling constraints.
 from typing import Dict, List
 
 from .center_of_mass import validate_center_of_mass
+from .flat_top import (
+    check_flat_top_full_perimeter,
+    flat_top_required_target,
+    flat_top_seam_tolerance,
+)
 from .gap_checker import passes_box_gap_constraint
 from .overlap import axis_overlap_len
 from .support import direct_support_ratio
+from .weight_limit import check_pallet_weight, pallet_weight_cap
 from ..utils.case_group import find_case_group_violation
 from ..utils.helpers import passes_footprint_area_below_constraint
 
@@ -42,7 +48,7 @@ def validate_pallet_constraints(
 ) -> Dict:
     """校验单个托盘方案的全部硬约束。
 
-    必须约束（恒查，仅阈值可配）：越界、重叠、间隙、支撑率、重心稳定。
+    必须约束（恒查，仅阈值可配）：越界、重叠、间隙、支撑率、重心稳定、整盘限重。
     可关约束：小面积在下（footprint_area_below_enabled）、同尺寸重箱在下
     （same_size_heavier_below_enabled）、吸盘字段（require_suction）。
 
@@ -82,6 +88,18 @@ def validate_pallet_constraints(
         violations.append({
             "type": "case_group_mixed",
             "detail": cg_violation,
+        })
+    # 整盘限重（必须约束，甲方 2026-09 需求）：整垛箱子重量和 ≤ 限重。
+    # 与几何无关的可加约束，因此在此与位置无关的段落校验。放置层/ILP 已精确
+    # 入模，此处是覆盖全部救援与重排路径的最终安全网。单箱盘豁免（数据异常，
+    # 重排无解，拦下会让守恒兜底无路可走）；缺 weight 字段的箱按 0 计。
+    weight_violation = check_pallet_weight(
+        items, pallet_weight_cap(constraint_config)
+    )
+    if weight_violation:
+        violations.append({
+            "type": "pallet_overweight",
+            "detail": weight_violation,
         })
     # 达标盘免 gap 校验（用户决策）：gap 约束本意是防止装箱偷懒留大空隙导致装
     # 不满；整盘指数达标即已尽力装满，剩余空隙是高密度装载的几何必然，不再以
@@ -207,6 +225,25 @@ def validate_pallet_constraints(
                 "type": "center_of_mass",
                 "detail": com,
             })
+
+        # 平顶不缺角（可关约束，甲方 2026-07 需求）：正常订单（全部箱子带
+        # _normal_order 标记）的达标盘必须顶面平（零容差）且整圈周边无缺口；
+        # 尾盘（未达标）/守恒兜底盘/范围外托盘类型豁免，判定与 target 解析
+        # 见 flat_top_required_target。未打标箱子（旧测试、外部构造）＝跳过，
+        # 历史行为不变。
+        flat_target = flat_top_required_target(
+            items, pallet_plan, target_mpm, constraint_config,
+        )
+        if flat_target is not None:
+            shape = check_flat_top_full_perimeter(
+                items,
+                seam_tolerance_mm=flat_top_seam_tolerance(constraint_config),
+            )
+            if not shape.get("is_valid"):
+                violations.append({
+                    "type": "flat_top_perimeter",
+                    "detail": shape.get("violations", [])[:5],
+                })
 
     return {
         "is_valid": not violations,

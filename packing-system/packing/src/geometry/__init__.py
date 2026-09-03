@@ -12,6 +12,11 @@ from .constraint_validator import (
     validate_pallet_constraints,
     validate_plan_constraints,
 )
+from .weight_limit import (
+    check_pallet_weight,
+    items_total_weight,
+    pallet_weight_cap,
+)
 
 __all__ = [
     # 重叠检测
@@ -29,4 +34,8 @@ __all__ = [
     "refresh_pallet_stability_status",
     "validate_pallet_constraints",
     "validate_plan_constraints",
+    # 整盘限重
+    "check_pallet_weight",
+    "items_total_weight",
+    "pallet_weight_cap",
 ]

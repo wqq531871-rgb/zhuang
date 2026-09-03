@@ -18,24 +18,39 @@ from copy import deepcopy
 from typing import Dict, List, Optional
 
 from ..geometry.constraint_validator import validate_pallet_constraints
+from ..geometry.weight_limit import box_weight
 from ..utils.dimensions import raw_dims
 from .beam_search_packer import BeamSearchPacker
 
 COLUMN_WIDTH = 350.0  # 列网格主列宽（mm），匹配本项目规整底面的公共边
 
 
-def _ffd_columns(boxes_fp: List[Dict], cap: float) -> List[List[Dict]]:
-    """同底面箱按高度降序 First-Fit-Decreasing 凑成柱（柱内高度和 ≤ cap）。"""
+def _ffd_columns(
+    boxes_fp: List[Dict],
+    cap: float,
+    weight_cap: Optional[float] = None,
+) -> List[List[Dict]]:
+    """同底面箱按高度降序 First-Fit-Decreasing 凑成柱（柱内高度和 ≤ cap）。
+
+    weight_cap：整盘限重（kg）。给定时柱重也不得超过它——柱是整体上盘的最小
+    单位，超重柱在任何盘上都不合法，必须在凑柱时就切断，否则这些箱只能整批
+    退残料。None（默认）＝不限重，行为与历史完全一致。
+    """
     cols: List[Dict] = []
     for box in sorted(boxes_fp, key=lambda b: -float(b.get('height', 0) or 0)):
         h = float(box.get('height', 0) or 0)
+        w = box_weight(box)
         for col in cols:
-            if col['rem'] >= h - 1e-9:
-                col['rem'] -= h
-                col['boxes'].append(box)
-                break
+            if col['rem'] < h - 1e-9:
+                continue
+            if weight_cap is not None and col['w'] + w > weight_cap + 1e-6:
+                continue
+            col['rem'] -= h
+            col['w'] += w
+            col['boxes'].append(box)
+            break
         else:
-            cols.append({'rem': cap - h, 'boxes': [box]})
+            cols.append({'rem': cap - h, 'w': w, 'boxes': [box]})
     return [c['boxes'] for c in cols]
 
 

@@ -16,7 +16,7 @@
 """
 
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -34,6 +34,11 @@ class ConstraintConfig:
         z_tolerance: 放置尺寸容差，高 +本值（毫米，默认 0.0）。
         center_of_mass_tolerance: 整体重心相对托盘中心的最大允许偏移比例
             （默认 1/3，即偏移不得超过托盘对应边长的 1/3）。
+        max_pallet_weight_kg: 整盘（整垛箱子）重量上限，千克，默认 1000.0。
+            甲方 2026-09 需求：现场部分托盘整垛超过 1000kg。≤ 0 视为关闭约束，
+            完全恢复历史行为。约束是可加、与几何无关的容量约束，故在 GCP 的
+            ILP / CP-SAT 里精确入模，不是事后拦截，详见 geometry/weight_limit.py。
+            单箱本身超限时该盘豁免（数据异常，重排无解，拦下会破坏守恒）。
 
         # —— 可关约束的开关（默认 True）——
         suction_reachability_enabled: 是否启用机器人吸盘可达性检查。
@@ -43,6 +48,14 @@ class ConstraintConfig:
         same_size_heavier_below_enabled: 是否启用「同尺寸重箱在下」。
         height_multiple_layering_enabled: 是否启用「按倍数凑层」打分偏好
             （同底面不同高度按整数倍优先同层堆叠；这是软偏好，不是硬拦截）。
+        flat_top_full_perimeter_enabled: 是否启用「平顶不缺角」（甲方 2026-07
+            需求）：正常订单（全规则箱，见 utils/normal_order.py）的达标盘
+            必须顶面平（零容差）且整圈周边无缺口；尾盘（未达标盘）与守恒
+            兜底盘豁免。校验实现见 geometry/flat_top.py。
+        flat_top_pallet_types: 「平顶不缺角」适用的托盘类型（甲方口径：仅
+            MH423C；MH110 不做要求）。
+        flat_top_seam_tolerance_mm: 周边铺满判定允许的箱间缝隙（毫米，默认
+            6.0，对齐 max_box_gap_mm 的"贴紧"语义；顶面等高判定始终零容差）。
 
         # —— 吸盘几何（供可达性检查用，仅在 suction_reachability_enabled 时生效）——
         suction_cup_length: 吸盘长度（毫米，默认 600.0）。
@@ -72,12 +85,19 @@ class ConstraintConfig:
     center_of_mass_tolerance: float = 1.0 / 3.0
     xy_tolerance: float = 2.0
     z_tolerance: float = 0.0
+    # 整盘限重（kg）。≤ 0 = 关闭。见 geometry/weight_limit.py。
+    max_pallet_weight_kg: float = 1000.0
 
     # —— 可关约束开关 ——
     suction_reachability_enabled: bool = True
     footprint_area_below_enabled: bool = True
     same_size_heavier_below_enabled: bool = True
     height_multiple_layering_enabled: bool = True
+
+    # —— 平顶不缺角（正常订单达标盘；尾盘豁免）——
+    flat_top_full_perimeter_enabled: bool = True
+    flat_top_pallet_types: Tuple[str, ...] = ('MH423C',)
+    flat_top_seam_tolerance_mm: float = 6.0
 
     # —— 吸盘几何 ——
     suction_cup_length: float = 600.0
@@ -121,6 +141,14 @@ class ConstraintConfig:
         if not data:
             return cls()
         known = {k: v for k, v in data.items() if k in cls.__annotations__}
+        # YAML 列表 → 元组（frozen dataclass 保持不可变语义）
+        if 'flat_top_pallet_types' in known:
+            value = known['flat_top_pallet_types']
+            if isinstance(value, str):
+                value = (value,)
+            known['flat_top_pallet_types'] = tuple(
+                str(item) for item in (value or ())
+            )
         return cls(**known)
 
     def to_dict(self) -> Dict:
