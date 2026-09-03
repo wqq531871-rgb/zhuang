@@ -21,7 +21,7 @@ import time
 import math
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 # -----------------------------------------------------------------------------
 # Qt runtime fix: set plugin path before importing PyQt5.
@@ -95,6 +95,10 @@ DEFAULT_CONFIG_REL = Path(r"config\packing_config.yaml")
 DEFAULT_RUN_SCRIPT_REL = Path(r"packing\run_packing.py")
 RUNTIME_NAME = "packing-realtime"
 
+# 中间垛型总览：每页 4 个（上2下2），其余翻页查看
+OVERVIEW_CARDS_PER_PAGE = 4
+OVERVIEW_GRID_COLS = 2
+
 
 # 左侧“装箱参数方案”只影响前端稳定性复核，不改后端装箱算法。
 # 选择方案后会自动写入下面 4 个评价参数，并刷新当前托盘分析结果。
@@ -112,6 +116,32 @@ IGNORED_RISK_PHRASES = {"吸盘矩形越界"}
 ANIM_SPEED_PRESETS = (0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0)
 ANIM_BASE_INTERVAL_MS = 400
 ANIM_DEFAULT_SPEED_INDEX = 3  # 1.0x
+
+# 3D 着色模式：完整名用于逻辑，短标签用于窄卡片下拉框
+COLOR_MODE_OPTIONS = (
+    ("按支撑风险着色", "风险"),
+    ("按重量着色", "重量"),
+    ("按层高着色", "层高"),
+    ("按箱型着色", "箱型"),
+    ("按箱子区分着色", "分箱"),
+)
+DEFAULT_COLOR_MODE = "按箱子区分着色"
+
+
+def populate_color_mode_combo(
+    combo: QtWidgets.QComboBox,
+    current: str = DEFAULT_COLOR_MODE,
+) -> None:
+    combo.clear()
+    for full, short in COLOR_MODE_OPTIONS:
+        combo.addItem(short, full)
+    idx = combo.findData(current)
+    combo.setCurrentIndex(idx if idx >= 0 else combo.count() - 1)
+
+
+def current_color_mode(combo: QtWidgets.QComboBox) -> str:
+    data = combo.currentData()
+    return str(data) if data else combo.currentText()
 
 
 def anim_speed_multiplier(speed_index: int) -> float:
@@ -369,8 +399,12 @@ class StepCard(QtWidgets.QFrame):
         super().__init__(parent)
         self.setObjectName("StepCard")
         self.setProperty("state", "normal")
+        self.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred,
+            QtWidgets.QSizePolicy.Maximum,
+        )
         layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setContentsMargins(12, 8, 12, 8)
         layout.setSpacing(10)
         self.badge = QtWidgets.QLabel(number)
         self.badge.setObjectName("StepBadge")
@@ -434,7 +468,12 @@ class PalletPreviewCanvas(QtWidgets.QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(210)
+        # 2×2 四宫格：单卡高度适中，避免上下两行顶死
+        min_h = 160
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is not None and screen.availableGeometry().height() <= 1100:
+            min_h = 130
+        self.setMinimumHeight(min_h)
         self.pallet = None
         self.scene_items = []
         self.has_gl = False
@@ -873,68 +912,77 @@ class PalletPreviewCard(QtWidgets.QFrame):
         self.timer.timeout.connect(self._anim_step)
 
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(4)
 
         head = QtWidgets.QHBoxLayout()
+        head.setSpacing(6)
         self.title = QtWidgets.QLabel("--")
         self.title.setObjectName("PreviewTitle")
         self.title.setTextInteractionFlags(
             QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard
         )
-        self.stats = QtWidgets.QLabel("--")
-        self.stats.setObjectName("PreviewSub")
-        self.stats.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.stats = QtWidgets.QLabel("")
+        self.stats.setVisible(False)
         self.btn_zoom = QtWidgets.QPushButton("⛶")
         self.btn_zoom.setObjectName("IconButton")
         self.btn_zoom.setFixedSize(24, 24)
         self.btn_zoom.setToolTip("在中间区域放大当前托盘")
         head.addWidget(self.title, 1)
-        head.addWidget(self.stats)
         head.addWidget(self.btn_zoom)
         layout.addLayout(head)
 
-        self.box_unique_id = QtWidgets.QLabel("box_unique_id：--")
-        self.box_unique_id.setObjectName("PreviewSub")
-        self.box_unique_id.setTextInteractionFlags(
-            QtCore.Qt.TextSelectableByMouse | QtCore.Qt.TextSelectableByKeyboard
-        )
-        layout.addWidget(self.box_unique_id)
+        self.box_unique_id = QtWidgets.QLabel("")
+        self.box_unique_id.setVisible(False)
 
         self.sub = QtWidgets.QLabel("--")
         self.sub.setObjectName("PreviewSub")
+        self.sub.setWordWrap(True)
         layout.addWidget(self.sub)
 
-        tools = QtWidgets.QHBoxLayout()
-        tools.setSpacing(4)
+        playback = QtWidgets.QHBoxLayout()
+        playback.setSpacing(4)
         self.btn_final = QtWidgets.QPushButton("最终")
         self.btn_play = QtWidgets.QPushButton("播放")
         self.btn_pause = QtWidgets.QPushButton("暂停")
-        self.btn_prev = QtWidgets.QPushButton("前一步")
-        self.btn_next = QtWidgets.QPushButton("后一步")
+        self.btn_prev = QtWidgets.QPushButton("◀")
+        self.btn_next = QtWidgets.QPushButton("▶")
         self.btn_reset = QtWidgets.QPushButton("重置")
-        for b in [
+        self.btn_prev.setToolTip("前一步：回退一箱")
+        self.btn_next.setToolTip("后一步：前进一箱")
+        for b in (
             self.btn_final, self.btn_play, self.btn_pause,
             self.btn_prev, self.btn_next, self.btn_reset,
-        ]:
+        ):
             b.setObjectName("TinyButton")
-            tools.addWidget(b)
-        self.btn_prev.setToolTip("回退一箱，逐步观察装箱过程")
-        self.btn_next.setToolTip("前进一箱，逐步观察装箱过程")
+            b.setSizePolicy(
+                QtWidgets.QSizePolicy.Expanding,
+                QtWidgets.QSizePolicy.Fixed,
+            )
+            playback.addWidget(b, 1)
+        layout.addLayout(playback)
+
+        options = QtWidgets.QHBoxLayout()
+        options.setSpacing(6)
+        color_lbl = QtWidgets.QLabel("着色")
+        color_lbl.setObjectName("PreviewSub")
         self.cmb_color = QtWidgets.QComboBox()
-        self.cmb_color.addItems(["按支撑风险着色", "按重量着色", "按层高着色", "按箱型着色", "按箱子区分着色"])
-        self.cmb_color.setCurrentText("按箱子区分着色")
-        self.cmb_color.setMinimumWidth(110)
-        tools.addWidget(self.cmb_color, 1)
+        populate_color_mode_combo(self.cmb_color)
+        self.cmb_color.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding,
+            QtWidgets.QSizePolicy.Fixed,
+        )
         self.chk_suction = QtWidgets.QCheckBox("吸盘")
         self.chk_suction.setChecked(False)
         self.chk_risk = QtWidgets.QCheckBox("风险")
-        tools.addWidget(self.chk_suction)
-        tools.addWidget(self.chk_risk)
-        layout.addLayout(tools)
+        options.addWidget(color_lbl)
+        options.addWidget(self.cmb_color, 1)
+        options.addWidget(self.chk_suction)
+        options.addWidget(self.chk_risk)
+        layout.addLayout(options)
 
         speed_row = QtWidgets.QHBoxLayout()
-        speed_row.setSpacing(6)
+        speed_row.setSpacing(4)
         speed_lbl = QtWidgets.QLabel("速度")
         speed_lbl.setObjectName("PreviewSub")
         self.speed_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
@@ -945,16 +993,14 @@ class PalletPreviewCard(QtWidgets.QFrame):
         self.speed_slider.setTickInterval(1)
         self.speed_slider.setSingleStep(1)
         self.speed_slider.setPageStep(1)
-        self.speed_slider.setMinimumHeight(18)
+        self.speed_slider.setMinimumHeight(16)
         self.speed_slider.setToolTip("拖动调整三维动画播放速度（慢 → 快）")
         self.speed_value = QtWidgets.QLabel(anim_speed_text(ANIM_DEFAULT_SPEED_INDEX))
         self.speed_value.setObjectName("AnimSpeedValue")
-        self.speed_value.setMinimumWidth(36)
+        self.speed_value.setMinimumWidth(32)
         self.speed_value.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
         speed_row.addWidget(speed_lbl)
-        speed_row.addWidget(QtWidgets.QLabel("慢"))
         speed_row.addWidget(self.speed_slider, 1)
-        speed_row.addWidget(QtWidgets.QLabel("快"))
         speed_row.addWidget(self.speed_value)
         layout.addLayout(speed_row)
 
@@ -1018,9 +1064,16 @@ class PalletPreviewCard(QtWidgets.QFrame):
         }.get(sequence_status, sequence_status)
         self.title.setText(pid)
         self.box_unique_id.setText(f"box_unique_id：{box_unique_id}")
-        self.sub.setText(
-            f"状态：{status}｜箱数：{count}｜填充率：{fill_txt}｜指数：{index_txt}｜{sequence_short}"
+        uid_line = (
+            f"box_unique_id：{box_unique_id}"
+            if box_unique_id not in {"", "--"}
+            else ""
         )
+        summary = (
+            f"状态：{status}｜箱数：{count}｜填充率：{fill_txt}｜"
+            f"指数：{index_txt}｜{sequence_short}"
+        )
+        self.sub.setText(f"{uid_line}\n{summary}" if uid_line else summary)
         self.stats.setText("当前选中" if selected else "点击选择")
         self.canvas.set_pallet(pallet)
         self._apply_options()
@@ -1029,7 +1082,7 @@ class PalletPreviewCard(QtWidgets.QFrame):
         self.canvas.set_options(
             show_suction=self.chk_suction.isChecked(),
             only_risk=self.chk_risk.isChecked(),
-            color_mode=self.cmb_color.currentText(),
+            color_mode=current_color_mode(self.cmb_color),
             visible_count=None if self._anim_index <= 0 else self._anim_index,
             sequence_mode=self.sequence_mode,
         )
@@ -1111,6 +1164,10 @@ class PalletPreviewCard(QtWidgets.QFrame):
         self.canvas.set_options(visible_count=min(self._anim_index, n))
 
 
+LOG_COLLAPSED_PANE_HEIGHT = 44
+LOG_EXPANDED_PANE_HEIGHT = 168
+
+
 class IndustrialPackingWorkbench(BaseDashboard):
     """A friendlier industrial UI that reuses the stable calculation and 3D logic."""
 
@@ -1123,14 +1180,57 @@ class IndustrialPackingWorkbench(BaseDashboard):
         ensure_runtime_dirs(self.project_dir)
         super().__init__()
         self.setWindowTitle("面向控序混码场景智能装箱规划系统 V2 - 后端装箱 + 前端可视化")
-        self.resize(1840, 1060)
+        self._fit_window_to_screen(preferred=(1920, 1080))
         self._set_status("idle")
         self._write_log(f"[UI] 工作区目录：{workspace_dir_from_project(self.project_dir)}")
         self._write_log(f"[UI] 算法源码目录：{self.project_dir}")
         self._write_log(f"[UI] 默认配置：{self.config_path}")
         self._write_log(f"[UI] 当前 Python：{sys.executable}")
 
+    def _fit_window_to_screen(self, preferred: Tuple[int, int] = (1920, 1080)) -> None:
+        """Use most of the usable desktop area so the first frame is not tiny."""
+        pref_w, pref_h = preferred
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is None:
+            self.resize(pref_w, pref_h)
+            return
+        avail = screen.availableGeometry()
+        width = max(pref_w, int(avail.width() * 0.96))
+        height = max(int(pref_h * 0.98), int(avail.height() * 0.96))
+        width = min(width, avail.width())
+        height = min(height, avail.height())
+        self.setMinimumSize(min(1280, width), min(720, height))
+        self.resize(width, height)
+        frame = self.frameGeometry()
+        frame.moveCenter(avail.center())
+        self.move(frame.topLeft())
+
     # ------------------------------------------------------------------ UI
+    @staticmethod
+    def _wrap_side_scroll(panel: QtWidgets.QWidget) -> QtWidgets.QScrollArea:
+        """Side panels scroll vertically instead of crushing/overlapping when space is tight."""
+        scroll = QtWidgets.QScrollArea()
+        scroll.setObjectName("SideScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        panel.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred,
+            QtWidgets.QSizePolicy.Minimum,
+        )
+        scroll.setWidget(panel)
+        return scroll
+
+    @staticmethod
+    def _configure_body_splitter(splitter: QtWidgets.QSplitter) -> None:
+        """Side panels fixed-ish; center gets most width for two large preview cards."""
+        splitter.setHandleWidth(5)
+        splitter.setStretchFactor(0, 2)
+        splitter.setStretchFactor(1, 5)
+        splitter.setStretchFactor(2, 2)
+        splitter.setSizes([360, 960, 360])
+
     def _build_ui(self) -> None:
         central = QtWidgets.QWidget()
         central.setObjectName("Root")
@@ -1144,13 +1244,30 @@ class IndustrialPackingWorkbench(BaseDashboard):
         body = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         body.setObjectName("BodySplitter")
         body.setChildrenCollapsible(False)
-        body.addWidget(self._build_left_workflow())
+        body.addWidget(self._wrap_side_scroll(self._build_left_workflow()))
         body.addWidget(self._build_center_workspace())
-        body.addWidget(self._build_right_summary())
-        body.setSizes([350, 1030, 410])
-        root.addWidget(body, 1)
+        body.addWidget(self._wrap_side_scroll(self._build_right_summary()))
+        self._configure_body_splitter(body)
+        self.body_splitter = body
 
-        root.addWidget(self._build_bottom_log())
+        body_host = QtWidgets.QWidget()
+        body_host.setObjectName("BodyHost")
+        body_host.setMinimumHeight(520)
+        body_host_layout = QtWidgets.QVBoxLayout(body_host)
+        body_host_layout.setContentsMargins(0, 0, 0, 0)
+        body_host_layout.setSpacing(0)
+        body_host_layout.addWidget(body)
+
+        self.bottom_log_panel = self._build_bottom_log()
+        self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self.main_splitter.setObjectName("MainSplitter")
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.addWidget(body_host)
+        self.main_splitter.addWidget(self.bottom_log_panel)
+        self.main_splitter.setStretchFactor(0, 1)
+        self.main_splitter.setStretchFactor(1, 0)
+        self._sync_log_splitter_sizes(expanded=False)
+        root.addWidget(self.main_splitter, 1)
 
     def _build_header(self) -> QtWidgets.QWidget:
         header = QtWidgets.QFrame()
@@ -1206,17 +1323,23 @@ class IndustrialPackingWorkbench(BaseDashboard):
     def _build_left_workflow(self) -> QtWidgets.QWidget:
         panel = QtWidgets.QWidget()
         panel.setObjectName("LeftPanel")
+        panel.setMinimumWidth(340)
         layout = QtWidgets.QVBoxLayout(panel)
-        layout.setContentsMargins(14, 14, 10, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(12, 8, 8, 12)
+        layout.setSpacing(6)
 
         self.file_info = QtWidgets.QLabel("尚未加载结果文件")
-        self.file_info.setObjectName("SmallInfo")
+        self.file_info.setObjectName("FileInfoLabel")
         self.file_info.setWordWrap(True)
-        layout.addWidget(self.file_info)
+        self.file_info.setAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignTop)
+        self.file_info.setSizePolicy(
+            QtWidgets.QSizePolicy.Preferred,
+            QtWidgets.QSizePolicy.Maximum,
+        )
+        layout.addWidget(self.file_info, 0)
 
         self.step_run = StepCard("1", "运行状态", "等待开始")
-        layout.addWidget(self.step_run)
+        layout.addWidget(self.step_run, 0)
         self.run_progress = QtWidgets.QProgressBar()
         self.run_progress.setRange(0, 100)
         self.run_progress.setValue(0)
@@ -1224,7 +1347,11 @@ class IndustrialPackingWorkbench(BaseDashboard):
         self.run_progress.setFormat("等待开始")
         layout.addWidget(self.run_progress)
 
-        self.step_result = StepCard("2", "筛选托盘", "中间区域每页显示 6 个三维托盘")
+        self.step_result = StepCard(
+            "2",
+            "筛选托盘",
+            f"中间区域每页显示 {OVERVIEW_CARDS_PER_PAGE} 个三维托盘，可翻页查看",
+        )
         layout.addWidget(self.step_result)
         filter_box = QtWidgets.QFrame()
         filter_box.setObjectName("ParamBox")
@@ -1338,9 +1465,10 @@ class IndustrialPackingWorkbench(BaseDashboard):
     def _build_center_workspace(self) -> QtWidgets.QWidget:
         panel = QtWidgets.QWidget()
         panel.setObjectName("CenterPanel")
+        panel.setMinimumWidth(420)
         layout = QtWidgets.QVBoxLayout(panel)
-        layout.setContentsMargins(8, 14, 8, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(6, 12, 6, 8)
+        layout.setSpacing(8)
 
         self.workspace_tabs = QtWidgets.QTabWidget()
         self.workspace_tabs.setObjectName("WorkspaceTabs")
@@ -1381,10 +1509,12 @@ class IndustrialPackingWorkbench(BaseDashboard):
         ov_layout.setSpacing(8)
 
         ov_top = QtWidgets.QHBoxLayout()
-        ov_title = QtWidgets.QLabel("六托盘三维总览（每页 6 个，可拖动/缩放/旋转，点击托盘联动右侧数据）")
+        ov_title = QtWidgets.QLabel(
+            f"垛型总览（每页 {OVERVIEW_CARDS_PER_PAGE} 个 · 可拖动/缩放/旋转 · 点击联动右侧）"
+        )
         ov_title.setObjectName("SectionTitle")
-        ov_top.addWidget(ov_title)
-        ov_top.addStretch(1)
+        ov_title.setWordWrap(True)
+        ov_top.addWidget(ov_title, 1)
         self.btn_prev_page = QtWidgets.QPushButton("上一页")
         self.btn_prev_page.setObjectName("MiniButton")
         self.btn_prev_page.clicked.connect(self._prev_overview_page)
@@ -1399,14 +1529,14 @@ class IndustrialPackingWorkbench(BaseDashboard):
         ov_layout.addLayout(ov_top)
 
         self.overview_grid = QtWidgets.QGridLayout()
-        self.overview_grid.setSpacing(10)
+        self.overview_grid.setSpacing(8)
         self.overview_cards = []
-        for i in range(6):
+        for i in range(OVERVIEW_CARDS_PER_PAGE):
             card = PalletPreviewCard()
             card.clicked.connect(lambda idx=i: self._on_overview_card_clicked(idx))
             card.request_zoom.connect(self._enter_pallet_zoom)
             self.overview_cards.append(card)
-            self.overview_grid.addWidget(card, i // 3, i % 3)
+            self.overview_grid.addWidget(card, i // OVERVIEW_GRID_COLS, i % OVERVIEW_GRID_COLS)
         ov_layout.addLayout(self.overview_grid, 1)
 
         self.overview_box = overview_box
@@ -1479,9 +1609,8 @@ class IndustrialPackingWorkbench(BaseDashboard):
         tools.addSpacing(8)
         tools.addWidget(QtWidgets.QLabel("着色"))
         self.zoom_cmb_color = QtWidgets.QComboBox()
-        self.zoom_cmb_color.addItems(["按支撑风险着色", "按重量着色", "按层高着色", "按箱型着色", "按箱子区分着色"])
-        self.zoom_cmb_color.setCurrentText("按箱子区分着色")
-        self.zoom_cmb_color.setMinimumWidth(180)
+        populate_color_mode_combo(self.zoom_cmb_color)
+        self.zoom_cmb_color.setMinimumWidth(120)
         tools.addWidget(self.zoom_cmb_color)
         self.zoom_chk_suction = QtWidgets.QCheckBox("吸盘")
         self.zoom_chk_suction.setChecked(False)
@@ -1492,7 +1621,11 @@ class IndustrialPackingWorkbench(BaseDashboard):
         layout.addLayout(tools)
 
         self.zoom_canvas = PalletPreviewCanvas()
-        self.zoom_canvas.setMinimumHeight(560)
+        zoom_min_h = 560
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is not None and screen.availableGeometry().height() <= 1100:
+            zoom_min_h = 320
+        self.zoom_canvas.setMinimumHeight(zoom_min_h)
         layout.addWidget(self.zoom_canvas, 1)
 
         self.zoom_timer = QtCore.QTimer(self)
@@ -1626,9 +1759,10 @@ class IndustrialPackingWorkbench(BaseDashboard):
     def _build_right_summary(self) -> QtWidgets.QWidget:
         panel = QtWidgets.QWidget()
         panel.setObjectName("RightPanel")
+        panel.setMinimumWidth(340)
         layout = QtWidgets.QVBoxLayout(panel)
-        layout.setContentsMargins(10, 14, 14, 10)
-        layout.setSpacing(10)
+        layout.setContentsMargins(10, 12, 12, 10)
+        layout.setSpacing(8)
 
         pallet_card = QtWidgets.QFrame()
         pallet_card.setObjectName("PalletHero")
@@ -1689,7 +1823,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
         r_title.setObjectName("SectionTitle")
         self.warning_list = QtWidgets.QListWidget()
         self.warning_list.setObjectName("WarningList")
-        self.warning_list.setMinimumHeight(110)
+        self.warning_list.setMinimumHeight(88)
         self.warning_list.itemClicked.connect(self.on_warning_item_clicked)
         r_layout.addWidget(r_title)
         r_layout.addWidget(self.warning_list, 1)
@@ -1703,10 +1837,10 @@ class IndustrialPackingWorkbench(BaseDashboard):
         d_title.setObjectName("SectionTitle")
         self.box_detail = QtWidgets.QPlainTextEdit()
         self.box_detail.setReadOnly(True)
-        self.box_detail.setMinimumHeight(85)
-        self.box_detail.setMaximumHeight(120)
+        self.box_detail.setMinimumHeight(72)
+        self.box_detail.setMaximumHeight(108)
         self.box_detail.setPlainText("在箱子列表中选择一行后显示详细信息。")
-        detail_box.setMaximumHeight(175)
+        detail_box.setMaximumHeight(150)
         d_layout.addWidget(d_title)
         d_layout.addWidget(self.box_detail, 0)
         layout.addWidget(detail_box, 0)
@@ -1737,17 +1871,43 @@ class IndustrialPackingWorkbench(BaseDashboard):
         self.log_box.setObjectName("LogBox")
         self.log_box.setReadOnly(True)
         self.log_box.setMaximumBlockCount(4000)
-        self.log_box.setFixedHeight(115)
+        self.log_box.setMinimumHeight(96)
+        self.log_box.setMaximumHeight(140)
         self.log_box.setVisible(False)
         layout.addWidget(self.log_box)
+        self.bottom_log_box = box
         return box
+
+    def _log_panel_expanded(self) -> bool:
+        return bool(
+            hasattr(self, "btn_toggle_log")
+            and self.btn_toggle_log.isChecked()
+        )
+
+    def _sync_log_splitter_sizes(self, expanded: Optional[bool] = None) -> None:
+        if not hasattr(self, "main_splitter"):
+            return
+        if expanded is None:
+            expanded = self._log_panel_expanded()
+        log_h = LOG_EXPANDED_PANE_HEIGHT if expanded else LOG_COLLAPSED_PANE_HEIGHT
+        if hasattr(self, "log_box"):
+            self.log_box.setVisible(expanded)
+        if hasattr(self, "bottom_log_panel"):
+            self.bottom_log_panel.setMaximumHeight(log_h)
+        total = max(sum(self.main_splitter.sizes()), self.main_splitter.height(), 640)
+        self.main_splitter.setSizes([max(520, total - log_h), log_h])
 
     def toggle_bottom_log(self) -> None:
         checked = bool(self.btn_toggle_log.isChecked()) if hasattr(self, "btn_toggle_log") else True
-        if hasattr(self, "log_box"):
-            self.log_box.setVisible(checked)
         if hasattr(self, "btn_toggle_log"):
             self.btn_toggle_log.setText("收起日志" if checked else "展开日志")
+        self._sync_log_splitter_sizes(expanded=checked)
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        if not getattr(self, "_log_splitter_initialized", False):
+            self._log_splitter_initialized = True
+            self._sync_log_splitter_sizes(expanded=self._log_panel_expanded())
 
     def _apply_style(self) -> None:
         self.setStyleSheet(r"""
@@ -1759,24 +1919,139 @@ class IndustrialPackingWorkbench(BaseDashboard):
         QWidget#Root, QWidget#LeftPanel, QWidget#CenterPanel, QWidget#RightPanel {
             background: #F3F6FA;
         }
+        QSplitter#BodySplitter::handle {
+            background: #E2E8F0;
+        }
+        QSplitter#BodySplitter::handle:hover {
+            background: #CBD5E1;
+        }
+        QSplitter#MainSplitter::handle {
+            background: #CBD5E1;
+            height: 5px;
+        }
+        QSplitter#MainSplitter::handle:hover {
+            background: #94A3B8;
+        }
+        QScrollArea#SideScroll {
+            background: #F3F6FA;
+            border: none;
+        }
+        QScrollArea#SideScroll > QWidget > QWidget {
+            background: #F3F6FA;
+        }
         QFrame#Header {
             background: #111827;
             border-bottom: 1px solid #1F2937;
         }
+        QFrame#HeaderToolbar {
+            background: #1a2332;
+            border: 1px solid #334155;
+            border-radius: 12px;
+        }
+        QFrame#HeaderSeparator {
+            color: #475569;
+            background: #475569;
+            max-width: 1px;
+            margin: 4px 2px;
+        }
+        QLabel#HeaderCaption {
+            color: #94A3B8;
+            font-size: 12px;
+            font-weight: 800;
+            padding-right: 2px;
+        }
         QLabel#MainTitle {
             color: #FFFFFF;
-            font-size: 28px;
+            font-size: 26px;
             font-weight: 900;
         }
         QLabel#MainSubtitle {
-            color: #CBD5E1;
+            color: #94A3B8;
             font-size: 12px;
         }
         QLabel#StatusPill {
             color: #FFFFFF;
-            border-radius: 14px;
-            padding: 6px 12px;
+            border-radius: 19px;
+            padding: 0px 16px;
             font-weight: 800;
+            font-size: 13px;
+        }
+        QFrame#Header QPushButton#HeaderGhostButton {
+            background: #243044;
+            color: #E2E8F0;
+            border: 1px solid #475569;
+            border-radius: 8px;
+            padding: 0px 14px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        QFrame#Header QPushButton#HeaderGhostButton:hover {
+            background: #334155;
+            border-color: #64748B;
+            color: #FFFFFF;
+        }
+        QFrame#Header QPushButton#HeaderGhostButton:disabled {
+            background: #1e293b;
+            color: #64748B;
+            border-color: #334155;
+        }
+        QFrame#Header QPushButton#PrimaryButton,
+        QFrame#Header QPushButton#DangerButton {
+            padding: 0px 18px;
+            font-size: 13px;
+            border-radius: 8px;
+        }
+        QFrame#Header QComboBox#HeaderCombo,
+        QFrame#Header QComboBox#HeaderHistoryCombo,
+        QFrame#Header QSpinBox#HeaderSpin {
+            background: #0f172a;
+            color: #F1F5F9;
+            border: 1px solid #475569;
+            border-radius: 8px;
+            padding: 4px 10px;
+            font-size: 13px;
+            selection-background-color: #2563EB;
+        }
+        QFrame#Header QComboBox#HeaderCombo:hover,
+        QFrame#Header QComboBox#HeaderHistoryCombo:hover,
+        QFrame#Header QSpinBox#HeaderSpin:hover {
+            border-color: #64748B;
+        }
+        QFrame#Header QComboBox#HeaderCombo::drop-down,
+        QFrame#Header QComboBox#HeaderHistoryCombo::drop-down {
+            border: none;
+            width: 22px;
+        }
+        QFrame#Header QComboBox#HeaderCombo QAbstractItemView,
+        QFrame#Header QComboBox#HeaderHistoryCombo QAbstractItemView {
+            background: #1e293b;
+            color: #F1F5F9;
+            border: 1px solid #475569;
+            selection-background-color: #2563EB;
+            outline: none;
+        }
+        QFrame#Header QSpinBox#HeaderSpin::up-button,
+        QFrame#Header QSpinBox#HeaderSpin::down-button {
+            width: 18px;
+            border: none;
+            background: #334155;
+        }
+        QFrame#Header QSpinBox#HeaderSpin::up-button:hover,
+        QFrame#Header QSpinBox#HeaderSpin::down-button:hover {
+            background: #475569;
+        }
+        QMenu {
+            background: #1e293b;
+            color: #F1F5F9;
+            border: 1px solid #475569;
+            padding: 4px;
+        }
+        QMenu::item {
+            padding: 8px 24px 8px 12px;
+            border-radius: 6px;
+        }
+        QMenu::item:selected {
+            background: #2563EB;
         }
         QLabel#StatusPill[state="idle"] { background: #64748B; }
         QLabel#StatusPill[state="running"] { background: #2563EB; }
@@ -1811,12 +2086,22 @@ class IndustrialPackingWorkbench(BaseDashboard):
 
         QPushButton#TinyButton {
             background: #E5E7EB;
-            padding: 4px 7px;
+            padding: 5px 8px;
             border-radius: 6px;
-            font-size: 12px;
+            font-size: 13px;
             font-weight: 800;
+            min-width: 0px;
         }
         QPushButton#TinyButton:hover { background: #D1D5DB; }
+        QFrame#PalletPreviewCard QComboBox {
+            min-height: 26px;
+            font-size: 13px;
+            padding: 2px 6px;
+        }
+        QFrame#PalletPreviewCard QCheckBox {
+            font-size: 13px;
+            spacing: 4px;
+        }
 
 
         QFrame#StepCard, QFrame#ParamBox, QFrame#OverviewBox, QFrame#PalletHero,
@@ -1842,6 +2127,13 @@ class IndustrialPackingWorkbench(BaseDashboard):
         QLabel#StepDesc, QLabel#SmallInfo, QLabel#HintLabel, QLabel#HeroSub, QLabel#SuggestionText {
             color: #64748B;
             line-height: 145%;
+        }
+        QLabel#FileInfoLabel {
+            color: #64748B;
+            font-size: 12px;
+            padding: 0px;
+            margin: 0px;
+            max-height: 36px;
         }
         QLabel#HeroTitle { color: #64748B; font-weight: 800; }
         QLabel#HeroValue { color: #111827; font-size: 28px; font-weight: 900; }
@@ -1967,7 +2259,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
             border: 2px solid #2563EB;
             background: #EFF6FF;
         }
-        QLabel#PreviewTitle { color: #0F172A; font-weight: 900; font-size: 15px; }
+        QLabel#PreviewTitle { color: #0F172A; font-weight: 900; font-size: 16px; }
         QLabel#PreviewSub { color: #64748B; font-size: 12px; }
         QFrame#PalletPreviewCard[selected="true"] QLabel#PreviewSub { color: #1D4ED8; font-weight: 800; }
         QFrame#ZoomHeader {
@@ -2241,7 +2533,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
             if target_pallet is None:
                 return False
 
-            # 如果目标不在当前筛选结果中，重置筛选到“全部”，保证中间 6 托盘区也能看到它。
+            # 如果目标不在当前筛选结果中，重置筛选到“全部”，保证中间垛型区也能看到它。
             if all(safe_str(p.get("pallet_id"), "") != target for p in getattr(self, "filtered_pallets", []) or []):
                 try:
                     if hasattr(self, "cmb_status"):
@@ -2273,7 +2565,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
 
             # 翻到目标托盘所在页，并回到 3D 视图。
             try:
-                self.overview_page = filtered_index // 6
+                self.overview_page = filtered_index // OVERVIEW_CARDS_PER_PAGE
             except Exception:
                 pass
             if hasattr(self, "workspace_tabs"):
@@ -2382,7 +2674,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
 
     def _page_count(self) -> int:
         total = len(getattr(self, "filtered_pallets", []) or [])
-        return max(1, (total + 5) // 6)
+        return max(1, (total + OVERVIEW_CARDS_PER_PAGE - 1) // OVERVIEW_CARDS_PER_PAGE)
 
     def _sequence_mode(self) -> str:
         if hasattr(self, "cmb_sequence_mode"):
@@ -2558,8 +2850,8 @@ class IndustrialPackingWorkbench(BaseDashboard):
         pallets = list(getattr(self, "filtered_pallets", []) or [])
         pages = self._page_count()
         self.overview_page = max(0, min(self.overview_page, pages - 1))
-        start = self.overview_page * 6
-        page_items = pallets[start:start + 6]
+        start = self.overview_page * OVERVIEW_CARDS_PER_PAGE
+        page_items = pallets[start:start + OVERVIEW_CARDS_PER_PAGE]
         current_id = safe_str((self.current_pallet or {}).get("pallet_id"), "") if getattr(self, "current_pallet", None) else ""
         selected_key = self._current_selected_box_key()
         for i, card in enumerate(self.overview_cards):
@@ -2590,7 +2882,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
 
     def _on_overview_card_clicked(self, local_index: int) -> None:
         pallets = list(getattr(self, "filtered_pallets", []) or [])
-        global_index = self.overview_page * 6 + int(local_index)
+        global_index = self.overview_page * OVERVIEW_CARDS_PER_PAGE + int(local_index)
         if global_index < 0 or global_index >= len(pallets):
             return
         self.load_pallet(pallets[global_index])
@@ -2638,8 +2930,8 @@ class IndustrialPackingWorkbench(BaseDashboard):
             pid = safe_str(pallet.get("pallet_id"), "")
             for global_index, p in enumerate(pallets):
                 if safe_str(p.get("pallet_id"), "") == pid:
-                    self.overview_page = global_index // 6
-                    return global_index % 6
+                    self.overview_page = global_index // OVERVIEW_CARDS_PER_PAGE
+                    return global_index % OVERVIEW_CARDS_PER_PAGE
         except Exception:
             pass
         return 0
@@ -2664,7 +2956,7 @@ class IndustrialPackingWorkbench(BaseDashboard):
         self.zoom_canvas.set_options(
             show_suction=self.zoom_chk_suction.isChecked(),
             only_risk=self.zoom_chk_risk.isChecked(),
-            color_mode=self.zoom_cmb_color.currentText(),
+            color_mode=current_color_mode(self.zoom_cmb_color),
             visible_count=visible,
             sequence_mode=self._sequence_mode(),
             reset_camera=reset_camera,
@@ -3025,7 +3317,7 @@ def main() -> None:
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("Industrial Packing Workbench V2")
     win = IndustrialPackingWorkbench(Path(args.project))
-    win.show()
+    win.showMaximized()
     sys.exit(app.exec_())
 
 

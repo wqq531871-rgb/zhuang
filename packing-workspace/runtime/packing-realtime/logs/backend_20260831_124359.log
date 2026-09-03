@@ -1,0 +1,29 @@
+[LOG] 后端日志文件：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\logs\backend_20260831_124359.log
+[LOG] 本次结果将输出到：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260831_124359.json
+[CMD] D:\ProgramData\anaconda3\python.exe E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\packing\run_packing.py --config E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20260831_124356.yaml --out E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20260831_124359.json
+已加载约束配置：E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20260831_124356.yaml
+Traceback (most recent call last):
+  File "E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\packing\run_packing.py", line 363, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\packing\run_packing.py", line 358, in main
+    report = _run(out_path, max_boxes, safe_compare, config_path)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\packing\run_packing.py", line 321, in _run
+    workflow = build_workflow(
+               ^^^^^^^^^^^^^^^
+  File "E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\packing\run_packing.py", line 194, in build_workflow
+    return PackingWorkflow(
+           ^^^^^^^^^^^^^^^^
+  File "E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\packing\src\main\workflow.py", line 85, in __init__
+    from ..packing.global_column_packer import GlobalColumnPacker
+  File "E:\Homework\AA装箱\A装箱和可视化\zhuang\packing-system\packing\src\packing\global_column_packer.py", line 30, in <module>
+    from ortools.sat.python import cp_model
+  File "D:\ProgramData\anaconda3\Lib\site-packages\ortools\__init__.py", line 72, in <module>
+    _load_ortools_libs()
+  File "D:\ProgramData\anaconda3\Lib\site-packages\ortools\__init__.py", line 67, in _load_ortools_libs
+    WinDLL(dll_path)
+  File "D:\ProgramData\anaconda3\Lib\ctypes\__init__.py", line 379, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: [WinError 127] 找不到指定的程序。

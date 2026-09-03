@@ -878,79 +878,137 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         )
 
     # ------------------------------------------------------------------ header
+    @staticmethod
+    def _header_separator() -> QtWidgets.QFrame:
+        line = QtWidgets.QFrame()
+        line.setObjectName("HeaderSeparator")
+        line.setFrameShape(QtWidgets.QFrame.VLine)
+        line.setFixedWidth(1)
+        return line
+
     def _build_header(self) -> QtWidgets.QWidget:
-        """Top bar: keep the main workflow obvious and move advanced algorithm actions into one menu."""
+        """Top bar: title + primary actions, then a unified dark toolbar row."""
         header = QtWidgets.QFrame()
         header.setObjectName("Header")
-        layout = QtWidgets.QHBoxLayout(header)
-        layout.setContentsMargins(18, 12, 18, 12)
-        layout.setSpacing(10)
+        outer = QtWidgets.QVBoxLayout(header)
+        outer.setContentsMargins(20, 14, 20, 12)
+        outer.setSpacing(10)
+
+        # --- 第一行：标题 + 主操作 ---
+        row1 = QtWidgets.QHBoxLayout()
+        row1.setSpacing(12)
 
         title_box = QtWidgets.QVBoxLayout()
+        title_box.setSpacing(2)
         self.title_label = QtWidgets.QLabel("面向控序混码场景智能装箱规划系统")
         self.title_label.setObjectName("MainTitle")
         self.subtitle_label = QtWidgets.QLabel("一键装箱 · 结果分析 · 托盘切换 · 稳定性评估")
         self.subtitle_label.setObjectName("MainSubtitle")
         title_box.addWidget(self.title_label)
         title_box.addWidget(self.subtitle_label)
-        layout.addLayout(title_box, 1)
+        row1.addLayout(title_box, 1)
+
+        actions = QtWidgets.QHBoxLayout()
+        actions.setSpacing(8)
 
         self.status_pill = StatusPill("空闲")
         self.status_pill.setToolTip("当前运行状态：空闲 / 运行中 / 已完成 / 失败")
-        layout.addWidget(self.status_pill)
+        self.status_pill.setFixedHeight(38)
+        actions.addWidget(self.status_pill)
 
-        self.lbl_run_mode = QtWidgets.QLabel("运行方式")
-        layout.addWidget(self.lbl_run_mode)
-
-        self.cmb_run_mode = QtWidgets.QComboBox()
-        self.cmb_run_mode.setMinimumWidth(140)
-        self.cmb_run_mode.setToolTip("选择接口持续/单次/成功即停，或 Excel 单次运行")
-        for label, mode in RUN_MODE_OPTIONS:
-            self.cmb_run_mode.addItem(label, mode)
-        self.cmb_run_mode.currentIndexChanged.connect(self._on_run_mode_changed)
-        layout.addWidget(self.cmb_run_mode)
-
-        self.lbl_download_interval = QtWidgets.QLabel("拉取间隔")
-        self.lbl_download_interval.setToolTip("WCS 接口库存数据的拉取周期")
-        layout.addWidget(self.lbl_download_interval)
-
-        self.sp_download_interval = QtWidgets.QSpinBox()
-        self.sp_download_interval.setRange(1, 86400)
-        self.sp_download_interval.setValue(self.download_interval)
-        self.sp_download_interval.setSuffix(" 秒")
-        self.sp_download_interval.setToolTip("允许范围：1–86400 秒")
-        self.sp_download_interval.valueChanged.connect(
-            lambda value: setattr(self, "download_interval", int(value))
-        )
-        layout.addWidget(self.sp_download_interval)
-
-        self.btn_excel = QtWidgets.QPushButton("选择Excel")
-        self.btn_excel.setObjectName("GhostButton")
+        self.btn_excel = QtWidgets.QPushButton("选择 Excel")
+        self.btn_excel.setObjectName("HeaderGhostButton")
+        self.btn_excel.setFixedHeight(38)
         self.btn_excel.setToolTip("选择装箱输入 Excel，并自动生成本次运行配置。")
         self.btn_excel.clicked.connect(self.choose_excel_file)
-        layout.addWidget(self.btn_excel)
+        actions.addWidget(self.btn_excel)
 
         self.btn_excel_run = QtWidgets.QPushButton("一键装箱")
         self.btn_excel_run.setObjectName("PrimaryButton")
+        self.btn_excel_run.setFixedHeight(38)
         self.btn_excel_run.setToolTip(
             "接口模式：按设置的拉取间隔启动常驻服务。\n"
             "Excel 模式：使用已选择的 Excel 运行一次装箱。"
         )
         self.btn_excel_run.clicked.connect(self.start_excel_packing)
-        layout.addWidget(self.btn_excel_run)
+        actions.addWidget(self.btn_excel_run)
+
+        self.btn_stop_backend = QtWidgets.QPushButton("停止")
+        self.btn_stop_backend.setObjectName("DangerButton")
+        self.btn_stop_backend.setFixedHeight(38)
+        self.btn_stop_backend.setToolTip("停止正在运行的后端算法。")
+        self.btn_stop_backend.clicked.connect(self.stop_backend_packing)
+        self.btn_stop_backend.setEnabled(False)
+        actions.addWidget(self.btn_stop_backend)
+
+        self.btn_start_backend = QtWidgets.QPushButton("按配置复跑")
+        self.btn_start_backend.setObjectName("GhostButton")
+        self.btn_start_backend.setToolTip("高级功能：按当前配置文件直接复跑后端算法。")
+        self.btn_start_backend.clicked.connect(self.start_backend_packing)
+        self.btn_start_backend.setVisible(False)
+
+        row1.addLayout(actions)
+        outer.addLayout(row1)
+
+        # --- 第二行：统一工具条 ---
+        toolbar = QtWidgets.QFrame()
+        toolbar.setObjectName("HeaderToolbar")
+        tb = QtWidgets.QHBoxLayout(toolbar)
+        tb.setContentsMargins(14, 10, 14, 10)
+        tb.setSpacing(10)
+
+        run_box = QtWidgets.QHBoxLayout()
+        run_box.setSpacing(8)
+        self.lbl_run_mode = QtWidgets.QLabel("运行")
+        self.lbl_run_mode.setObjectName("HeaderCaption")
+        run_box.addWidget(self.lbl_run_mode)
+
+        self.cmb_run_mode = QtWidgets.QComboBox()
+        self.cmb_run_mode.setObjectName("HeaderCombo")
+        self.cmb_run_mode.setMinimumWidth(148)
+        self.cmb_run_mode.setFixedHeight(36)
+        self.cmb_run_mode.setToolTip("选择接口持续/单次/成功即停，或 Excel 单次运行")
+        for label, mode in RUN_MODE_OPTIONS:
+            self.cmb_run_mode.addItem(label, mode)
+        self.cmb_run_mode.currentIndexChanged.connect(self._on_run_mode_changed)
+        run_box.addWidget(self.cmb_run_mode)
+
+        self.lbl_download_interval = QtWidgets.QLabel("间隔")
+        self.lbl_download_interval.setObjectName("HeaderCaption")
+        self.lbl_download_interval.setToolTip("WCS 接口库存数据的拉取周期")
+        run_box.addWidget(self.lbl_download_interval)
+
+        self.sp_download_interval = QtWidgets.QSpinBox()
+        self.sp_download_interval.setObjectName("HeaderSpin")
+        self.sp_download_interval.setRange(1, 86400)
+        self.sp_download_interval.setValue(self.download_interval)
+        self.sp_download_interval.setSuffix(" 秒")
+        self.sp_download_interval.setFixedHeight(36)
+        self.sp_download_interval.setMinimumWidth(96)
+        self.sp_download_interval.setToolTip("允许范围：1–86400 秒")
+        self.sp_download_interval.valueChanged.connect(
+            lambda value: setattr(self, "download_interval", int(value))
+        )
+        run_box.addWidget(self.sp_download_interval)
+        tb.addLayout(run_box)
+
+        tb.addWidget(self._header_separator())
 
         self.btn_api_maintain = QtWidgets.QPushButton("接口维护")
-        self.btn_api_maintain.setObjectName("GhostButton")
+        self.btn_api_maintain.setObjectName("HeaderGhostButton")
+        self.btn_api_maintain.setFixedHeight(36)
         self.btn_api_maintain.setToolTip(
             "维护本地接收端对外回复；重点可改 4.7 的 data.status（0/1/99）。"
         )
         self.btn_api_maintain.clicked.connect(self.open_api_maintain_dialog)
-        layout.addWidget(self.btn_api_maintain)
+        tb.addWidget(self.btn_api_maintain)
 
-        self.btn_algo_settings = QtWidgets.QPushButton("算法设置")
-
-        self.btn_algo_settings.setObjectName("GhostButton")
-        self.btn_algo_settings.setToolTip("高级功能：切换算法目录、配置文件，或按当前配置复跑算法。日常使用通常不用点。")
+        self.btn_algo_settings = QtWidgets.QPushButton("算法设置 ▾")
+        self.btn_algo_settings.setObjectName("HeaderGhostButton")
+        self.btn_algo_settings.setFixedHeight(36)
+        self.btn_algo_settings.setToolTip(
+            "高级功能：切换算法目录、配置文件，或按当前配置复跑算法。"
+        )
         algo_menu = QtWidgets.QMenu(self.btn_algo_settings)
         self.action_choose_project = algo_menu.addAction("选择算法目录…")
         self.action_choose_project.triggered.connect(self.choose_project_dir)
@@ -962,41 +1020,39 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.action_rerun_config = algo_menu.addAction("按当前配置复跑算法")
         self.action_rerun_config.triggered.connect(self.start_backend_packing)
         self.btn_algo_settings.setMenu(algo_menu)
-        layout.addWidget(self.btn_algo_settings)
+        tb.addWidget(self.btn_algo_settings)
 
-        # 顶部不再显示“开始装箱”，避免和“一键装箱”混淆。
-        # 仍保留一个隐藏按钮属性，兼容父类 on_worker_finished/start_backend_packing 里的启停逻辑。
-        self.btn_start_backend = QtWidgets.QPushButton("按配置复跑")
-        self.btn_start_backend.setObjectName("GhostButton")
-        self.btn_start_backend.setToolTip("高级功能：按当前配置文件直接复跑后端算法。")
-        self.btn_start_backend.clicked.connect(self.start_backend_packing)
-        self.btn_start_backend.setVisible(False)
-
-        self.btn_stop_backend = QtWidgets.QPushButton("停止")
-        self.btn_stop_backend.setObjectName("DangerButton")
-        self.btn_stop_backend.setToolTip("停止正在运行的后端算法。")
-        self.btn_stop_backend.clicked.connect(self.stop_backend_packing)
-        self.btn_stop_backend.setEnabled(False)
-        layout.addWidget(self.btn_stop_backend)
-
-        self.btn_load_result = QtWidgets.QPushButton("打开结果文件")
-        self.btn_load_result.setObjectName("GhostButton")
+        self.btn_load_result = QtWidgets.QPushButton("打开结果")
+        self.btn_load_result.setObjectName("HeaderGhostButton")
+        self.btn_load_result.setFixedHeight(36)
         self.btn_load_result.setToolTip("手动选择一个 JSON 装箱结果文件并加载显示。")
         self.btn_load_result.clicked.connect(self.load_json_dialog)
-        layout.addWidget(self.btn_load_result)
+        tb.addWidget(self.btn_load_result)
+
+        tb.addWidget(self._header_separator())
+
+        hist_box = QtWidgets.QHBoxLayout()
+        hist_box.setSpacing(8)
+        hist_lbl = QtWidgets.QLabel("历史结果")
+        hist_lbl.setObjectName("HeaderCaption")
+        hist_box.addWidget(hist_lbl)
 
         self.cmb_result_history = QtWidgets.QComboBox()
-        self.cmb_result_history.setObjectName("GhostCombo")
-        self.cmb_result_history.setMinimumWidth(300)
-        self.cmb_result_history.setMaximumWidth(420)
-        self.cmb_result_history.setToolTip("「当前」= 最新一次装箱结果；其余为历史记录（最近 50 条）")
+        self.cmb_result_history.setObjectName("HeaderHistoryCombo")
+        self.cmb_result_history.setMinimumWidth(260)
+        self.cmb_result_history.setFixedHeight(36)
+        self.cmb_result_history.setToolTip(
+            "「当前」= 最新一次装箱结果；其余为历史记录（最近 50 条）"
+        )
         self.cmb_result_history.currentIndexChanged.connect(self.on_result_history_changed)
-        layout.addWidget(self.cmb_result_history)
+        hist_box.addWidget(self.cmb_result_history, 1)
+        tb.addLayout(hist_box, 1)
 
-        # 兼容父类/旧逻辑；实际入口已合并到历史结果下拉框。
         self.btn_show_latest = QtWidgets.QPushButton("打开最新结果")
         self.btn_show_latest.clicked.connect(self.open_latest_result)
         self.btn_show_latest.setVisible(False)
+
+        outer.addWidget(toolbar)
 
         self._apply_run_mode_controls()
 
@@ -1038,6 +1094,13 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.step_live_stack = StepCard("▣", "现场码垛", "到达后等姿态就绪，自动下传；卡住可应急补发")
         layout.insertWidget(insert_at + 2, self.step_live_stack)
 
+        self.btn_toggle_live = QtWidgets.QToolButton()
+        self.btn_toggle_live.setText("展开现场码垛")
+        self.btn_toggle_live.setCheckable(True)
+        self.btn_toggle_live.setArrowType(QtCore.Qt.RightArrow)
+        self.btn_toggle_live.clicked.connect(self._toggle_live_stack_panel)
+        layout.insertWidget(insert_at + 3, self.btn_toggle_live)
+
         live_box = QtWidgets.QFrame()
         live_box.setObjectName("ParamBox")
         live_form = QtWidgets.QFormLayout(live_box)
@@ -1065,8 +1128,12 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         live_form.addRow("", self.lbl_live_plc)
 
         self.lst_live_plc = QtWidgets.QListWidget()
-        self.lst_live_plc.setMinimumHeight(100)
-        self.lst_live_plc.setMaximumHeight(150)
+        live_list_min, live_list_max = 100, 150
+        screen = QtWidgets.QApplication.primaryScreen()
+        if screen is not None and screen.availableGeometry().height() <= 1100:
+            live_list_min, live_list_max = 72, 110
+        self.lst_live_plc.setMinimumHeight(live_list_min)
+        self.lst_live_plc.setMaximumHeight(live_list_max)
         self.lst_live_plc.setToolTip("码放队列（自动下传）；异常时可选中后点「应急补发」")
         self.lst_live_plc.currentItemChanged.connect(self._on_live_plc_selection_changed)
         live_form.addRow("", self.lst_live_plc)
@@ -1102,7 +1169,9 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         btn_row.addWidget(self.btn_live_send_plc)
         live_form.addRow("", btn_row)
 
-        layout.insertWidget(insert_at + 3, live_box)
+        self.live_box = live_box
+        live_box.setVisible(False)
+        layout.insertWidget(insert_at + 4, live_box)
 
         self._live_plc_timer = QtCore.QTimer(self)
         self._live_plc_timer.setInterval(2000)
@@ -1112,6 +1181,14 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
 
         self._refresh_push_pallet_combo()
         return panel
+
+    def _toggle_live_stack_panel(self) -> None:
+        checked = bool(self.btn_toggle_live.isChecked())
+        self.live_box.setVisible(checked)
+        self.btn_toggle_live.setText("收起现场码垛" if checked else "展开现场码垛")
+        self.btn_toggle_live.setArrowType(
+            QtCore.Qt.DownArrow if checked else QtCore.Qt.RightArrow
+        )
 
     def _live_plc_queue_id(self, item: Optional[QtWidgets.QListWidgetItem]) -> Optional[int]:
         if item is None:
@@ -2188,12 +2265,29 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         super().closeEvent(event)
 
     def on_backend_finished_json(self, json_path: str) -> None:
-        path = Path(json_path)
+        path = Path(json_path).resolve()
+        selected_history_path: Optional[Path] = None
+        if hasattr(self, "cmb_result_history"):
+            selected_result = self.cmb_result_history.currentData()
+            if selected_result and selected_result != _HISTORY_CURRENT_TOKEN:
+                selected_history_path = Path(str(selected_result)).resolve()
+
         self._write_log(f"[UI] 后端完成，正在自动加载结果：{path}")
+        self._live_result_path = path
+        if selected_history_path is not None:
+            self.refresh_result_history(
+                select_path=selected_history_path,
+                select_current=False,
+            )
+            self._write_log(
+                f"[UI] 新结果已就绪（{path.name}），后台继续运行；当前保持查看历史结果。"
+            )
+            return
+
         try:
             self.load_json_file(path)
             self.show_final_result()
-            self._current_result_path = path.resolve()
+            self._current_result_path = path
             self._live_result_path = self._current_result_path
             self.refresh_result_history(select_current=True)
             if hasattr(self, "file_info"):
@@ -2232,7 +2326,7 @@ def main() -> None:
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("Industrial Packing Workbench V3")
     win = IndustrialPackingWorkbenchClean(Path(args.project))
-    win.show()
+    win.showMaximized()
     sys.exit(app.exec_())
 
 
