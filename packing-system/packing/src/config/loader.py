@@ -193,6 +193,8 @@ def create_default_config_yaml(output_path: Path) -> None:
             'max_box_gap_mm': 6.0,
             'support_ratio_threshold': 0.8,
             'center_of_mass_tolerance': 1.0 / 3.0,
+            # —— 整盘限重（kg）；≤ 0 = 关闭 ——
+            'max_pallet_weight_kg': 1000.0,
             # —— 可关约束开关（默认 True，可改 False 关闭）——
             'suction_reachability_enabled': True,
             'footprint_area_below_enabled': True,

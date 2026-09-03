@@ -3,6 +3,7 @@
 前提：placed 已满足 validate_pallet_constraints 的几何部分。在其上新增
 一个 new_box 时，只需校验：
 
+0. 整盘限重：可加约束，加一箱只让总重上升，增量判定与整盘判定等价；
 1. new_box 自身：越界 / 吸盘字段 / 与既有箱三轴重叠 / 支撑率 / 间隙 /
    同尺寸重箱在下 / 小面积在下；
 2. 与 new_box 在 Z 区间重叠的既有箱的间隙（新箱可能成为其更近邻居，
@@ -24,6 +25,7 @@ from ..geometry.constraint_validator import REQUIRED_SUCTION_FIELDS
 from ..geometry.gap_checker import passes_box_gap_constraint
 from ..geometry.overlap import axis_overlap_len, has_positive_xy_overlap
 from ..geometry.support import direct_support_ratio
+from ..geometry.weight_limit import box_weight, fits_weight, pallet_weight_cap
 from ..utils.helpers import (
     footprint_area,
     passes_footprint_area_below_constraint,
@@ -77,6 +79,14 @@ def incremental_pallet_ok(
     pos = new_box.get('position')
     if not pos:
         return False
+
+    # 0. 整盘限重：可加约束，加一箱只会让总重上升，故增量判定与整盘判定等价。
+    #    放在最前面——它 O(N) 且最便宜，能省掉后面的几何计算。
+    if placed and not fits_weight(
+        placed, box_weight(new_box), pallet_weight_cap(constraint_config)
+    ):
+        return False
+
     dims = _dims(new_box)
     pallet_length = float(pallet_dims.get('length', 0) or 0)
     pallet_width = float(pallet_dims.get('width', 0) or 0)

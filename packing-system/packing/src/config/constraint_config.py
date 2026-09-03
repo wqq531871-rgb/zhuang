@@ -34,6 +34,11 @@ class ConstraintConfig:
         z_tolerance: 放置尺寸容差，高 +本值（毫米，默认 0.0）。
         center_of_mass_tolerance: 整体重心相对托盘中心的最大允许偏移比例
             （默认 1/3，即偏移不得超过托盘对应边长的 1/3）。
+        max_pallet_weight_kg: 整盘（整垛箱子）重量上限，千克，默认 1000.0。
+            甲方 2026-09 需求：现场部分托盘整垛超过 1000kg。≤ 0 视为关闭约束，
+            完全恢复历史行为。约束是可加、与几何无关的容量约束，故在 GCP 的
+            ILP / CP-SAT 里精确入模，不是事后拦截，详见 geometry/weight_limit.py。
+            单箱本身超限时该盘豁免（数据异常，重排无解，拦下会破坏守恒）。
 
         # —— 可关约束的开关（默认 True）——
         suction_reachability_enabled: 是否启用机器人吸盘可达性检查。
@@ -80,6 +85,8 @@ class ConstraintConfig:
     center_of_mass_tolerance: float = 1.0 / 3.0
     xy_tolerance: float = 2.0
     z_tolerance: float = 0.0
+    # 整盘限重（kg）。≤ 0 = 关闭。见 geometry/weight_limit.py。
+    max_pallet_weight_kg: float = 1000.0
 
     # —— 可关约束开关 ——
     suction_reachability_enabled: bool = True

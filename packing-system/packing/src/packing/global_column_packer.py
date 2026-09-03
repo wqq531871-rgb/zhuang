@@ -29,6 +29,11 @@ from ..geometry.flat_top import (
     rects_ring_complete,
     trim_items_to_tail,
 )
+from ..geometry.weight_limit import (
+    box_weight,
+    column_weight,
+    weight_cap_for_group,
+)
 from .beam_search_packer import BeamSearchPacker
 from .direct_layer_packer import build_centered_single_box_solution
 from .layered_packer import _assemble, _ffd_columns
@@ -54,6 +59,12 @@ _FLAT_RESOLVE_ROUNDS = 3  # 平顶模式：铺砌失败 pattern 拉黑后 ILP �
 def _fp_key(col: Dict) -> Tuple[int, int]:
     """柱的底面缓存键（原始 xlen/ylen 取整；同 pattern 内按此配对复用布局）。"""
     return (int(round(float(col['xlen']))), int(round(float(col['ylen']))))
+
+
+def _col_weight_key(col: Dict) -> float:
+    """柱的重量键（kg，取整到 mg）。限重生效时并入柱类型键，使同类型柱重量
+    唯一 ⇒ pattern 的总重有确定值 ⇒ 枚举阶段能精确剪枝而非保守估计。"""
+    return round(column_weight(col), 6)
 
 
 def _col_height_key(col: Dict) -> float:
@@ -132,7 +143,11 @@ def _orient_per(xl: float, yl: float, pallet_dims: Dict[str, float], tol: float)
     return max(p1, p2)
 
 
-def _build_columns(boxes: List[Dict], pallet_dims: Dict[str, float]) -> List[Dict]:
+def _build_columns(
+    boxes: List[Dict],
+    pallet_dims: Dict[str, float],
+    weight_cap: Optional[float] = None,
+) -> List[Dict]:
     """按底面分组凑柱。返回柱列表 [{fp, xlen, ylen, boxes, idx}]。"""
     cap = float(pallet_dims.get('height', 0) or 0)
     by_fp: Dict[Tuple[int, int], List[Dict]] = defaultdict(list)
@@ -145,7 +160,7 @@ def _build_columns(boxes: List[Dict], pallet_dims: Dict[str, float]) -> List[Dic
     cols: List[Dict] = []
     for fp, group in by_fp.items():
         xlen, ylen = _fp_orient(fp)
-        for cb in _ffd_columns(group, cap):
+        for cb in _ffd_columns(group, cap, weight_cap):
             idx = sum(float(b.get('min_pack_multiple', 0) or 0) for b in cb)
             cols.append({'fp': fp, 'xlen': xlen, 'ylen': ylen, 'boxes': cb, 'idx': round(idx, 3)})
     return cols
@@ -160,12 +175,16 @@ def _column_signature(columns: List[Dict]) -> Tuple[Tuple[str, ...], ...]:
     ))
 
 
-def _balanced_columns(group: List[Dict], cap: float) -> List[List[Dict]]:
+def _balanced_columns(
+    group: List[Dict],
+    cap: float,
+    weight_cap: Optional[float] = None,
+) -> List[List[Dict]]:
     """Spread high-index boxes across the lowest-index feasible columns."""
 
-    base_count = max(1, len(_ffd_columns(group, cap)))
+    base_count = max(1, len(_ffd_columns(group, cap, weight_cap)))
     bins = [
-        {'rem': cap, 'idx': 0.0, 'boxes': []}
+        {'rem': cap, 'w': 0.0, 'idx': 0.0, 'boxes': []}
         for _ in range(base_count)
     ]
     ordered = sorted(
@@ -178,10 +197,13 @@ def _balanced_columns(group: List[Dict], cap: float) -> List[List[Dict]]:
     )
     for box in ordered:
         height = float(box.get('height', 0) or 0)
+        weight = box_weight(box)
         feasible = [
             (index, column)
             for index, column in enumerate(bins)
             if column['rem'] >= height - 1e-9
+            and (weight_cap is None
+                 or column['w'] + weight <= weight_cap + 1e-6)
         ]
         if feasible:
             _index, chosen = min(
@@ -193,17 +215,22 @@ def _balanced_columns(group: List[Dict], cap: float) -> List[List[Dict]]:
                 ),
             )
         else:
-            chosen = {'rem': cap, 'idx': 0.0, 'boxes': []}
+            chosen = {'rem': cap, 'w': 0.0, 'idx': 0.0, 'boxes': []}
             bins.append(chosen)
         chosen['boxes'].append(box)
         chosen['rem'] -= height
+        chosen['w'] += weight
         chosen['idx'] += float(
             box.get('min_pack_multiple', 0) or 0
         )
     return [column['boxes'] for column in bins if column['boxes']]
 
 
-def _concentrated_columns(group: List[Dict], cap: float) -> List[List[Dict]]:
+def _concentrated_columns(
+    group: List[Dict],
+    cap: float,
+    weight_cap: Optional[float] = None,
+) -> List[List[Dict]]:
     """Concentrate high-index boxes using index-descending first fit."""
 
     columns: List[Dict] = []
@@ -217,13 +244,18 @@ def _concentrated_columns(group: List[Dict], cap: float) -> List[List[Dict]]:
     )
     for box in ordered:
         height = float(box.get('height', 0) or 0)
+        weight = box_weight(box)
         for column in columns:
-            if column['rem'] >= height - 1e-9:
-                column['rem'] -= height
-                column['boxes'].append(box)
-                break
+            if column['rem'] < height - 1e-9:
+                continue
+            if weight_cap is not None and column['w'] + weight > weight_cap + 1e-6:
+                continue
+            column['rem'] -= height
+            column['w'] += weight
+            column['boxes'].append(box)
+            break
         else:
-            columns.append({'rem': cap - height, 'boxes': [box]})
+            columns.append({'rem': cap - height, 'w': weight, 'boxes': [box]})
     return [column['boxes'] for column in columns]
 
 
@@ -231,8 +263,13 @@ def _build_column_candidates(
     boxes: List[Dict],
     pallet_dims: Dict[str, float],
     target_mpm: Optional[float],
+    weight_cap: Optional[float] = None,
 ) -> List[Tuple[str, List[Dict]]]:
-    """Build distinct height, index-balanced, and target-focused columns."""
+    """Build distinct height, index-balanced, and target-focused columns.
+
+    weight_cap：整盘限重（kg）。给定时三种凑柱器都保证柱重不超限（超重柱
+    无法上任何盘）。None＝不限重，与历史行为完全一致。
+    """
 
     del target_mpm  # The target affects board selection after columnization.
     cap = float(pallet_dims.get('height', 0) or 0)
@@ -255,7 +292,7 @@ def _build_column_candidates(
         columns: List[Dict] = []
         for fp, group in by_fp.items():
             xlen, ylen = _fp_orient(fp)
-            for column_boxes in builder(group, cap):
+            for column_boxes in builder(group, cap, weight_cap):
                 index = sum(
                     float(box.get('min_pack_multiple', 0) or 0)
                     for box in column_boxes
@@ -273,6 +310,90 @@ def _build_column_candidates(
         seen.add(signature)
         candidates.append((strategy_name, columns))
     return candidates
+
+
+def _build_pools(cols, flat_required: bool, with_weight: bool):
+    """柱按类型聚合。类型键 = (底面, 指数)[, 柱高][, 柱重]。
+
+    柱高分量：平顶模式用（盘内柱等高 → 顶面天然平）。
+    柱重分量：限重模式用，使同类型柱重量唯一 ⇒ pattern 总重有确定值。
+    """
+    pools: Dict[tuple, List[Dict]] = defaultdict(list)
+    for c in cols:
+        key = (c['fp'], c['idx'])
+        if flat_required:
+            key = key + (_col_height_key(c),)
+        if with_weight:
+            key = key + (_col_weight_key(c),)
+        pools[key].append(c)
+    return pools
+
+
+def _ilp_affordable(types, counts, pallet_dims, tol) -> bool:
+    """柱类型规模是否还够走精确 ILP（否则只能贪心）。
+
+    单类型一盘内用量上界 = 该底面满盘根数（几何上界），用它收紧枚举空间预判。
+    """
+    if not _HAS_ORTOOLS or len(types) > _ILP_MAX_TYPES:
+        return False
+    prod_scale = 1
+    for t, count in zip(types, counts):
+        per_cap = max(1, _orient_per(*_fp_orient(t[0]), pallet_dims, tol))
+        prod_scale *= min(count, per_cap) + 1
+        if prod_scale > _MAX_ENUM:
+            return False
+    return True
+
+
+def _merge_weight_classes(pools, pallet_dims, tol, w_pos):
+    """限重模式：把「重量最接近」的同基柱类型逐步合并，直到枚举空间可负担。
+
+    柱重并入类型键能让 pattern 总重精确，但会让类型数翻倍，枚举空间可能顶过
+    _MAX_ENUM，把本可走精确 ILP 的组挤到贪心路径（实测 668×20：类型 5→10、
+    枚举 3.1万→298万、达标 10→7）。直接退回「按底面/指数聚合 + 取组内最大柱重」
+    虽然可靠，但保守放大可达 2 倍（同类型柱重 45.5～90.4kg），照样丢达标盘。
+
+    折中：只合并必要的最少次数，每次挑「引入多余重量最少」的一对相邻重量类
+    （多余重量 = 重量差 × 被抬高的柱数），合并类取组内最大柱重作上界。上界
+    始终可靠（实际盘重 ≤ Σ combo·上界），保守度压到最低。
+
+    返回合并后的 pools；无法合并到可负担时返回 None（调用方退贪心）。
+    """
+    bound_of = {key: key[w_pos] for key in pools}
+
+    def _merged():
+        merged = defaultdict(list)
+        for key, columns in pools.items():
+            merged[key[:w_pos] + (bound_of[key],)].extend(columns)
+        return merged
+
+    merged = _merged()
+    while True:
+        types = sorted(merged.keys())
+        counts = [len(merged[t]) for t in types]
+        if _ilp_affordable(types, counts, pallet_dims, tol):
+            return merged
+        by_base: Dict[tuple, set] = defaultdict(set)
+        for key in pools:
+            by_base[key[:w_pos]].add(bound_of[key])
+        best = None  # (多余重量, 基类型, 低类上界, 高类上界)
+        for base, bounds in by_base.items():
+            ordered = sorted(bounds)
+            for low, high in zip(ordered, ordered[1:]):
+                lifted = sum(
+                    len(columns) for key, columns in pools.items()
+                    if key[:w_pos] == base and bound_of[key] == low
+                )
+                excess = (high - low) * lifted
+                if best is None or excess < best[0]:
+                    best = (excess, base, low, high)
+        if best is None:
+            return None  # 每个基类型只剩一个重量类，仍不可负担
+        _excess, base, low, high = best
+        for key in pools:
+            if key[:w_pos] == base and bound_of[key] == low:
+                bound_of[key] = high
+        merged = _merged()
 
 
 def _plan_rank(plans: List[Dict]) -> Tuple[int, int, float]:
@@ -331,8 +452,14 @@ def _select_target_subset_cpsat(
     target_mpm: float,
     excluded_signatures=None,
     time_limit: float = 3.0,
+    weight_cap: Optional[float] = None,
 ) -> List[Dict]:
-    """Select a volume-feasible target subset with minimum index overshoot."""
+    """Select a volume-feasible target subset with minimum index overshoot.
+
+    weight_cap：整盘限重（kg）。限重是线性可加约束，直接作为一条线性约束入模，
+    求解器在「重量可行」的解空间里找最小指数溢出——不是选完再拒，因此不损失
+    任何本可达标的组合。
+    """
 
     if not _HAS_ORTOOLS or target_mpm <= 0:
         return []
@@ -386,6 +513,14 @@ def _select_target_subset_cpsat(
     model.Add(total_mpm >= target_value)
     model.Add(sum(volumes[i] * selected[i]
                   for i in range(len(eligible))) <= pallet_volume)
+    if weight_cap is not None:
+        # 重量放大到整数（克）后入模，避免 CP-SAT 的整数系数丢精度
+        weight_units = [
+            int(round(box_weight(box) * 1000.0)) for box in eligible
+        ]
+        model.Add(sum(weight_units[i] * selected[i]
+                      for i in range(len(eligible)))
+                  <= int(weight_cap * 1000.0))
 
     footprint_indices: Dict[Tuple[int, int], List[int]] = defaultdict(list)
     for i, box in enumerate(eligible):
@@ -704,7 +839,8 @@ def _cpsat_tile_2d(cols: List[Dict], pallet_dims: Dict[str, float],
     return [], list(cols)
 
 
-def _enumerate_patterns(types, counts, target, pallet_dims, tol, heights=None):
+def _enumerate_patterns(types, counts, target, pallet_dims, tol, heights=None,
+                        weights=None, weight_cap=None):
     """枚举"指数达标 + 面积可行"的候选盘 pattern（柱类型计数向量）。
 
     几何用**面积必要条件**（柱底面积和 ≤ 盘面积）筛，不要求 265 网格能整齐
@@ -714,6 +850,10 @@ def _enumerate_patterns(types, counts, target, pallet_dims, tol, heights=None):
 
     heights：平顶模式（正常订单）时传入与 types 对齐的柱高列表，pattern 只
     允许使用同一柱高的类型（盘内柱严格等高 → 顶面天然平）。None＝不限制。
+
+    weights/weight_cap：限重生效时传入与 types 对齐的柱重列表与整盘限重，
+    pattern 总重超限即剪掉。限重是线性可加约束，同类型柱重量唯一（柱重已并入
+    类型键），因此这里是**精确剪枝**而非保守估计——达标率损失恰好等于数学下界。
     """
     cap_area = (float(pallet_dims.get('length', 0) or 0)
                 * float(pallet_dims.get('width', 0) or 0))
@@ -740,6 +880,12 @@ def _enumerate_patterns(types, counts, target, pallet_dims, tol, heights=None):
         idx = sum(combo[i] * types[i][1] for i in range(len(types)))
         if idx < target - 1e-9 or idx > target + _OVERFLOW + 1e-9:
             continue
+        if weights is not None and weight_cap is not None:
+            total_w = sum(
+                combo[i] * weights[i] for i in range(len(types))
+            )
+            if total_w > weight_cap + 1e-6:
+                continue
         area = sum(combo[i] * fp_area[i] for i in range(len(types)))
         if area <= cap_area + 1e-6:
             patterns.append(combo)
@@ -760,8 +906,12 @@ def _solve_ilp(patterns, counts, time_limit=20.0):
     return [int(round(solver.Value(x[p]))) for p in range(len(patterns))]
 
 
-def _same_type_boards(pools, target, pallet_dims, tol):
-    """同类满盘：每个柱类型尽量铺满达标盘（无损主力）。就地消耗 pools，返回 [placed]。"""
+def _same_type_boards(pools, target, pallet_dims, tol, weight_cap=None):
+    """同类满盘：每个柱类型尽量铺满达标盘（无损主力）。就地消耗 pools，返回 [placed]。
+
+    weight_cap：整盘限重（kg）。同类型柱重量不一定相同（同 (底面,指数) 可能来自
+    不同箱型），故按实际取到的柱逐一累加判定，超限就不出这盘、把柱留给混合装盘。
+    """
     boards = []
     for t in list(pools.keys()):
         cl = pools[t]
@@ -777,29 +927,43 @@ def _same_type_boards(pools, target, pallet_dims, tol):
             continue  # 一盘铺满都不够达标 → 留给混合
         while len(cl) >= need:
             take = cl[:need]
+            if weight_cap is not None and sum(
+                column_weight(c) for c in take
+            ) > weight_cap + 1e-6:
+                break  # 达标所需根数已超限 → 本类型整体留给混合装盘
             del cl[:need]
             placed, _u = _grid_pack(take, pallet_dims, tol)
             boards.append(placed)
     return boards
 
 
-def _greedy_mixed_boards(cols, target, pallet_dims, tol):
+def _greedy_mixed_boards(cols, target, pallet_dims, tol, weight_cap=None):
     """贪心混合装盘：逐盘把柱塞到网格装满（最大化填充→最大化达标），收口。
     每盘优先放"放进去仍能装下、且推高指数最多"的柱；网格放满即收口。
+    weight_cap 给定时，超过整盘限重的柱不再加入本盘（留给下一盘）。
     返回 (boards=[placed], leftover_cols)。"""
     remaining = list(cols)
     boards = []
     while remaining:
         plate = []
+        plate_weight = 0.0
         # 反复挑一根"能装下"的柱加入，直到没有柱能再放进本盘
         progressed = True
         while progressed:
             progressed = False
             # 指数大的优先（快到 target），其次底面大的（占满空间）
             for c in sorted(remaining, key=lambda c: (-c['idx'], -(c['xlen'] * c['ylen']))):
+                col_w = column_weight(c)
+                if (
+                    weight_cap is not None
+                    and plate
+                    and plate_weight + col_w > weight_cap + 1e-6
+                ):
+                    continue
                 _, unplaced = _grid_pack(plate + [c], pallet_dims, tol)
                 if not unplaced:
                     plate.append(c)
+                    plate_weight += col_w
                     remaining.remove(c)
                     progressed = True
                     break
@@ -857,7 +1021,11 @@ class GlobalColumnPacker:
         if target_mpm is None or not boxes_in_group:
             return False
         pallet_dims = boxes_in_group[0]['pallet_dims']
-        cols = _build_columns(boxes_in_group, pallet_dims)
+        # 限重生效时按限重凑柱，使适用性判据与 pack_group 实际会造出的柱一致
+        cols = _build_columns(
+            boxes_in_group, pallet_dims,
+            weight_cap_for_group(boxes_in_group, pallet_dims, self._cfg),
+        )
         self._cols_cache = (id(boxes_in_group), cols)  # 供随后的 pack_group 复用，免重复凑柱
         if not cols:
             return False
@@ -896,7 +1064,10 @@ class GlobalColumnPacker:
         if target_mpm is None or not boxes_in_group:
             return list(boxes_in_group), []
         pallet_dims = boxes_in_group[0]['pallet_dims']
-        cols = _build_columns(boxes_in_group, pallet_dims)
+        cols = _build_columns(
+            boxes_in_group, pallet_dims,
+            weight_cap_for_group(boxes_in_group, pallet_dims, self._cfg),
+        )
         if not cols:
             return [], list(boxes_in_group)
         target = float(target_mpm)
@@ -931,7 +1102,8 @@ class GlobalColumnPacker:
         started = time.time()
         pallet_dims = boxes_in_group[0]['pallet_dims']
         candidates = _build_column_candidates(
-            boxes_in_group, pallet_dims, target_mpm
+            boxes_in_group, pallet_dims, target_mpm,
+            weight_cap_for_group(boxes_in_group, pallet_dims, self._cfg),
         )
         if not candidates:
             candidates = [('height_first', [])]
@@ -1063,8 +1235,11 @@ class GlobalColumnPacker:
             'cpsat_target_subset_time_limit_seconds',
             3.0,
         ))
+        weight_cap = weight_cap_for_group(
+            selected_boxes, pallet_dims, self._cfg,
+        )
         for _strategy, columns in _build_column_candidates(
-            selected_boxes, pallet_dims, target_mpm
+            selected_boxes, pallet_dims, target_mpm, weight_cap,
         ):
             if flat_required:
                 if len({_col_height_key(c) for c in columns}) > 1:
@@ -1116,6 +1291,9 @@ class GlobalColumnPacker:
         time_limit = float(getattr(
             self._cfg, 'cpsat_target_subset_time_limit_seconds', 3.0
         ))
+        weight_cap = weight_cap_for_group(
+            boxes_in_group, pallet_dims, self._cfg,
+        )
         excluded = set()
         diag = {
             'gcp_bailout': False,
@@ -1131,6 +1309,7 @@ class GlobalColumnPacker:
                 float(target_mpm),
                 excluded_signatures=excluded,
                 time_limit=time_limit,
+                weight_cap=weight_cap,
             )
             if not selected:
                 break
@@ -1157,7 +1336,8 @@ class GlobalColumnPacker:
             residual_bailout = False
             if residual:
                 residual_candidates = _build_column_candidates(
-                    residual, pallet_dims, target_mpm
+                    residual, pallet_dims, target_mpm,
+                    weight_cap_for_group(residual, pallet_dims, self._cfg),
                 )
                 residual_columns = (
                     residual_candidates[0][1]
@@ -1222,30 +1402,33 @@ class GlobalColumnPacker:
             self._cfg, pallet_type, boxes_in_group,
         )
         flat_seam = flat_top_seam_tolerance(self._cfg)
+        # 整盘限重：仅当本组「单盘重量上界 > 限重」时才启用，否则约束恒不可能
+        # 触发，全部限重逻辑短路（柱类型键/模式枚举/贪心装盘均走历史路径），
+        # 零回归可证。见 geometry/weight_limit.weight_cap_for_group。
+        weight_cap = weight_cap_for_group(
+            boxes_in_group, pallet_dims, self._cfg,
+        )
 
         if target_mpm is not None and cols:
             target = float(target_mpm)
-            pools: Dict[tuple, List[Dict]] = defaultdict(list)
-            for c in cols:
-                key = (
-                    (c['fp'], c['idx'], _col_height_key(c))
-                    if flat_required else (c['fp'], c['idx'])
-                )
-                pools[key].append(c)
-
-            # 1) 小规模 → 精确 ILP（柱类型少 + 枚举空间可控，拿全局最优）
+            # 柱类型键：限重生效时并入柱重，使 pattern 总重有确定值 ⇒ 精确剪枝。
+            # 代价是类型数翻倍、枚举空间可能顶过 _MAX_ENUM 而被迫退贪心；此时
+            # 用 _merge_weight_classes 合并最接近的重量类（上界取组内最大，仍
+            # 可靠），把类型数压回可负担范围。限重不会把组挤到贪心路径上。
+            pools = _build_pools(cols, flat_required, weight_cap is not None)
             types = sorted(pools.keys())
             counts = [len(pools[t]) for t in types]
-            # 单类型一盘内用量上界 = 该底面满盘根数（per_layer，几何上界），
-            # 远小于固定 40 → 枚举空间预判贴近真实，更多组走精确 ILP（B 轻量版）。
-            per_caps = [max(1, _orient_per(*_fp_orient(t[0]), pallet_dims, tol))
-                        for t in types]
-            prod_scale = 1
-            for c, pc in zip(counts, per_caps):
-                prod_scale *= min(c, pc) + 1
-                if prod_scale > _MAX_ENUM:
-                    break
-            use_ilp = _HAS_ORTOOLS and len(types) <= _ILP_MAX_TYPES and prod_scale <= _MAX_ENUM
+            use_ilp = _ilp_affordable(types, counts, pallet_dims, tol)
+            if weight_cap is not None and not use_ilp:
+                merged = _merge_weight_classes(
+                    pools, pallet_dims, tol,
+                    w_pos=(3 if flat_required else 2),
+                )
+                if merged is not None:
+                    pools = merged
+                    types = sorted(pools.keys())
+                    counts = [len(pools[t]) for t in types]
+                    use_ilp = True
             if use_ilp:
                 # 同 pattern 的盘柱型构成完全相同（2D 摆放只看底面）：
                 # - 成功布局缓存：首盘 CP-SAT 解出满解后，后续同 pattern 盘
@@ -1269,12 +1452,25 @@ class GlobalColumnPacker:
                     round_counts = [
                         len(remaining_pools[t]) for t in round_types
                     ]
+                    # 柱类型键的可选分量位置：flat 在前、weight 在后。
+                    # 键里的重量分量始终是该类型柱重的可靠上界（未合并时即
+                    # 精确值，合并后为组内最大值）。
+                    _h_pos = 2 if flat_required else None
+                    _w_pos = (
+                        (3 if flat_required else 2)
+                        if weight_cap is not None else None
+                    )
                     patterns = _enumerate_patterns(
                         round_types, round_counts, target, pallet_dims, tol,
                         heights=(
-                            [t[2] for t in round_types]
-                            if flat_required else None
+                            [t[_h_pos] for t in round_types]
+                            if _h_pos is not None else None
                         ),
+                        weights=(
+                            [t[_w_pos] for t in round_types]
+                            if _w_pos is not None else None
+                        ),
+                        weight_cap=weight_cap,
                     )
                     if banned_patterns:
                         patterns = [
@@ -1374,10 +1570,14 @@ class GlobalColumnPacker:
                         break
             else:
                 # 2) 大组 → 同类满盘（无损）+ 贪心混合（快、鲁棒）
-                for placed in _same_type_boards(pools, target, pallet_dims, tol):
+                for placed in _same_type_boards(
+                    pools, target, pallet_dims, tol, weight_cap,
+                ):
                     boards.append((placed, None))
                 rest = [c for cl in pools.values() for c in cl]
-                mixed, _rest = _greedy_mixed_boards(rest, target, pallet_dims, tol)
+                mixed, _rest = _greedy_mixed_boards(
+                    rest, target, pallet_dims, tol, weight_cap,
+                )
                 for placed in mixed:
                     boards.append((placed, None))
 

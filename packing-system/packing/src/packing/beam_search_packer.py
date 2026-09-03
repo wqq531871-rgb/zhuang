@@ -16,6 +16,7 @@ from .stacking_policy import (
 )
 from .suction_planner import SuctionPlanner
 from ..geometry.gap_checker import side_gap_flags
+from ..geometry.weight_limit import box_weight, fits_weight, pallet_weight_cap
 from ..utils.dimensions import raw_dims
 
 
@@ -114,6 +115,9 @@ class BeamSearchPacker:
         self.size_tolerance = size_tolerance
         self.z_tolerance = z_tolerance
         self.robot_reachability_enabled = robot_reachability_enabled
+        # 整盘限重（kg）；None = 不限重。约束与几何无关，故不进
+        # PlacementValidator，而在束搜索按状态逐箱累加判定。
+        self.max_pallet_weight = pallet_weight_cap(constraint_config)
         self.placed_boxes = []
 
         # 初始化组件
@@ -399,6 +403,22 @@ class BeamSearchPacker:
                     terminal_states.append({
                         "placed_boxes": list(state['placed_boxes']),
                         "unfitted_items": list(state['unfitted_items']) + list(ordered_items[item_idx:])
+                    })
+                    continue
+
+                # 整盘限重：可加约束，与位置无关，故在此按状态逐箱拦截，
+                # 而不是进 PlacementValidator 逐候选点算。超限的箱留给下一盘
+                # （与 unfitted 语义一致）。空盘放行——单箱本身超限时若也拦下，
+                # 该箱将无处可去；与整盘门禁/增量门禁的单箱豁免保持一致。
+                if state['placed_boxes'] and not fits_weight(
+                    state['placed_boxes'], box_weight(item),
+                    self.max_pallet_weight,
+                ):
+                    next_states.append({
+                        "placed_boxes": list(state['placed_boxes']),
+                        "unfitted_items": (
+                            list(state['unfitted_items']) + [item]
+                        ),
                     })
                     continue
 

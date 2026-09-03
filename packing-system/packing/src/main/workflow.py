@@ -11,6 +11,10 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
+from ..geometry.weight_limit import (
+    overweight_single_boxes,
+    pallet_weight_cap,
+)
 from ..utils.case_group import CASE_GROUP_ORDER_TAG, split_case_group_tag
 from ..utils.helpers import repack_ready_item
 from ..utils.normal_order import annotate_normal_orders
@@ -120,6 +124,21 @@ class PackingWorkflow:
         )
         if normal_orders:
             print(f"  - 正常订单（全规则箱）判定：{normal_orders} 个订单须平顶不缺角。")
+
+        # 整盘限重：单箱本身超限是数据异常（该箱在任何盘上都不合法，重排无解）。
+        # 门禁对单箱盘豁免以保守恒，这里显式告警，交现场核对重量数据。
+        weight_cap = pallet_weight_cap(self._constraint_config)
+        if weight_cap is not None:
+            heavy = overweight_single_boxes(all_boxes, weight_cap)
+            if heavy:
+                sample = ", ".join(
+                    f"{b.get('id')}({float(b.get('weight', 0) or 0):.1f}kg)"
+                    for b in heavy[:5]
+                )
+                print(
+                    f"  - ⚠ 整盘限重 {weight_cap:.0f}kg：{len(heavy)} 个箱子单箱"
+                    f"即超限，将单独成盘并豁免限重，请核对重量数据。示例：{sample}"
+                )
 
         grouped = self._partition_groups(grouped)
 

@@ -34,6 +34,9 @@ constraints:
   max_box_gap_mm: 6.0
   support_ratio_threshold: 0.8
   center_of_mass_tolerance: 0.3333333333333333
+  # 整盘限重（甲方 2026-09 需求）：整垛箱子重量和不得超过本值（千克）。
+  # ≤ 0 = 关闭约束，完全恢复历史行为。单箱本身超限时该盘豁免并打印告警。
+  max_pallet_weight_kg: 1000.0
   suction_reachability_enabled: true
   # 小面积在下：任一箱子正下方不得有投影面积更大的箱子（对全部箱子生效）。
   # 旧键 small_box_below_enabled 仍被识别并映射到本键。

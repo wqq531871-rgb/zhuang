@@ -333,6 +333,7 @@ def test_exact_target_candidate_retries_after_geometry_failure(monkeypatch):
         target_mpm,
         excluded_signatures=None,
         time_limit=3.0,
+        weight_cap=None,
     ):
         exclusions_seen.append(set(excluded_signatures or []))
         return raw_boxes[:2] if not excluded_signatures else raw_boxes[2:]
