@@ -33,6 +33,7 @@ from src.config import (
 from src.data import load_boxes
 from src.geometry import validate_center_of_mass
 from src.main import PackingWorkflow, build_json_output_plan
+from src.main.success_target import SuccessTarget, apply_success_target
 from src.main.report_persister import JsonFileReportPersister
 from src.packing import (
     BeamSearchPacker,
@@ -178,6 +179,7 @@ def load_run_config(config_path=None):
 def build_workflow(
     safe_compare: bool = False,
     constraint_config: ConstraintConfig = None,
+    success_target: SuccessTarget = None,
 ) -> PackingWorkflow:
     """组装 PackingWorkflow。所有原语来自 src/。
 
@@ -240,6 +242,7 @@ def build_workflow(
         ),
         safe_compare=safe_compare,
         constraint_config=cfg,
+        success_target=success_target,
     )
 
 
@@ -278,7 +281,9 @@ def _parse_cli(argv):
     return out_path, max_boxes, profile, safe_compare, config_path
 
 
-def _run_incremental(constraint_config, safe_compare, incr_filepath, out_path):
+def _run_incremental(
+    constraint_config, safe_compare, incr_filepath, out_path, success_target
+):
     """增量装箱：先装初始单，再把未达标盘的箱+新增箱重排合并。
     复用 build_workflow（受 main_packer/约束配置控制），与普通模式同一装箱核心。
     """
@@ -286,7 +291,11 @@ def _run_incremental(constraint_config, safe_compare, incr_filepath, out_path):
     from src.main.report_persister import NullReportPersister
 
     def factory():
-        wf = build_workflow(safe_compare=safe_compare, constraint_config=constraint_config)
+        wf = build_workflow(
+            safe_compare=safe_compare,
+            constraint_config=constraint_config,
+            success_target=success_target,
+        )
         wf._report_persister = NullReportPersister()
         return wf
 
@@ -294,6 +303,7 @@ def _run_incremental(constraint_config, safe_compare, incr_filepath, out_path):
     batch = load_incremental_excel(Path(incr_filepath))
     result = run_incremental_packing(batch.initial_boxes, batch.new_boxes, factory)
     report = result.report
+    apply_success_target(report, success_target)
     ov = report['summary']['overall']
     print(f"增量装箱完成：初始 {len(batch.initial_boxes)} 箱 + 新增 {len(batch.new_boxes)} 箱"
           f" → 总托盘 {ov['total_pallets']}，达标 {ov['success_pallets']}，"
@@ -307,6 +317,19 @@ def _run_incremental(constraint_config, safe_compare, incr_filepath, out_path):
 
 def _run(out_path, max_boxes, safe_compare=False, config_path=None):
     constraint_config = load_constraint_config(config_path)
+    effective_config_path = (
+        Path(config_path)
+        if config_path and Path(config_path).exists()
+        else (DEFAULT_PACKING_CONFIG if DEFAULT_PACKING_CONFIG.exists() else None)
+    )
+    config_data = (
+        ConfigLoader(effective_config_path).config_data
+        if effective_config_path is not None
+        else {}
+    )
+    success_target = SuccessTarget.from_mapping(
+        (config_data or {}).get("success_target")
+    )
     data_filepath = load_data_filepath(config_path)
     run_mode, incr_filepath = load_run_config(config_path)
     if config_path:
@@ -316,10 +339,18 @@ def _run(out_path, max_boxes, safe_compare=False, config_path=None):
     if run_mode == 'incremental':
         if not incr_filepath:
             raise SystemExit('错误：run_mode=incremental 但 incremental.source_file 缺失或文件不存在。')
-        return _run_incremental(constraint_config, safe_compare, incr_filepath, out_path)
+        return _run_incremental(
+            constraint_config,
+            safe_compare,
+            incr_filepath,
+            out_path,
+            success_target,
+        )
 
     workflow = build_workflow(
-        safe_compare=safe_compare, constraint_config=constraint_config
+        safe_compare=safe_compare,
+        constraint_config=constraint_config,
+        success_target=success_target,
     )
     if data_filepath:
         print(f'已加载配置数据集：{data_filepath}')

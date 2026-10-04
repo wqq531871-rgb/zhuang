@@ -150,6 +150,7 @@ class BeamSearchPacker:
         candidate_limit: int = 30,
         random_seed: Optional[int] = None,
         target_mpm: Optional[float] = None,
+        target_policy=None,
         stop_when_target_met: bool = True,
         allow_skip_items: bool = True
     ) -> Tuple[List[Dict], List[Dict]]:
@@ -214,6 +215,7 @@ class BeamSearchPacker:
                 candidate_limit=candidate_limit,
                 rng=rng,
                 target_mpm=target_mpm,
+                target_policy=target_policy,
                 stop_when_target_met=stop_when_target_met,
                 allow_skip_items=allow_skip_items
             )
@@ -223,7 +225,9 @@ class BeamSearchPacker:
                 state['unfitted_items'] = list(state['unfitted_items']) + list(pre_unfitted)
 
             # 更新最佳状态：如果当前状态评分更高，则替换最佳状态
-            if best_state is None or self._state_score(state, target_mpm) > self._state_score(best_state, target_mpm):
+            if best_state is None or self._state_score(
+                state, target_mpm, target_policy
+            ) > self._state_score(best_state, target_mpm, target_policy):
                 best_state = state
 
         # 保存最佳结果的已放置箱子，并返回最终结果
@@ -295,6 +299,7 @@ class BeamSearchPacker:
         candidate_limit: int = 16,
         random_seed: Optional[int] = None,
         target_mpm: Optional[float] = None,
+        target_policy=None,
     ) -> Tuple[List[Dict], List[Dict]]:
         """Place additions without moving or rewriting existing placements."""
 
@@ -327,6 +332,7 @@ class BeamSearchPacker:
                 candidate_limit=candidate_limit,
                 rng=rng,
                 target_mpm=target_mpm,
+                target_policy=target_policy,
                 stop_when_target_met=True,
                 allow_skip_items=True,
                 initial_placed_boxes=fixed,
@@ -336,8 +342,8 @@ class BeamSearchPacker:
                     list(state["unfitted_items"]) + list(pre_unfitted)
                 )
             if best_state is None or self._state_score(
-                state, target_mpm
-            ) > self._state_score(best_state, target_mpm):
+                state, target_mpm, target_policy
+            ) > self._state_score(best_state, target_mpm, target_policy):
                 best_state = state
 
         sanitized, removed = self._sanitize_packed_items(
@@ -362,6 +368,7 @@ class BeamSearchPacker:
         candidate_limit: int,
         rng: random.Random,
         target_mpm: Optional[float] = None,
+        target_policy=None,
         stop_when_target_met: bool = True,
         allow_skip_items: bool = True,
         initial_placed_boxes: Optional[List[Dict]] = None,
@@ -398,8 +405,23 @@ class BeamSearchPacker:
         for item_idx, item in enumerate(ordered_items):
             next_states = []
             for state in states:
-                state_mpm = sum(b.get('min_pack_multiple', 0) for b in state['placed_boxes'])
-                if target_mpm is not None and stop_when_target_met and state_mpm >= target_mpm:
+                state_value = (
+                    target_policy.items_value(state['placed_boxes'])
+                    if target_policy is not None
+                    else sum(
+                        b.get('min_pack_multiple', 0)
+                        for b in state['placed_boxes']
+                    )
+                )
+                target_value = (
+                    target_policy.threshold
+                    if target_policy is not None else target_mpm
+                )
+                if (
+                    target_value is not None
+                    and stop_when_target_met
+                    and state_value + 1e-12 >= target_value
+                ):
                     terminal_states.append({
                         "placed_boxes": list(state['placed_boxes']),
                         "unfitted_items": list(state['unfitted_items']) + list(ordered_items[item_idx:])
@@ -448,12 +470,19 @@ class BeamSearchPacker:
                     }
                     next_states.append(new_state)
 
-            states = sorted(next_states, key=lambda s: self._state_score(s, target_mpm), reverse=True)[:beam_width]
+            states = sorted(
+                next_states,
+                key=lambda s: self._state_score(s, target_mpm, target_policy),
+                reverse=True,
+            )[:beam_width]
             if not states:
                 break
 
         all_final_states = terminal_states + states
-        return max(all_final_states, key=lambda s: self._state_score(s, target_mpm)) if all_final_states else initial_state
+        return max(
+            all_final_states,
+            key=lambda s: self._state_score(s, target_mpm, target_policy),
+        ) if all_final_states else initial_state
 
     def _generate_feasible_candidates(
         self,
@@ -624,7 +653,8 @@ class BeamSearchPacker:
     def _state_score(
         self,
         state: Dict,
-        target_mpm: Optional[float] = None
+        target_mpm: Optional[float] = None,
+        target_policy=None,
     ) -> Tuple:
         """
         计算装箱状态的得分
@@ -642,7 +672,10 @@ class BeamSearchPacker:
             for b in state['placed_boxes']
         )
 
-        if target_mpm is None:
+        target_value = (
+            target_policy.threshold if target_policy is not None else target_mpm
+        )
+        if target_value is None:
             return (
                 total_volume,
                 len(state['placed_boxes']),
@@ -650,24 +683,34 @@ class BeamSearchPacker:
                 -len(state['unfitted_items']),
             )
 
-        mpm_gap = target_mpm - total_mpm
+        objective_total = (
+            target_policy.items_value(state['placed_boxes'])
+            if target_policy is not None else total_mpm
+        )
+        mpm_gap = target_value - objective_total
         is_target_met = 1 if mpm_gap <= 0 else 0
-        remaining_mpm = sum(
-            b.get('min_pack_multiple', 0) for b in state['unfitted_items']
+        remaining_mpm = (
+            target_policy.items_value(state['unfitted_items'])
+            if target_policy is not None
+            else sum(
+                b.get('min_pack_multiple', 0)
+                for b in state['unfitted_items']
+            )
         )
-        future_success = int(remaining_mpm // target_mpm) if target_mpm > 0 else 0
+        future_success = int(remaining_mpm // target_value) if target_value > 0 else 0
         remaining_tail = (
-            remaining_mpm - future_success * target_mpm
-            if target_mpm > 0 else 0.0
+            remaining_mpm - future_success * target_value
+            if target_value > 0 else 0.0
         )
-        tail_floor = target_mpm * 0.35
+        tail_floor = target_value * 0.35
         if remaining_mpm <= 1e-9 or remaining_tail >= tail_floor:
             tail_penalty = 0.0
         else:
             tail_penalty = -(tail_floor - remaining_tail)
         if is_target_met:
-            overflow = max(0.0, total_mpm - target_mpm)
-            overflow_allowance = max(16.0, target_mpm * 0.15)
+            overflow = max(0.0, objective_total - target_value)
+            overflow_floor = 0.05 if target_policy is not None else 16.0
+            overflow_allowance = max(overflow_floor, target_value * 0.15)
             excess_overflow = max(0.0, overflow - overflow_allowance)
             return (
                 is_target_met,
@@ -676,7 +719,7 @@ class BeamSearchPacker:
                 future_success,
                 tail_penalty,
                 -excess_overflow,
-                total_mpm,
+                objective_total,
                 -abs(mpm_gap),
                 -len(state['unfitted_items']),
             )
@@ -684,7 +727,7 @@ class BeamSearchPacker:
         return (
             is_target_met,
             -abs(mpm_gap),
-            total_mpm,
+            objective_total,
             total_volume,
             len(state['placed_boxes']),
             future_success,

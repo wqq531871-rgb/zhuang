@@ -2,11 +2,14 @@
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.incremental import run_incremental_packing
+from src.main.success_target import SuccessTarget
+import run_packing
 
 
 def _box(box_id, mpm=10):
@@ -205,6 +208,55 @@ def test_recovered_stat_zero_when_old_boxes_stay_failed():
     # 达标托盘只含新增箱，不含首跑未达标箱 → 救回 0 托盘 / 0 箱。
     assert inc["initial_failed_recovered_pallets"] == 0
     assert inc["initial_failed_boxes_in_success"] == 0
+
+
+def test_cli_incremental_uses_fill_target_during_orchestration(monkeypatch):
+    workflow_targets = []
+    report = {
+        "summary": {
+            "overall": {},
+            "by_pallet_type": {},
+        },
+        "pallets": [
+            {
+                "pallet_id": "A-O1-1",
+                "pallet_type": "A",
+                "sales_order_no": "O1",
+                "mpm_status": "FAILED",
+                "mpm_total": 180,
+                "fill_rate": 0.80,
+                "packed_items": [],
+            }
+        ],
+    }
+
+    class FakeWorkflow:
+        _report_persister = None
+
+    def fake_build_workflow(**kwargs):
+        workflow_targets.append(kwargs.get("success_target"))
+        return FakeWorkflow()
+
+    def fake_incremental(_initial, _new, factory):
+        factory()
+        return SimpleNamespace(report=report, total_runtime_seconds=0.1)
+
+    monkeypatch.setattr(run_packing, "build_workflow", fake_build_workflow)
+    monkeypatch.setattr(
+        "src.incremental.load_incremental_excel",
+        lambda _path: SimpleNamespace(initial_boxes=[], new_boxes=[]),
+    )
+    monkeypatch.setattr(
+        "src.incremental.run_incremental_packing", fake_incremental
+    )
+
+    target = SuccessTarget(mode="fill_rate", threshold=0.75)
+    result = run_packing._run_incremental(None, False, "dummy.xlsx", None, target)
+
+    assert workflow_targets == [target]
+    assert result["success_target"] == target.to_dict()
+    assert result["pallets"][0]["index_status"] == "FAILED"
+    assert result["pallets"][0]["mpm_status"] == "SUCCESS"
 
 
 if __name__ == "__main__":

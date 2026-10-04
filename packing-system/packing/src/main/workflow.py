@@ -22,6 +22,8 @@ from .order_processor import OrderProcessor
 from .pallet_packer import PalletPacker
 from .recipe_first import pack_group_recipe_first
 from .result_formatter import ResultFormatter
+from .success_target import SuccessTarget
+from .target_policy import make_target_policy
 from .alternative_path import (
     candidate_rank,
     choose_guarded_candidate,
@@ -57,6 +59,7 @@ class PackingWorkflow:
         report_persister=None,
         safe_compare: bool = False,
         constraint_config=None,
+        success_target: Optional[SuccessTarget] = None,
     ):
         if constraint_config is None:
             from ..config.constraint_config import ConstraintConfig
@@ -82,6 +85,7 @@ class PackingWorkflow:
         self._make_json_plan = make_json_output_plan
         self._targets = pallet_index_targets
         self._report_persister = report_persister
+        self._success_target = success_target or SuccessTarget()
         # 主装箱算法选择：'gcp' = 全局列式装箱 + 柱级组合优化（默认）；
         # 其它（'beam'）= 旧 beam + 配方优先 + 救援链。
         self._main_packer = getattr(constraint_config, 'main_packer', 'gcp')
@@ -155,9 +159,12 @@ class PackingWorkflow:
         for (pallet_type, sales_order_no), boxes_in_group in grouped.items():
             group_start = time.time()
             print(f"正在处理托盘类型：{pallet_type}，销售订单号：{sales_order_no}")
-            target_mpm = self._targets.get(pallet_type)
-            if target_mpm is None:
+            index_target = self._targets.get(pallet_type)
+            if index_target is None:
                 print(f"  - 警告：托盘类型 {pallet_type} 未配置指数目标，将退化为 mpm 总量优先。")
+            boxes_in_group, target_mpm, _target_policy = (
+                self._prepare_group_target(pallet_type, boxes_in_group)
+            )
 
             # 主算法 = 全局列式装箱 + 柱级组合优化（仅对"适合的规则分组"）：
             # 自带凑柱→ILP→网格→残料兜底，不依赖救援链。不适合的复杂/不规则
@@ -293,7 +300,15 @@ class PackingWorkflow:
             runtime_stats["group_total_seconds"] += group_total
             self._print_group_summary(type_stats, rescued, pack_runtime["packing"], pack_runtime["retry"], repack_time, group_total, pallet_type, sales_order_no, repack)
 
-        self._cross_group_fill_compact(final_plan, by_type_stats)
+        self._cross_group_fill_compact(
+            final_plan,
+            by_type_stats,
+            target_override=(
+                self._success_target.threshold
+                if self._success_target.mode == "fill_rate" else None
+            ),
+        )
+        self._restore_target_plans(final_plan)
         self._restore_split_orders(final_plan, by_type_stats)
         total_runtime = time.time() - start
         summary = {"overall": ResultFormatter.build_overall_summary(final_plan, by_type_stats, runtime_stats, total_runtime), "by_pallet_type": by_type_stats}
@@ -305,6 +320,7 @@ class PackingWorkflow:
             all_boxes,
             self._make_json_plan,
             constraint_config=self._constraint_config,
+            success_target=self._success_target,
         )
         if self._report_persister is not None:
             self._report_persister.persist(report, total_runtime)
@@ -473,8 +489,43 @@ class PackingWorkflow:
             print(f"  - 组内子聚类：{split_cnt} 个混合订单拆出规则子集走 GCP、杂箱走 baseline。")
         return new_grouped
 
+    def _prepare_group_target(self, pallet_type: str, boxes: List[Dict]):
+        """Return isolated working boxes and the additive target for a group."""
+        index_target = self._targets.get(pallet_type)
+        if index_target is None and self._success_target.mode == "index":
+            return list(boxes), None, None
+        if not boxes:
+            return [], index_target, None
+        dims = boxes[0].get("pallet_dims") or {}
+        policy = make_target_policy(
+            self._success_target,
+            float(index_target or self._success_target.threshold),
+            dims,
+        )
+        return policy.project_boxes(boxes), policy.threshold, policy
+
+    def _restore_target_plans(self, plans: List[Dict]) -> None:
+        """Restore true index values after fill-mode working-copy projection."""
+        if self._success_target.mode != "fill_rate":
+            return
+        for plan in plans:
+            items = plan.get("packed_items") or []
+            dims = (
+                (items[0].get("pallet_dims") if items else None)
+                or plan.get("pallet_dims")
+                or {}
+            )
+            index_target = self._targets.get(plan.get("pallet_type"))
+            policy = make_target_policy(
+                self._success_target,
+                float(index_target or 192.0),
+                dims,
+            )
+            policy.restore_plan(plan)
+
     def _cross_group_fill_compact(
         self, final_plan: List[Dict], by_type_stats: Dict,
+        target_override: Optional[float] = None,
     ) -> None:
         """Run opportunity rescue across internally split routing groups.
 
@@ -498,7 +549,11 @@ class PackingWorkflow:
         for (pallet_type, real_order), info in groups.items():
             if len(info['orders']) < 2:
                 continue   # 未拆分：组内压实已做过，不重复
-            target_mpm = self._targets.get(pallet_type)
+            target_mpm = (
+                target_override
+                if target_override is not None
+                else self._targets.get(pallet_type)
+            )
             if target_mpm is None:
                 continue
             plans = info['plans']
@@ -702,6 +757,12 @@ class PackingWorkflow:
         保证所有报告的 pallet_id 格式一致且组内连续。"""
         def _tagged(order: str) -> bool:
             return _SPLIT_REST_TAG in order or CASE_GROUP_ORDER_TAG in order
+
+        for p in final_plan:
+            original_order = p.get('sales_order_no') or ''
+            p['_summary_group_key'] = (
+                f"{p.get('pallet_type')}__{original_order}"
+            )
 
         if any(_tagged(p.get('sales_order_no') or '') for p in final_plan):
             for p in final_plan:

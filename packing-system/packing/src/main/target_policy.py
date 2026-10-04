@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Dict, Sequence
 
@@ -78,6 +79,12 @@ class PackingTargetPolicy:
         )
         return plan
 
+    def project_boxes(self, boxes: Sequence[Dict]) -> list[Dict]:
+        return deepcopy(list(boxes))
+
+    def restore_plan(self, plan: Dict) -> Dict:
+        return self.annotate_plan(plan)
+
 
 @dataclass(frozen=True)
 class IndexTargetPolicy(PackingTargetPolicy):
@@ -91,6 +98,30 @@ class FillRateTargetPolicy(PackingTargetPolicy):
 
     def box_value(self, box: Dict) -> float:
         return _box_volume(box) / self.pallet_volume
+
+    def project_boxes(self, boxes: Sequence[Dict]) -> list[Dict]:
+        projected = deepcopy(list(boxes))
+        for box in projected:
+            box["_index_min_pack_multiple"] = float(
+                box.get("min_pack_multiple") or 0.0
+            )
+            box["min_pack_multiple"] = self.box_value(box)
+        return projected
+
+    def restore_plan(self, plan: Dict) -> Dict:
+        items = plan.get("packed_items") or []
+        fill_rate = self.items_value(items)
+        for item in items:
+            if "_index_min_pack_multiple" in item:
+                item["min_pack_multiple"] = item.pop(
+                    "_index_min_pack_multiple"
+                )
+        plan["fill_rate"] = fill_rate
+        plan["mpm_total"] = sum(
+            float(item.get("min_pack_multiple") or 0.0) for item in items
+        )
+        plan["mpm_target"] = self.index_target
+        return self.annotate_plan(plan)
 
 
 def make_target_policy(

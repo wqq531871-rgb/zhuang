@@ -82,7 +82,11 @@ def apply_success_target(report: Dict, target: SuccessTarget) -> Dict:
     """Apply the selected final success rule to a completed report in place."""
     report["success_target"] = target.to_dict()
     for pallet in report.get("pallets") or []:
-        index_status = str(pallet.get("mpm_status") or "UNKNOWN").strip().upper()
+        index_status = str(
+            pallet.get("index_status")
+            or pallet.get("mpm_status")
+            or "UNKNOWN"
+        ).strip().upper()
         pallet["index_status"] = index_status
         if target.mode == "fill_rate":
             goal_value = float(pallet.get("fill_rate") or 0.0)

@@ -100,3 +100,40 @@ def test_policy_annotation_keeps_index_status_separate_from_fill_status():
     assert plan["goal_value"] == pytest.approx(0.8)
     assert plan["final_status"] == "SUCCESS"
     assert plan["mpm_status"] == "SUCCESS"
+
+
+def test_fill_policy_projects_working_copy_without_mutating_source_index():
+    policy = make_target_policy(
+        SuccessTarget(mode="fill_rate", threshold=0.75), 192.0, PALLET_DIMS
+    )
+    source = [{"id": "A", "min_pack_multiple": 12.0, "volume": 800.0}]
+
+    projected = policy.project_boxes(source)
+
+    assert source[0]["min_pack_multiple"] == 12.0
+    assert projected[0]["min_pack_multiple"] == pytest.approx(0.8)
+    assert projected[0]["_index_min_pack_multiple"] == 12.0
+
+
+def test_fill_policy_restores_true_index_and_removes_projection_fields():
+    policy = make_target_policy(
+        SuccessTarget(mode="fill_rate", threshold=0.75), 192.0, PALLET_DIMS
+    )
+    projected = policy.project_boxes(
+        [{"id": "A", "min_pack_multiple": 12.0, "volume": 800.0}]
+    )
+    plan = {
+        "packed_items": projected,
+        "mpm_total": 0.8,
+        "mpm_target": 0.75,
+        "mpm_status": "SUCCESS",
+    }
+
+    policy.restore_plan(plan)
+
+    assert plan["mpm_total"] == 12.0
+    assert plan["mpm_target"] == 192.0
+    assert plan["index_status"] == "FAILED"
+    assert plan["fill_rate"] == pytest.approx(0.8)
+    assert plan["final_status"] == "SUCCESS"
+    assert "_index_min_pack_multiple" not in plan["packed_items"][0]
