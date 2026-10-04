@@ -173,6 +173,19 @@ def test_final_target_is_applied_before_robot_sequence_generation(monkeypatch):
     assert report["pallets"][0]["sequence_status"] != "SKIPPED_FAILED_PALLET"
 
 
+def test_reapplying_fill_target_preserves_existing_true_index_status():
+    report = _report()
+    pallet = report["pallets"][0]
+    pallet["index_status"] = "FAILED"
+    pallet["mpm_status"] = "SUCCESS"
+    pallet["fill_rate"] = 0.80
+
+    apply_success_target(report, SuccessTarget(mode="fill_rate", threshold=0.75))
+
+    assert pallet["index_status"] == "FAILED"
+    assert pallet["final_status"] == "SUCCESS"
+
+
 @pytest.mark.parametrize("threshold", [0.70, 0.75, 0.80, 0.85, 0.90])
 def test_config_accepts_only_approved_fill_rate_steps(threshold):
     target = SuccessTarget.from_mapping(

@@ -130,6 +130,27 @@ LOCAL_WCS_RECEIVER_REL = Path("local_wcs_receiver")
 LOCAL_WCS_RECEIVER_SCRIPT = LOCAL_WCS_RECEIVER_REL / "run_receiver.py"
 LOCAL_WCS_RECEIVER_CONFIG = LOCAL_WCS_RECEIVER_REL / "config" / "receiver_config.yaml"
 
+SUCCESS_TARGET_OPTIONS = (
+    ("指数 192", ("index", 192.0)),
+    ("装载率 70%", ("fill_rate", 0.70)),
+    ("装载率 75%", ("fill_rate", 0.75)),
+    ("装载率 80%", ("fill_rate", 0.80)),
+    ("装载率 85%", ("fill_rate", 0.85)),
+    ("装载率 90%", ("fill_rate", 0.90)),
+)
+
+
+def _normalize_success_target(value) -> dict:
+    raw = value if isinstance(value, dict) else {}
+    candidate = (
+        str(raw.get("mode") or "index").strip().lower(),
+        float(raw.get("threshold", 192.0)),
+    )
+    approved = {option for _, option in SUCCESS_TARGET_OPTIONS}
+    if candidate not in approved:
+        return {"mode": "index", "threshold": 192.0}
+    return {"mode": candidate[0], "threshold": candidate[1]}
+
 
 def _receiver_advertise_url(project_dir: Path) -> str:
     cfg = Path(project_dir) / LOCAL_WCS_RECEIVER_CONFIG
@@ -327,11 +348,18 @@ def _load_yaml(path: Path) -> dict:
     return data
 
 
-def _write_ui_config(project_dir: Path, base_config_path: Path, excel_copy_path: Path, run_mode: str) -> Path:
+def _write_ui_config(
+    project_dir: Path,
+    base_config_path: Path,
+    excel_copy_path: Path,
+    run_mode: str,
+    success_target: Optional[dict] = None,
+) -> Path:
     config = _load_yaml(base_config_path)
     rel_source = _relative_to_data(project_dir, excel_copy_path)
 
     config["run_mode"] = run_mode
+    config["success_target"] = _normalize_success_target(success_target)
     config.setdefault("excel_data", {})
     config.setdefault("incremental", {})
 
@@ -352,6 +380,7 @@ def _write_ui_config_api_only(
     project_dir: Path,
     base_config_path: Path,
     download_interval: Optional[int] = None,
+    success_target: Optional[dict] = None,
 ) -> Path:
     """从全局 packing_config.yaml 生成接口模式临时配置。
 
@@ -360,6 +389,7 @@ def _write_ui_config_api_only(
     """
     config = _load_yaml(base_config_path)
     config["run_mode"] = "normal"
+    config["success_target"] = _normalize_success_target(success_target)
     prev_ds = dict(config.get("data_source") or {})
     prev_ds["mode"] = "api"
     config["data_source"] = prev_ds
@@ -863,9 +893,14 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             base_config = _load_yaml(Path(project_dir) / DEFAULT_CONFIG_REL)
             ds = base_config.get("data_source") or {}
             configured_interval = ds.get("download_interval", 200)
+            configured_success_target = base_config.get("success_target")
         except (OSError, ValueError, TypeError):
             configured_interval = 200
+            configured_success_target = None
         self.download_interval = normalize_download_interval(configured_interval)
+        self._initial_success_target = _normalize_success_target(
+            configured_success_target
+        )
         self._local_wcs_receiver_proc: Optional[subprocess.Popen] = None
         self._robot_ui_process: Optional[subprocess.Popen] = None
         self._plc_ui_process: Optional[subprocess.Popen] = None
@@ -972,6 +1007,25 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             self.cmb_run_mode.addItem(label, mode)
         self.cmb_run_mode.currentIndexChanged.connect(self._on_run_mode_changed)
         run_box.addWidget(self.cmb_run_mode)
+
+        self.lbl_success_target = QtWidgets.QLabel("目标")
+        self.lbl_success_target.setObjectName("HeaderCaption")
+        run_box.addWidget(self.lbl_success_target)
+
+        self.cmb_success_target = QtWidgets.QComboBox()
+        self.cmb_success_target.setObjectName("HeaderCombo")
+        self.cmb_success_target.setMinimumWidth(132)
+        self.cmb_success_target.setFixedHeight(36)
+        self.cmb_success_target.setToolTip("选择最终成功判定：指数 192 或装载率挡位")
+        selected_index = 0
+        configured = self._initial_success_target
+        configured_value = (configured["mode"], configured["threshold"])
+        for index, (label, value) in enumerate(SUCCESS_TARGET_OPTIONS):
+            self.cmb_success_target.addItem(label, value)
+            if value == configured_value:
+                selected_index = index
+        self.cmb_success_target.setCurrentIndex(selected_index)
+        run_box.addWidget(self.cmb_success_target)
 
         self.lbl_download_interval = QtWidgets.QLabel("间隔")
         self.lbl_download_interval.setObjectName("HeaderCaption")
@@ -2054,16 +2108,30 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         config = getattr(self, "config_path", None)
         excel = getattr(self, "selected_excel_original", None)
         out_path = getattr(self, "generated_out_path", None)
+        target = self.current_success_target()
+        target_label = (
+            f"指数 {target['threshold']:g}"
+            if target["mode"] == "index"
+            else f"装载率 {target['threshold']:.0%}"
+        )
         msg = (
             "当前算法设置：\n\n"
             f"算法目录：{project}\n"
             f"配置文件：{config}\n"
             f"已选择 Excel：{excel or '尚未选择'}\n"
             f"本次输出：{out_path or '尚未生成'}\n\n"
+            f"最终目标：{target_label}\n\n"
             "日常使用只需要：选择Excel → 一键装箱。\n"
             "只有更换算法工程或 YAML 参数时，才需要修改这里。"
         )
         QtWidgets.QMessageBox.information(self, "算法设置", msg)
+
+    def current_success_target(self) -> dict:
+        combo = getattr(self, "cmb_success_target", None)
+        value = combo.currentData() if combo is not None else None
+        if isinstance(value, (tuple, list)) and len(value) == 2:
+            return {"mode": str(value[0]), "threshold": float(value[1])}
+        return dict(self._initial_success_target)
 
     # ------------------------------------------------------------------ Excel
     def choose_excel_file(self) -> Optional[Path]:
@@ -2080,7 +2148,13 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             original = Path(path).resolve()
             copied = _copy_excel_to_project_data(self.project_dir, original)
             run_mode, sheets, warnings = _read_excel_mode(copied)
-            cfg = _write_ui_config(self.project_dir, self.project_dir / DEFAULT_CONFIG_REL, copied, run_mode)
+            cfg = _write_ui_config(
+                self.project_dir,
+                self.project_dir / DEFAULT_CONFIG_REL,
+                copied,
+                run_mode,
+                success_target=self.current_success_target(),
+            )
 
             self.selected_excel_original = original
             self.selected_excel_copy = copied
@@ -2110,6 +2184,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
                 self.project_dir,
                 self.project_dir / DEFAULT_CONFIG_REL,
                 interval,
+                success_target=self.current_success_target(),
             )
             self.generated_config_path = cfg
             self.config_path = cfg
@@ -2129,7 +2204,15 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
                 if cfg is None:
                     return
             else:
-                self.config_path = self.generated_config_path
+                cfg = _write_ui_config(
+                    self.project_dir,
+                    self.project_dir / DEFAULT_CONFIG_REL,
+                    self.selected_excel_copy,
+                    self.last_excel_mode or "normal",
+                    success_target=self.current_success_target(),
+                )
+                self.generated_config_path = cfg
+                self.config_path = cfg
                 self._write_log(f"[UI] 使用已选择 Excel：{self.selected_excel_original}")
         self.start_backend_packing(run_mode=run_mode)
 

@@ -405,6 +405,7 @@ class WcsPackingService:
         safe_compare: bool = False,
     ):
         from run_packing import build_workflow, load_constraint_config
+        from src.main.success_target import SuccessTarget
 
         self._config_path = Path(config_path) if config_path else None
         self._ds = load_data_source_config(self._config_path)
@@ -413,6 +414,11 @@ class WcsPackingService:
         self._repo_all = WcsStockAllRepository(self._db_cfg)
         self._safe_compare = safe_compare
         self._constraint_config = load_constraint_config(self._config_path)
+        yaml_path = _resolve_yaml_path(self._config_path)
+        config_data = ConfigLoader(yaml_path).config_data if yaml_path else {}
+        self._success_target = SuccessTarget.from_mapping(
+            (config_data or {}).get("success_target")
+        )
         self._build_workflow = build_workflow
         self._bms_map: Dict[str, float] = {}
         self._stop = threading.Event()
@@ -463,6 +469,7 @@ class WcsPackingService:
         wf = self._build_workflow(
             safe_compare=self._safe_compare,
             constraint_config=self._constraint_config,
+            success_target=self._success_target,
         )
         wf._report_persister = NullReportPersister()
         return wf

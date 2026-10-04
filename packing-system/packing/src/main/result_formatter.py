@@ -7,6 +7,7 @@
 from typing import Callable, Dict, List, Optional
 
 from src.rescue import PalletEvaluator
+from .success_target import SuccessTarget, apply_success_target
 
 
 class ResultFormatter:
@@ -382,9 +383,18 @@ class ResultFormatter:
         raw_boxes: List[Dict],
         make_json_plan_fn: Callable,
         constraint_config=None,
+        success_target: Optional[SuccessTarget] = None,
     ) -> Dict:
         """组装最终 JSON 报告。"""
         pallets = make_json_plan_fn(final_plan, raw_boxes)
+        report_context = {
+            "summary": summary_stats,
+            "pallets": pallets,
+        }
+        apply_success_target(
+            report_context,
+            success_target or SuccessTarget(),
+        )
         ResultFormatter.validate_output_quality(raw_boxes, pallets)
         ResultFormatter.validate_final_constraints(
             pallets, constraint_config=constraint_config
@@ -403,7 +413,8 @@ class ResultFormatter:
         return {
             "packing_plan_id": None,
             "total_runtime_seconds": round(total_runtime, 2),
-            "summary": summary_stats,
+            "success_target": report_context["success_target"],
+            "summary": report_context["summary"],
             "robot_sequence_summary": robot_sequence_summary,
             "pallets": pallets,
         }

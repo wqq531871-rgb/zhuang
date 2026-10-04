@@ -66,7 +66,14 @@ class JsonFileReportPersister:
                 "指数": pallet.get("mpm_total", ""),
                 "目标指数": pallet.get("mpm_target", ""),
                 "指数缺口": pallet.get("mpm_gap", ""),
-                "指数状态": pallet.get("mpm_status", ""),
+                "指数状态": pallet.get(
+                    "index_status", pallet.get("mpm_status", "")
+                ),
+                "最终目标": pallet.get("goal_mode", "index"),
+                "最终目标值": pallet.get("goal_threshold", ""),
+                "最终状态": pallet.get(
+                    "final_status", pallet.get("mpm_status", "")
+                ),
             })
 
         pd.DataFrame(rows).to_excel(path, index=False, engine="openpyxl")

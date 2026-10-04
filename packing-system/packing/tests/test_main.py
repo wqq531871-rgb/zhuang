@@ -87,6 +87,10 @@ def test_report_persister_writes_pallet_excel_summary():
                     "mpm_target": 192.0,
                     "mpm_gap": 0.0,
                     "mpm_status": "SUCCESS",
+                    "index_status": "FAILED",
+                    "goal_mode": "fill_rate",
+                    "goal_threshold": 0.75,
+                    "final_status": "SUCCESS",
                 },
                 {
                     "pallet_id": "P2",
@@ -125,11 +129,17 @@ def test_report_persister_writes_pallet_excel_summary():
             "目标指数",
             "指数缺口",
             "指数状态",
+            "最终目标",
+            "最终目标值",
+            "最终状态",
         ]
         assert len(df) == 2
         assert df.iloc[0]["托盘ID"] == "P1"
         assert df.iloc[0]["托盘尺寸(mm)"] == "1440x2240x720"
         assert int(df.iloc[0]["箱子数量"]) == 1
+        assert df.iloc[0]["指数状态"] == "FAILED"
+        assert df.iloc[0]["最终目标"] == "fill_rate"
+        assert df.iloc[0]["最终状态"] == "SUCCESS"
 
 
 def test_candidate_selection_preserves_success_potential():

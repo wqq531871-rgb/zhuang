@@ -3165,7 +3165,12 @@ class IndustrialPackingWorkbench(BaseDashboard):
                 state = "normal" if not has_fill else ("good" if fill_rate >= 0.85 else ("warn" if fill_rate >= 0.70 else "bad"))
                 self.card_fill.set_data(fill_txt, "托盘空间利用率", state)
             if hasattr(self, "card_mpm"):
-                mpm_status = safe_str(self.current_pallet.get("mpm_status"), "UNKNOWN")
+                mpm_status = safe_str(
+                    self.current_pallet.get(
+                        "index_status", self.current_pallet.get("mpm_status")
+                    ),
+                    "UNKNOWN",
+                )
                 mpm_gap = safe_float(self.current_pallet.get("mpm_gap"), 0.0)
                 mpm_total = safe_float(self.current_pallet.get("mpm_total"), float("nan"))
                 mpm_target = safe_float(self.current_pallet.get("mpm_target"), float("nan"))
@@ -3233,7 +3238,9 @@ class IndustrialPackingWorkbench(BaseDashboard):
         df = self.df_eval
         s = self.score_result
         pallet_id = safe_str(p.get("pallet_id"), "--")
-        status = safe_str(p.get("mpm_status"), "UNKNOWN")
+        status = safe_str(
+            p.get("index_status", p.get("mpm_status")), "UNKNOWN"
+        )
         total_score = float(s.get("total_score", 0.0))
         level = score_level(total_score)
         risk_count = int((df["risk_level"] > 0).sum()) if "risk_level" in df.columns else 0
