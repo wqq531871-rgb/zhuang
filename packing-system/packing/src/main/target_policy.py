@@ -102,9 +102,10 @@ class FillRateTargetPolicy(PackingTargetPolicy):
     def project_boxes(self, boxes: Sequence[Dict]) -> list[Dict]:
         projected = deepcopy(list(boxes))
         for box in projected:
-            box["_index_min_pack_multiple"] = float(
-                box.get("min_pack_multiple") or 0.0
-            )
+            if "_index_min_pack_multiple" not in box:
+                box["_index_min_pack_multiple"] = float(
+                    box.get("min_pack_multiple") or 0.0
+                )
             box["min_pack_multiple"] = self.box_value(box)
         return projected
 

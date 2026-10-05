@@ -177,22 +177,30 @@ def test_workflow_runs_and_adopts_alternative_for_opportunity_group(monkeypatch)
     ]
     formatted_alternative = deepcopy(alternative)
     formatted_alternative[0]["formatted_copy"] = True
+    seen = {}
     monkeypatch.setattr(
         workflow_module,
         "run_alternative_full_path",
-        lambda boxes, config, timeout_seconds: {
-            "status": "ok",
-            "report": {"pallets": formatted_alternative},
-            "internal_plans": alternative,
-            "error": None,
-            "elapsed_seconds": 0.2,
-        },
+        lambda boxes, config, timeout_seconds, success_target=None: (
+            seen.setdefault("success_target", success_target)
+            and {
+                "status": "ok",
+                "report": {"pallets": formatted_alternative},
+                "internal_plans": alternative,
+                "error": None,
+                "elapsed_seconds": 0.2,
+            }
+        ),
         raising=False,
     )
     workflow = PackingWorkflow.__new__(PackingWorkflow)
     workflow._constraint_config = ConstraintConfig(
         dual_path_enabled=True,
         dual_path_time_limit_seconds=3.0,
+    )
+    from src.main.success_target import SuccessTarget
+    workflow._success_target = SuccessTarget(
+        mode="fill_rate", threshold=0.80
     )
 
     chosen, diag = workflow._run_dual_path_candidate(
@@ -203,3 +211,4 @@ def test_workflow_runs_and_adopts_alternative_for_opportunity_group(monkeypatch)
     assert diag["triggered"] is True
     assert diag["adopted"] is True
     assert diag["source"] == "alternative"
+    assert seen["success_target"] == workflow._success_target

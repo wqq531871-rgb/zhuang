@@ -137,3 +137,18 @@ def test_fill_policy_restores_true_index_and_removes_projection_fields():
     assert plan["fill_rate"] == pytest.approx(0.8)
     assert plan["final_status"] == "SUCCESS"
     assert "_index_min_pack_multiple" not in plan["packed_items"][0]
+
+
+def test_fill_rate_projection_is_idempotent_and_preserves_original_index():
+    policy = make_target_policy(
+        SuccessTarget(mode="fill_rate", threshold=0.80),
+        192.0,
+        PALLET_DIMS,
+    )
+    boxes = [{"id": "B1", "volume": 800.0, "min_pack_multiple": 12.0}]
+
+    once = policy.project_boxes(boxes)
+    twice = policy.project_boxes(once)
+
+    assert twice[0]["min_pack_multiple"] == pytest.approx(0.8)
+    assert twice[0]["_index_min_pack_multiple"] == 12.0

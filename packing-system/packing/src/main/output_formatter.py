@@ -141,7 +141,7 @@ def build_json_output_plan(
             pallet['box_total_volume'] = round(box_total_volume, 6)
             pallet['pallet_volume'] = round(pallet_volume, 6)
             pallet['fill_rate'] = (
-                round(box_total_volume / pallet_volume, 6)
+                box_total_volume / pallet_volume
                 if pallet_volume > 0 else 0.0
             )
             refresh_pallet_stability_status(

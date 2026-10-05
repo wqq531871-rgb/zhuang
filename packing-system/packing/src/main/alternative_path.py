@@ -20,6 +20,7 @@ def _alternative_path_worker(
     output_path: str,
     boxes: List[Dict],
     constraint_data: Dict,
+    success_target_data: Optional[Dict] = None,
 ) -> None:
     """Run the complete beam/recipe/rescue workflow in an isolated process."""
 
@@ -30,12 +31,14 @@ def _alternative_path_worker(
             from run_packing import build_workflow
             from src.config import ConstraintConfig
             from src.main.report_persister import NullReportPersister
+            from src.main.success_target import SuccessTarget
 
             config_data = dict(constraint_data)
             config_data["main_packer"] = "beam"
             config_data["dual_path_enabled"] = False
             workflow = build_workflow(
-                constraint_config=ConstraintConfig.from_dict(config_data)
+                constraint_config=ConstraintConfig.from_dict(config_data),
+                success_target=SuccessTarget.from_mapping(success_target_data),
             )
             workflow._report_persister = NullReportPersister()
             captured = {}
@@ -138,6 +141,7 @@ def run_alternative_full_path(
     boxes: List[Dict],
     constraint_config,
     timeout_seconds: float,
+    success_target=None,
 ) -> Dict:
     """Run the complete alternative workflow with a hard process timeout."""
 
@@ -154,6 +158,11 @@ def run_alternative_full_path(
                 output_path,
                 list(boxes),
                 constraint_config.to_dict(),
+                (
+                    success_target.to_dict()
+                    if hasattr(success_target, "to_dict")
+                    else success_target
+                ),
             ),
             daemon=True,
         )

@@ -2,6 +2,7 @@ import pytest
 
 from src.main.success_target import SuccessTarget, apply_success_target
 from src.main.result_formatter import ResultFormatter
+from src.main.output_formatter import build_json_output_plan
 
 
 def _report():
@@ -62,6 +63,33 @@ def test_fill_rate_target_uses_inclusive_threshold_and_preserves_index_status():
         "mode": "fill_rate",
         "threshold": 0.75,
     }
+
+
+def test_fill_rate_just_below_threshold_is_not_rounded_up_to_success():
+    pallet_dims = {"length": 1000.0, "width": 1.0, "height": 1.0}
+    plan = [{
+        "pallet_id": "P1",
+        "mpm_status": "FAILED",
+        "mpm_total": 0.0,
+        "packed_items": [{
+            "id": 1,
+            "length": 749.9996,
+            "width": 1.0,
+            "height": 1.0,
+            "position": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "pallet_dims": pallet_dims,
+        }],
+    }]
+    pallets = build_json_output_plan(plan, raw_boxes=[])
+    report = {"summary": {"overall": {}}, "pallets": pallets}
+
+    apply_success_target(
+        report,
+        SuccessTarget(mode="fill_rate", threshold=0.75),
+    )
+
+    assert pallets[0]["fill_rate"] == pytest.approx(0.7499996)
+    assert pallets[0]["final_status"] == "FAILED"
 
 
 def test_fill_rate_target_recomputes_overall_and_group_success_counts():

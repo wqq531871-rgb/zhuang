@@ -1,8 +1,4 @@
-"""Final pallet success target selection.
-
-The packing and rescue algorithms continue to use the historical MPM target.
-This module changes only the final published success decision.
-"""
+"""Selectable packing target used by algorithms and final reporting."""
 
 from dataclasses import dataclass
 from typing import Dict, Mapping, Optional

@@ -309,6 +309,7 @@ class PackingWorkflow:
             ),
         )
         self._restore_target_plans(final_plan)
+        self._refresh_index_summary_gaps(final_plan, by_type_stats)
         self._restore_split_orders(final_plan, by_type_stats)
         total_runtime = time.time() - start
         summary = {"overall": ResultFormatter.build_overall_summary(final_plan, by_type_stats, runtime_stats, total_runtime), "by_pallet_type": by_type_stats}
@@ -420,6 +421,7 @@ class PackingWorkflow:
             boxes_in_group,
             self._constraint_config,
             timeout_seconds=timeout,
+            success_target=self._success_target,
         )
         diag["status"] = result.get("status", "error")
         diag["elapsed_seconds"] = float(
@@ -433,6 +435,7 @@ class PackingWorkflow:
         alternative_plans = result.get("internal_plans")
         if alternative_plans is None:
             alternative_plans = list(report.get("pallets") or [])
+        self._project_alternative_plans(alternative_plans)
         diag["alternative_rank"] = candidate_rank(alternative_plans)
         chosen, source = choose_guarded_candidate(
             boxes_in_group,
@@ -473,18 +476,27 @@ class PackingWorkflow:
         split_cnt = 0
         for (pallet_type, sales_order_no), boxes in grouped.items():
             target = self._targets.get(pallet_type)
-            regular, rest = self._gcp_packer.partition_suitable(boxes, target)
+            partition_boxes = boxes
+            if self._success_target.mode == "fill_rate":
+                partition_boxes, target, _ = self._prepare_group_target(
+                    pallet_type, boxes
+                )
+            regular, rest = self._gcp_packer.partition_suitable(
+                partition_boxes, target
+            )
             # 仅「主体规则(suits=True)+少量杂箱」才拆：主体本就适合 GCP，抽走
             # 少数杂箱让主体走精确 ILP。主体不规则的「大箱+伴层」型(suits=False)
             # 必须整组 baseline 做全局伴层配对，绝不拆——否则切断跨底面配对，严重
             # 回归（实测 5000 三组 suits=False，无脑拆 141→98）。
             if (regular and rest
-                    and self._gcp_packer.suits_group(boxes, target)):
+                    and self._gcp_packer.suits_group(
+                        partition_boxes, target
+                    )):
                 new_grouped[(pallet_type, sales_order_no)] = regular
                 new_grouped[(pallet_type, sales_order_no + _SPLIT_REST_TAG)] = rest
                 split_cnt += 1
             else:
-                new_grouped[(pallet_type, sales_order_no)] = boxes
+                new_grouped[(pallet_type, sales_order_no)] = partition_boxes
         if split_cnt:
             print(f"  - 组内子聚类：{split_cnt} 个混合订单拆出规则子集走 GCP、杂箱走 baseline。")
         return new_grouped
@@ -515,13 +527,59 @@ class PackingWorkflow:
                 or plan.get("pallet_dims")
                 or {}
             )
-            index_target = self._targets.get(plan.get("pallet_type"))
+            index_target = getattr(self, "_targets", {}).get(
+                plan.get("pallet_type")
+            )
             policy = make_target_policy(
                 self._success_target,
                 float(index_target or 192.0),
                 dims,
             )
             policy.restore_plan(plan)
+
+    def _project_alternative_plans(self, plans: List[Dict]) -> None:
+        """Return subprocess candidates to the parent's operational units."""
+        if self._success_target.mode != "fill_rate":
+            return
+        for plan in plans:
+            items = plan.get("packed_items") or []
+            if not items:
+                continue
+            dims = items[0].get("pallet_dims") or plan.get("pallet_dims") or {}
+            index_target = getattr(self, "_targets", {}).get(
+                plan.get("pallet_type")
+            )
+            policy = make_target_policy(
+                self._success_target,
+                float(index_target or 192.0),
+                dims,
+            )
+            projected = policy.project_boxes(items)
+            plan["packed_items"] = projected
+            plan["mpm_total"] = policy.items_value(projected)
+            plan["mpm_target"] = policy.threshold
+            policy.annotate_plan(plan)
+
+    @staticmethod
+    def _refresh_index_summary_gaps(
+        plans: List[Dict], by_type_stats: Dict[str, Dict]
+    ) -> None:
+        """Refresh index-labelled gap metrics after restoring true MPM values."""
+        for stats in by_type_stats.values():
+            matching = [
+                plan for plan in plans
+                if plan.get("pallet_type") == stats.get("pallet_type")
+                and plan.get("sales_order_no") == stats.get("sales_order_no")
+            ]
+            gaps = [
+                max(0.0, float(plan.get("mpm_gap") or 0.0))
+                for plan in matching
+                if plan.get("mpm_status") == "FAILED"
+            ]
+            stats["avg_mpm_gap"] = (
+                round(sum(gaps) / len(gaps), 2) if gaps else 0.0
+            )
+            stats["max_mpm_gap"] = max(gaps, default=0.0)
 
     def _cross_group_fill_compact(
         self, final_plan: List[Dict], by_type_stats: Dict,
@@ -633,6 +691,7 @@ class PackingWorkflow:
                         'dual_path_time_limit_seconds',
                         30.0,
                     )),
+                    success_target=self._success_target,
                 )
                 dual_diag = {
                     'enabled': True,
@@ -649,6 +708,7 @@ class PackingWorkflow:
                     alternative = result.get('internal_plans')
                     if alternative is None:
                         alternative = list(report.get('pallets') or [])
+                    self._project_alternative_plans(alternative)
                     chosen, source = choose_guarded_candidate(
                         raw_boxes,
                         sub,
