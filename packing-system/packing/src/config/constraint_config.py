@@ -131,10 +131,6 @@ class ConstraintConfig:
     # 仅作用于 baseline 路径；GCP 有独立朝向处理(_fp_orient/CP-SAT)，不受影响。
     allow_box_rotation_90: bool = True
 
-    # —— 达标盘外形软优化（不参与成功判定）——
-    shape_polish_enabled: bool = True
-    shape_polish_seconds_per_pallet: float = 1.0
-
     @classmethod
     def from_dict(cls, data: Optional[Dict]) -> 'ConstraintConfig':
         """从字典创建配置；未提供的键回退默认值，未知键忽略。
