@@ -64,6 +64,9 @@ constraints:
   # 整层从不达标变达标"的箱型换向，救旋转敏感订单且不打乱已紧凑的难组布局）。
   # 仅作用于 baseline 路径；GCP 有独立朝向处理(_fp_orient/CP-SAT)。默认 true。
   allow_box_rotation_90: true
+  # 达标后限时尝试更平整、紧凑的摆法；失败时保留原结果，不改变成功判定。
+  shape_polish_enabled: true
+  shape_polish_seconds_per_pallet: 1.0
 execution_sequence:
   # false 时跳过执行顺序规划（run_execution_planning / 一键装箱后置步骤都不生成）。
   # true 时：根目录 run_packing、以及 UI「一键装箱」（Excel / 接口 WCS）在写出 packing_plan 后自动生成

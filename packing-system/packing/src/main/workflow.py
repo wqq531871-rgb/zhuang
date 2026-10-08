@@ -24,6 +24,7 @@ from .recipe_first import pack_group_recipe_first
 from .result_formatter import ResultFormatter
 from .success_target import SuccessTarget
 from .target_policy import make_target_policy
+from .shape_polisher import ShapePolisher
 from .alternative_path import (
     candidate_rank,
     choose_guarded_candidate,
@@ -86,6 +87,13 @@ class PackingWorkflow:
         self._targets = pallet_index_targets
         self._report_persister = report_persister
         self._success_target = success_target or SuccessTarget()
+        self._shape_polisher = ShapePolisher(
+            constraint_config=constraint_config,
+            enabled=getattr(constraint_config, "shape_polish_enabled", True),
+            seconds_per_pallet=getattr(
+                constraint_config, "shape_polish_seconds_per_pallet", 1.0,
+            ),
+        )
         # 主装箱算法选择：'gcp' = 全局列式装箱 + 柱级组合优化（默认）；
         # 其它（'beam'）= 旧 beam + 配方优先 + 救援链。
         self._main_packer = getattr(constraint_config, 'main_packer', 'gcp')
@@ -308,6 +316,12 @@ class PackingWorkflow:
                 if self._success_target.mode == "fill_rate" else None
             ),
         )
+        shape_diag = self._shape_polisher.polish_plans(final_plan)
+        if shape_diag["attempted"]:
+            print(
+                "  - 外形规整优化：尝试 "
+                f"{shape_diag['attempted']} 盘，改善 {shape_diag['improved']} 盘。"
+            )
         self._restore_target_plans(final_plan)
         self._refresh_index_summary_gaps(final_plan, by_type_stats)
         self._restore_split_orders(final_plan, by_type_stats)
