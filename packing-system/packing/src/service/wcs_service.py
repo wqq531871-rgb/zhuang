@@ -764,6 +764,49 @@ class WcsPackingService:
             return True
         return self.pack_once().executed
 
+    def run_local_once(self, input_json: Path) -> bool:
+        """Import one saved interface response into DB and pack it once."""
+        path = Path(input_json).resolve()
+        try:
+            body = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"读取本地接口 JSON 失败（{path}）：{exc}") from exc
+        if not isinstance(body, dict) or not isinstance(body.get("data"), list):
+            raise ValueError("本地接口 JSON 必须是包含 data 数组的响应对象")
+        if body.get("code") != 0:
+            raise ValueError(
+                "本地接口 JSON 返回状态不是成功："
+                f"code={body.get('code')}, msg={body.get('msg')}"
+            )
+        if not body["data"]:
+            raise ValueError("本地接口 JSON 的 data 数组为空，无法装箱")
+
+        entries = body["data"]
+        kept, dropped, dropped_types = _filter_mh423c(entries)
+        if dropped:
+            print(
+                f"[WCS-本地] 已剔除 case_type≠{_SUPPORTED_CASE_TYPE} 的品类 "
+                f"{dropped} 条（类型：{dropped_types}），保留 {len(kept)} 条。"
+            )
+        dimension_candidates = kept
+        kept, invalid_dimensions = _split_positive_dimension_entries(
+            dimension_candidates
+        )
+        if invalid_dimensions:
+            print(
+                f"[WCS-本地] 忽略 {len(invalid_dimensions)} 条零尺寸/非法尺寸库存。"
+            )
+
+        if dimension_candidates and not kept:
+            self._repo.sync_stock_entries(kept, allow_empty_replace=True)
+        else:
+            self._repo.sync_stock_entries(kept)
+        self._repo_all.insert_new_stock_entries(kept)
+        print(f"[WCS-本地] 已载入历史接口数据：{path}（有效品类 {len(kept)}）")
+
+        self._reload_reference_data()
+        return self.pack_once().executed
+
     def run_until_success(self) -> bool:
         """循环拉取并装箱，首轮出现成功托盘后停止。"""
         round_no = 0

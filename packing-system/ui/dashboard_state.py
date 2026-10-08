@@ -19,6 +19,7 @@ RUN_MODE_OPTIONS = (
     ("接口单次运行", "once"),
     ("Excel 单次运行", "excel"),
     ("接口运行至成功", "until-success"),
+    ("本地接口数据单次运行", "local-once"),
 )
 
 
@@ -27,6 +28,7 @@ class RunModePolicy:
     uses_api: bool
     uses_interval: bool
     uses_excel: bool
+    uses_local_json: bool = False
 
 
 _RUN_MODE_POLICIES = {
@@ -34,6 +36,7 @@ _RUN_MODE_POLICIES = {
     "once": RunModePolicy(True, False, False),
     "excel": RunModePolicy(False, False, True),
     "until-success": RunModePolicy(True, True, False),
+    "local-once": RunModePolicy(False, False, False, True),
 }
 
 
@@ -43,6 +46,18 @@ def run_mode_policy(mode: str) -> RunModePolicy:
         return _RUN_MODE_POLICIES[mode]
     except KeyError as exc:
         raise ValueError(f"未知运行方式：{mode}") from exc
+
+
+def wcs_run_cli_args(
+    config_path, mode: str, input_json_path=None
+) -> list[str]:
+    """Build WCS service arguments for a UI-selected run mode."""
+    args = ["--config", str(config_path), "--run-mode", str(mode)]
+    if mode == "local-once":
+        if not input_json_path:
+            raise ValueError("本地接口数据模式尚未选择历史 JSON")
+        args.extend(["--input-json", str(input_json_path)])
+    return args
 
 
 def successful_pallet_count(pallets: Iterable[dict]) -> int:

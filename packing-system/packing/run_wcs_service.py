@@ -20,6 +20,7 @@ def _parse_cli(argv):
     config_path = None
     safe_compare = False
     run_mode = "continuous"
+    input_json = None
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -36,22 +37,31 @@ def _parse_cli(argv):
                 raise SystemExit("错误：--run-mode 缺少运行方式")
             run_mode = argv[i + 1]
             i += 2
+        elif a == "--input-json":
+            if i + 1 >= len(argv):
+                raise SystemExit("错误：--input-json 缺少文件路径")
+            input_json = argv[i + 1]
+            i += 2
         else:
             i += 1
-    valid_modes = {"continuous", "once", "until-success"}
+    valid_modes = {"continuous", "once", "until-success", "local-once"}
     if run_mode not in valid_modes:
         raise SystemExit(f"错误：不支持的运行方式 {run_mode}")
-    return config_path, safe_compare, run_mode
+    if run_mode == "local-once" and not input_json:
+        raise SystemExit("错误：本地接口数据模式缺少 --input-json")
+    return config_path, safe_compare, run_mode, input_json
 
 
 def main(argv=None):
-    config_path, safe_compare, run_mode = _parse_cli(
+    config_path, safe_compare, run_mode, input_json = _parse_cli(
         sys.argv[1:] if argv is None else argv
     )
     service = WcsPackingService(
         config_path=Path(config_path) if config_path else None,
         safe_compare=safe_compare,
     )
+    if run_mode == "local-once":
+        return 0 if service.run_local_once(Path(input_json)) else 1
     if run_mode == "once":
         ok = service.run_once()
         # 真实接口失败已按「停止」处理，退出码 0 避免 UI 报「异常退出」

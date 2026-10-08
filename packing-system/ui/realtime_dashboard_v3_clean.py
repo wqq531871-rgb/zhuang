@@ -97,6 +97,7 @@ try:
         list_success_pallets,
         normalize_download_interval,
         run_mode_policy,
+        wcs_run_cli_args,
     )
     from runtime_paths import (
         backend_command,
@@ -591,6 +592,7 @@ class UiPackingWorker(QtCore.QThread):
         out_path: Optional[Path] = None,
         run_mode: str = "excel",
         download_interval: int = 200,
+        input_json_path: Optional[Path] = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -598,6 +600,9 @@ class UiPackingWorker(QtCore.QThread):
         self.config_path = Path(config_path).resolve()
         self.out_path = Path(out_path).resolve() if out_path else None
         self.run_mode = run_mode
+        self.input_json_path = (
+            Path(input_json_path).resolve() if input_json_path else None
+        )
         self.download_interval = normalize_download_interval(download_interval)
         self.process: Optional[subprocess.Popen] = None
         self._stop_requested = False
@@ -783,25 +788,13 @@ class UiPackingWorker(QtCore.QThread):
         if not wcs_entry_exists(self.project_dir):
             self.failed.emit(f"找不到 WCS 接口服务入口：{wcs_script}")
             return
+        args = wcs_run_cli_args(
+            self.config_path, self.run_mode, self.input_json_path
+        )
         if is_frozen():
-            cmd = backend_command(
-                "wcs",
-                [
-                    "--config",
-                    str(self.config_path),
-                    "--run-mode",
-                    self.run_mode,
-                ],
-            )
+            cmd = backend_command("wcs", args)
         else:
-            cmd = [
-                sys.executable,
-                str(wcs_script),
-                "--config",
-                str(self.config_path),
-                "--run-mode",
-                self.run_mode,
-            ]
+            cmd = [sys.executable, str(wcs_script), *args]
         cmd_text = " ".join(f'"{x}"' if " " in x else x for x in cmd)
         self.started_cmd.emit(cmd_text)
         self._emit_log(f"[LOG] 后端日志文件：{self.log_file}")
@@ -811,6 +804,7 @@ class UiPackingWorker(QtCore.QThread):
             "until-success": (
                 f"每 {self.download_interval} 秒拉取并计算，出现成功托盘后自动停止"
             ),
+            "local-once": "读取所选历史接口 JSON，写入数据库并计算一次",
         }
         self._emit_log(f"[LOG] 接口模式：{mode_messages[self.run_mode]}。")
         self._write_backend_log(f"[CMD] {cmd_text}")
@@ -880,6 +874,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
     def __init__(self, project_dir: Path):
         self.selected_excel_original: Optional[Path] = None
         self.selected_excel_copy: Optional[Path] = None
+        self.selected_local_json: Optional[Path] = None
         self.generated_config_path: Optional[Path] = None
         self.generated_out_path: Optional[Path] = None
         self.last_excel_mode: Optional[str] = None
@@ -955,7 +950,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.btn_excel.setObjectName("HeaderGhostButton")
         self.btn_excel.setFixedHeight(38)
         self.btn_excel.setToolTip("选择装箱输入 Excel，并自动生成本次运行配置。")
-        self.btn_excel.clicked.connect(self.choose_excel_file)
+        self.btn_excel.clicked.connect(self.choose_input_file)
         actions.addWidget(self.btn_excel)
 
         self.btn_excel_run = QtWidgets.QPushButton("一键装箱")
@@ -1002,7 +997,9 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.cmb_run_mode.setObjectName("HeaderCombo")
         self.cmb_run_mode.setMinimumWidth(148)
         self.cmb_run_mode.setFixedHeight(36)
-        self.cmb_run_mode.setToolTip("选择接口持续/单次/成功即停，或 Excel 单次运行")
+        self.cmb_run_mode.setToolTip(
+            "选择接口持续/单次/成功即停、Excel 单次或本地接口数据单次运行"
+        )
         for label, mode in RUN_MODE_OPTIONS:
             self.cmb_run_mode.addItem(label, mode)
         self.cmb_run_mode.currentIndexChanged.connect(self._on_run_mode_changed)
@@ -1878,7 +1875,18 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         if hasattr(self, "lbl_download_interval"):
             self.lbl_download_interval.setEnabled(policy.uses_interval)
         if hasattr(self, "btn_excel"):
-            self.btn_excel.setEnabled(policy.uses_excel and not worker_running)
+            self.btn_excel.setEnabled(
+                (policy.uses_excel or policy.uses_local_json)
+                and not worker_running
+            )
+            if policy.uses_local_json:
+                self.btn_excel.setText("选择接口 JSON")
+                self.btn_excel.setToolTip("选择一份本地保存的历史接口响应 JSON。")
+            else:
+                self.btn_excel.setText("选择 Excel")
+                self.btn_excel.setToolTip(
+                    "选择装箱输入 Excel，并自动生成本次运行配置。"
+                )
 
     def _write_log(self, text: str) -> None:
         """界面日志与 VSCode 终端同步输出，便于开发调试。"""
@@ -2134,6 +2142,26 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         return dict(self._initial_success_target)
 
     # ------------------------------------------------------------------ Excel
+    def choose_input_file(self) -> Optional[Path]:
+        if run_mode_policy(self._current_run_mode()).uses_local_json:
+            return self.choose_local_interface_json()
+        return self.choose_excel_file()
+
+    def choose_local_interface_json(self) -> Optional[Path]:
+        start_dir = workspace_dir_from_project(self.project_dir) / "input" / "raw"
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "选择历史接口 JSON",
+            str(start_dir if start_dir.exists() else self.project_dir),
+            "JSON Files (*.json);;All Files (*.*)",
+        )
+        if not path:
+            return None
+        selected = Path(path).resolve()
+        self.selected_local_json = selected
+        self._write_log(f"[UI] 已选择历史接口数据：{selected}")
+        return selected
+
     def choose_excel_file(self) -> Optional[Path]:
         start_dir = _project_data_dir(self.project_dir)
         path, _ = QtWidgets.QFileDialog.getOpenFileName(
@@ -2177,7 +2205,10 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
     def start_excel_packing(self) -> None:
         run_mode = self._current_run_mode()
         policy = run_mode_policy(run_mode)
-        if policy.uses_api:
+        if policy.uses_api or policy.uses_local_json:
+            if policy.uses_local_json and self.selected_local_json is None:
+                if self.choose_local_interface_json() is None:
+                    return
             interval = normalize_download_interval(self.sp_download_interval.value())
             self.download_interval = interval
             cfg = _write_ui_config_api_only(
@@ -2195,6 +2226,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
                 "until-success": (
                     f"每 {interval} 秒拉取并计算，出现成功托盘后自动停止"
                 ),
+                "local-once": "读取所选历史接口 JSON，写入数据库并计算一次",
             }
             self._write_log(f"[UI] 将启动：{descriptions[run_mode]}。")
         else:
@@ -2226,8 +2258,12 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             run_mode = self._current_run_mode()
         policy = run_mode_policy(run_mode)
         self._active_run_mode = run_mode
-        self._api_service_active = policy.uses_api
-        out_path = None if policy.uses_api else _make_out_path(self.project_dir)
+        self._api_service_active = policy.uses_api or policy.uses_local_json
+        out_path = (
+            None
+            if self._api_service_active
+            else _make_out_path(self.project_dir)
+        )
         self.generated_out_path = out_path
         self.worker = UiPackingWorker(
             self.project_dir,
@@ -2235,6 +2271,9 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             out_path=out_path,
             run_mode=run_mode,
             download_interval=self.download_interval,
+            input_json_path=(
+                self.selected_local_json if policy.uses_local_json else None
+            ),
             parent=self,
         )
         self.worker.log.connect(self._write_log)
@@ -2259,11 +2298,12 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self.btn_stop_backend.setEnabled(True)
         self.btn_stop_backend.setVisible(True)
         self.btn_load.setEnabled(False)
-        if policy.uses_api:
+        if policy.uses_api or policy.uses_local_json:
             active_messages = {
                 "continuous": f"接口持续运行：每 {self.download_interval} 秒拉取并装箱",
                 "once": "接口单次运行：拉取并计算一次",
                 "until-success": "接口运行至成功：等待出现成功托盘",
+                "local-once": "本地接口数据：写入数据库并计算一次",
             }
             self.step_run.set_state("active", active_messages[run_mode])
         else:
@@ -2271,7 +2311,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         self._set_status("running")
         self._write_log("[UI] 开始后端装箱计算。")
         self._write_log(f"[UI] 使用配置：{self.config_path}")
-        if policy.uses_api:
+        if policy.uses_api or policy.uses_local_json:
             self._write_log(f"[UI] 接口运行方式：{run_mode}")
         else:
             self._write_log(f"[UI] 指定输出：{self.generated_out_path}")
@@ -2316,10 +2356,13 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             self.step_run.set_state("done", detail)
             self._set_status("stopped")
             self._write_log(f"[UI] {detail}。")
-        elif completed_ok and finished_mode in {"once", "until-success"}:
+        elif completed_ok and finished_mode in {
+            "once", "until-success", "local-once"
+        }:
             finished_messages = {
                 "once": "接口单次运行已完成",
                 "until-success": "已发现成功托盘，接口服务自动停止",
+                "local-once": "本地接口数据单次运行已完成",
             }
             message = finished_messages[finished_mode]
             self.step_run.set_state("done", message)

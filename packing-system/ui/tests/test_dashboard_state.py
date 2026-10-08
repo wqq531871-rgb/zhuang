@@ -8,6 +8,7 @@ from dashboard_state import (
     normalize_download_interval,
     regular_irregular_box_counts,
     run_mode_policy,
+    wcs_run_cli_args,
     successful_pallet_count,
 )
 
@@ -181,27 +182,40 @@ def test_run_mode_options_are_presented_in_the_approved_order():
         ("接口单次运行", "once"),
         ("Excel 单次运行", "excel"),
         ("接口运行至成功", "until-success"),
+        ("本地接口数据单次运行", "local-once"),
     )
 
 
 @pytest.mark.parametrize(
-    ("mode", "uses_api", "uses_interval", "uses_excel"),
+    ("mode", "uses_api", "uses_interval", "uses_excel", "uses_local_json"),
     [
-        ("continuous", True, True, False),
-        ("once", True, False, False),
-        ("excel", False, False, True),
-        ("until-success", True, True, False),
+        ("continuous", True, True, False, False),
+        ("once", True, False, False, False),
+        ("excel", False, False, True, False),
+        ("until-success", True, True, False, False),
+        ("local-once", False, False, False, True),
     ],
 )
 def test_run_mode_policy_controls_related_inputs(
-    mode, uses_api, uses_interval, uses_excel
+    mode, uses_api, uses_interval, uses_excel, uses_local_json
 ):
     policy = run_mode_policy(mode)
     assert policy.uses_api is uses_api
     assert policy.uses_interval is uses_interval
     assert policy.uses_excel is uses_excel
+    assert policy.uses_local_json is uses_local_json
 
 
 def test_run_mode_policy_rejects_unknown_mode():
     with pytest.raises(ValueError, match="未知运行方式"):
         run_mode_policy("unknown")
+
+
+def test_local_once_wcs_arguments_include_selected_history_file():
+    assert wcs_run_cli_args(
+        "config.yaml", "local-once", "C:/history/stock.json"
+    ) == [
+        "--config", "config.yaml",
+        "--run-mode", "local-once",
+        "--input-json", "C:/history/stock.json",
+    ]

@@ -168,6 +168,56 @@ def test_fetch_once_clears_current_snapshot_when_all_candidates_have_invalid_dim
     service._repo_all.insert_new_stock_entries.assert_called_once_with([])
 
 
+def test_local_snapshot_imports_selected_json_and_always_packs_once(tmp_path):
+    selected = tmp_path / "history.json"
+    entry = _stock_entry(100)
+    selected.write_text(
+        json.dumps({"code": 0, "msg": "ok", "data": [entry]}),
+        encoding="utf-8",
+    )
+    service = object.__new__(WcsPackingService)
+    service._repo = Mock()
+    service._repo.sync_stock_entries.return_value = SimpleNamespace(
+        unchanged=True,
+        changed=False,
+        deleted=0,
+        inserted=0,
+    )
+    service._repo_all = Mock()
+    service._repo_all.insert_new_stock_entries.return_value = SimpleNamespace(
+        inserted=0,
+        skipped_existing=1,
+    )
+    service._reload_reference_data = Mock()
+    service.pack_once = Mock(return_value=PackRunResult(executed=True))
+
+    assert service.run_local_once(selected) is True
+
+    service._repo.sync_stock_entries.assert_called_once_with([entry])
+    service._repo_all.insert_new_stock_entries.assert_called_once_with([entry])
+    service._reload_reference_data.assert_called_once_with()
+    service.pack_once.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [],
+        {"code": 0},
+        {"code": 0, "data": "not-a-list"},
+        {"code": 0, "data": []},
+        {"code": 1, "msg": "error", "data": []},
+    ],
+)
+def test_local_snapshot_rejects_invalid_interface_payload(tmp_path, payload):
+    selected = tmp_path / "bad.json"
+    selected.write_text(json.dumps(payload), encoding="utf-8")
+    service = object.__new__(WcsPackingService)
+
+    with pytest.raises(ValueError, match="接口 JSON"):
+        service.run_local_once(selected)
+
+
 def _make_service(fetch_results):
     service = object.__new__(WcsPackingService)
     service._stop = _NeverStoppingEvent()
@@ -299,6 +349,7 @@ def test_handle_fetch_error_stops_only_when_use_real_api():
         ("continuous", "run_loop"),
         ("once", "run_once"),
         ("until-success", "run_until_success"),
+        ("local-once", "run_local_once"),
     ],
 )
 def test_wcs_cli_routes_each_run_mode(monkeypatch, mode, method_name):
@@ -306,16 +357,24 @@ def test_wcs_cli_routes_each_run_mode(monkeypatch, mode, method_name):
     service.stopped_by_api_failure = False
     service.run_once.return_value = True
     service.run_until_success.return_value = True
+    service.run_local_once.return_value = True
     service_factory = Mock(return_value=service)
     monkeypatch.setattr(run_wcs_service, "WcsPackingService", service_factory)
 
-    assert run_wcs_service.main(["--run-mode", mode]) == 0
+    argv = ["--run-mode", mode]
+    if mode == "local-once":
+        argv.extend(["--input-json", "history.json"])
+    assert run_wcs_service.main(argv) == 0
 
-    getattr(service, method_name).assert_called_once_with()
+    if mode == "local-once":
+        service.run_local_once.assert_called_once_with(Path("history.json"))
+    else:
+        getattr(service, method_name).assert_called_once_with()
     other_methods = {
         "run_loop",
         "run_once",
         "run_until_success",
+        "run_local_once",
     } - {method_name}
     for other in other_methods:
         getattr(service, other).assert_not_called()
@@ -325,6 +384,8 @@ def test_wcs_cli_defaults_to_continuous_and_rejects_unknown_mode():
     assert run_wcs_service._parse_cli([])[2] == "continuous"
     with pytest.raises(SystemExit, match="不支持的运行方式"):
         run_wcs_service._parse_cli(["--run-mode", "unknown"])
+    with pytest.raises(SystemExit, match="input-json"):
+        run_wcs_service._parse_cli(["--run-mode", "local-once"])
 
 
 def test_wcs_uses_execution_cases_and_map_when_planning_succeeds(tmp_path):
