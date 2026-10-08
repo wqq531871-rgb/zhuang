@@ -438,11 +438,17 @@ class ResultFormatter:
                     'violations': [{'type': 'missing_pallet_dims'}],
                 })
                 continue
+            explicit_gap_exempt = None
+            if pallet.get('goal_mode') == 'fill_rate':
+                explicit_gap_exempt = (
+                    str(pallet.get('goal_status') or '').upper() == 'SUCCESS'
+                )
             gate = validate_pallet_constraints(
                 pallet,
                 pallet_dims,
                 constraint_config=constraint_config,
                 target_mpm=pallet.get('mpm_target'),
+                gap_exempt=explicit_gap_exempt,
             )
             if not gate['is_valid']:
                 invalid.append({

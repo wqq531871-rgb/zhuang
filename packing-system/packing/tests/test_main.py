@@ -11,6 +11,7 @@ import tempfile
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 project_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(project_root))
@@ -872,6 +873,87 @@ def test_full_report_respects_target_gap_exemption():
     )
 
     assert report['pallets'][0]['pallet_id'] == 'P1'
+
+
+def test_final_gate_uses_fill_goal_status_for_gap_exemption():
+    """装载率已达标时，最终门禁不能恢复成指数口径后重新拒绝 gap。"""
+    pallet_dims = {'length': 300.0, 'width': 100.0, 'height': 100.0}
+
+    def _placed(box_id, x):
+        return {
+            'id': box_id,
+            'length': 100.0,
+            'width': 100.0,
+            'height': 100.0,
+            'raw_length': 100.0,
+            'raw_width': 100.0,
+            'raw_height': 100.0,
+            'weight': 1.0,
+            'min_pack_multiple': 1.0,
+            'position': {'x': x, 'y': 0.0, 'z': 0.0},
+            'pallet_dims': pallet_dims,
+        }
+
+    fill_success = {
+        'pallet_id': 'P-FILL',
+        'pallet_type': 'MH423C',
+        'mpm_target': 192.0,
+        'mpm_total': 2.0,
+        'index_status': 'FAILED',
+        'goal_mode': 'fill_rate',
+        'goal_threshold': 0.60,
+        'goal_status': 'SUCCESS',
+        'final_status': 'SUCCESS',
+        'mpm_status': 'SUCCESS',
+        'packed_items': [_placed('A', 0.0), _placed('B', 120.0)],
+    }
+
+    ResultFormatter.validate_final_constraints(
+        [fill_success],
+        constraint_config=ConstraintConfig(
+            suction_reachability_enabled=False,
+            center_of_mass_tolerance=1.0,
+        ),
+    )
+
+
+def test_final_gate_still_rejects_gap_when_fill_goal_failed():
+    """装载率未达标盘仍须执行 gap 约束。"""
+    pallet_dims = {'length': 300.0, 'width': 100.0, 'height': 100.0}
+    items = [
+        {
+            'id': box_id,
+            'length': 100.0,
+            'width': 100.0,
+            'height': 100.0,
+            'raw_length': 100.0,
+            'raw_width': 100.0,
+            'raw_height': 100.0,
+            'weight': 1.0,
+            'min_pack_multiple': 1.0,
+            'position': {'x': x, 'y': 0.0, 'z': 0.0},
+            'pallet_dims': pallet_dims,
+        }
+        for box_id, x in [('A', 0.0), ('B', 120.0)]
+    ]
+    fill_failed = {
+        'pallet_id': 'P-FILL-FAILED',
+        'pallet_type': 'MH423C',
+        'mpm_target': 192.0,
+        'goal_mode': 'fill_rate',
+        'goal_status': 'FAILED',
+        'mpm_status': 'FAILED',
+        'packed_items': items,
+    }
+
+    with pytest.raises(ValueError, match="gap"):
+        ResultFormatter.validate_final_constraints(
+            [fill_failed],
+            constraint_config=ConstraintConfig(
+                suction_reachability_enabled=False,
+                center_of_mass_tolerance=1.0,
+            ),
+        )
 
 
 def test_output_fill_rate():
