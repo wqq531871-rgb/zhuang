@@ -1,0 +1,48 @@
+[LOG] 后端日志文件：C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\logs\backend_20261005_230556.log
+[LOG] 本次结果将输出到：C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20261005_230556.json
+[CMD] D:\anaconda\envs\packing-zhuang\python.exe C:\Users\18252\Desktop\zhuang\packing-system\packing\run_packing.py --config C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20261005_230556.yaml --out C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20261005_230556.json
+已加载约束配置：C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20261005_230556.yaml
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\zlib1.dll...
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\abseil_dll.dll...
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\utf8_validity.dll...
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\re2.dll...
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\libprotobuf.dll...
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\highs.dll...
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\ortools.dll...
+已加载配置数据集：C:\Users\18252\Desktop\zhuang\packing-workspace\data\ui_inputs\20261005_224929_668.xlsx
+数据预处理和箱子分组完成（按托盘类型+销售订单号）。
+----------------------------------------
+  - 正常订单（全规则箱）判定：1 个订单须平顶不缺角。
+正在处理托盘类型：MH423C，销售订单号：ANALYSIS_001
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：ANALYSIS_001）处理完成：总托盘 13，指数达标 10，未达标 3，平均缺口 0.50，最大缺口 0.84，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=3/0/0，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=194.81s，main_topup=0.00s，retry=0.00s，failed_pool=0.00s，repack=3.57s，total=198.38s。
+========================================
+统计汇总：总托盘 13，指数达标 10，未达标 3，未知 0，平均缺口 120.00，最大缺口 190.00，失败托盘互借修复成功 0
+KPI汇总：near/mid/deep=0/0/3，pair尝试=0，pair改进=0，pair效率=0.00%
+耗时汇总：packing=194.81s，main_topup=0.00s，retry=0.00s，repack=3.57s，end_to_end=234.78s
+========================================
+========================================
+[success] 装箱方案：C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\packing_plan_20261005_230951.json
+[success] 托盘统计：C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\packing_plan_summary_20261005_230951.xlsx
+========================================
+算法总运行时间：234.78 秒
+========================================
+方案另存为: C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20261005_230556.json
+[执行规划] 产物目录：C:\Users\18252\Desktop\zhuang\packing-workspace\output\success（success）
+[执行规划] 开始：D:\anaconda\envs\packing-zhuang\python.exe C:\Users\18252\Desktop\zhuang\packing-system\run_execution_planning.py C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20261005_230556.json --config C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_normal_20261005_230556.yaml --output C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261005_230556_execution.json --wcs-output C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261005_230556_execution_wcs.json --wcs-map-output C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261005_230556_execution_wcs_map.json
+[WCS-DB] wcs_success_box 写入失败（不影响装箱结果）：(2003, "Can't connect to MySQL server on 'localhost' ([WinError 10061] 由于目标计算机积极拒绝，无法连接。)")
+[WCS-DB] wcs_box_orientation 写入失败（不影响装箱结果）：(2003, "Can't connect to MySQL server on 'localhost' ([WinError 10061] 由于目标计算机积极拒绝，无法连接。)")
+[现场会话] 新计算结果已入库，当前没有未完成托盘
+execution plan written: pallets=13 boxes=668 reordered_pallets=12 path=C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261005_230556_execution.json
+WCS execution cases written: C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261005_230556_execution_wcs.json
+WCS execution plan map written: C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261005_230556_execution_wcs_map.json
+execution scan deviations pallet='MH423C-ANALYSIS_001-7' count=6: expected=546 selected=57 box=546 after=57 reason=open_direction lookahead=true; expected=585 selected=54 box=585 after=54 reason=open_direction lookahead=true; expected=547 selected=58 box=547 after=58 reason=open_direction lookahead=true; expected=586 selected=55 box=586 after=55 reason=open_direction lookahead=true; expected=584 selected=59 box=584 after=59 reason=open_direction lookahead=true; expected=587 selected=56 box=587 after=56 reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-ANALYSIS_001-11' count=4: expected=14 selected=571 box=14 after=571 reason=open_direction lookahead=true; expected=15 selected=572 box=15 after=572 reason=open_direction lookahead=true; expected=17 selected=664 box=17 after=664 reason=open_direction lookahead=true; expected=107 selected=583 box=107 after=583 reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-ANALYSIS_001-12' count=4: expected=85 selected=24 box=85 after=24 reason=hard_dependency; expected=85 selected=83 box=85 after=83 reason=open_direction lookahead=true; expected=86 selected=28 box=86 after=28 reason=open_direction lookahead=true; expected=88 selected=619 box=88 after=619 reason=open_direction lookahead=true
+[现场码垛] 清空旧队列失败：(2003, "Can't connect to MySQL server on 'localhost' ([WinError 10061] 由于目标计算机积极拒绝，无法连接。)")
+[执行规划] 已删除原方案（仅保留 execution）：ui_packing_plan_20261005_230556.json
+[执行规划] 完成；统一使用：C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261005_230556_execution.json
+[UI] 可视化将加载执行方案：C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261005_230556_execution.json

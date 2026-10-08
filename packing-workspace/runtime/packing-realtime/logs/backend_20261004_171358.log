@@ -1,0 +1,133 @@
+[LOG] 后端日志文件：C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\logs\backend_20261004_171358.log
+[LOG] 本次结果将输出到：C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20261004_171358.json
+[CMD] D:\anaconda\envs\packing-zhuang\python.exe C:\Users\18252\Desktop\zhuang\packing-system\packing\run_packing.py --config C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_incremental_20261004_171358.yaml --out C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20261004_171358.json
+已加载约束配置：C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_incremental_20261004_171358.yaml
+已启用增量模式，数据文件：C:\Users\18252\Desktop\zhuang\packing-workspace\data\ui_inputs\20261004_171357_selected_5000_full_regular_10_0_chain.xlsx
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\zlib1.dll...
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\abseil_dll.dll...
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\utf8_validity.dll...
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\re2.dll...
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\libprotobuf.dll...
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\highs.dll...
+load D:\anaconda\envs\packing-zhuang\Lib\site-packages\ortools\.libs\ortools.dll...
+数据预处理和箱子分组完成（按托盘类型+销售订单号）。
+----------------------------------------
+  - 正常订单（全规则箱）判定：1 个订单须平顶不缺角。
+  - 组内子聚类：1 个混合订单拆出规则子集走 GCP、杂箱走 baseline。
+正在处理托盘类型：MH423C，销售订单号：PAIN25450MN01S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 配方优先[fast]：规划 82 实例，实装成功 80，失败回兜底 2；达标 80，直接采用配方方案（基线未跑，--safe 可审计对比）。
+  - 指数诊断：箱子 2823 个，总指数 16051，目标 192，理论最多达标托盘 83 个，剩余指数 115。
+  - 几何诊断：典型整层堆叠单盘参考上限 192/192。
+  - 失败托盘互借修复（凑标提交）：新增达标 1，受影响 4 盘重排为 5 盘（其余失败盘未动），耗时 9.1s。
+  - 失败托盘互借修复：5 盘(平均填充 48%) 合并重装为 4 盘(平均填充 60%)，新增达标 1，耗时 6.9s。
+托盘类型 MH423C（销售订单号：PAIN25450MN01S）处理完成：总托盘 85，指数达标 82，未达标 3，平均缺口 89.67，最大缺口 140.00，失败托盘互借修复成功 2。
+  - KPI：near/mid/deep=0/0/3，救回率=66.67%，pair效率=0.00%。
+  - 耗时拆解：packing=16.01s，main_topup=0.31s，retry=3.64s，failed_pool=3.27s，repack=30.37s，total=637.23s。
+正在处理托盘类型：MH423C，销售订单号：PAIN25450MN01S__SPLITREST__
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 94 个，总指数 564，目标 192，理论最多达标托盘 2 个，剩余指数 180。
+  - 几何诊断：典型整层堆叠单盘参考上限 48/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 48 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PAIN25450MN01S__SPLITREST__）处理完成：总托盘 4，指数达标 0，未达标 4，平均缺口 51.00，最大缺口 60.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/4，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=0.66s，main_topup=0.01s，retry=0.00s，failed_pool=2.13s，repack=3.33s，total=4.00s。
+正在处理托盘类型：MH423C，销售订单号：PAIN25450MZ06S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 托盘 MH423C-PAIN25450MZ06S-8 未找到可行装箱方案，启用剩余箱子守恒兜底。
+  - 配方优先[fast]：规划 58 实例，实装成功 52，失败回兜底 6；达标 53，直接采用配方方案（基线未跑，--safe 可审计对比）。
+  - 指数诊断：箱子 2083 个，总指数 11299，目标 192，理论最多达标托盘 58 个，剩余指数 163。
+  - 几何诊断：典型整层堆叠单盘参考上限 192/192。
+  - 失败盘装满压实：合并/吸收 83 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（constraint_gate_failed）。
+托盘类型 MH423C（销售订单号：PAIN25450MZ06S）处理完成：总托盘 104，指数达标 53，未达标 51，平均缺口 169.98，最大缺口 188.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=1/2/48，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=18.06s，main_topup=0.54s，retry=1.42s，failed_pool=9.62s，repack=50.34s，total=481.12s。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 跨子组装满压实（MH423C / PAIN25450MN01S）：合并 1 次（纯减盘数）。
+========================================
+统计汇总：总托盘 192，指数达标 135，未达标 57，未知 0，平均缺口 157.02，最大缺口 188.00，失败托盘互借修复成功 2
+KPI汇总：near/mid/deep=1/3/53，pair尝试=0，pair改进=0，pair效率=0.00%
+耗时汇总：packing=34.73s，main_topup=0.85s，retry=5.06s，repack=84.04s，end_to_end=1163.19s
+========================================
+数据预处理和箱子分组完成（按托盘类型+销售订单号）。
+----------------------------------------
+正在处理托盘类型：MH423C，销售订单号：PAIN25450MN01S
+  - 该分组不适合列式（多非满柱）→ 回退 beam + 配方优先。
+  - 配方优先[fast]：规划 0 实例，实装成功 0，配方路径不可用 → 采用基线方案。
+  - 指数诊断：箱子 243 个，总指数 871，目标 192，理论最多达标托盘 4 个，剩余指数 103。
+  - 几何诊断：典型整层堆叠单盘参考上限 140/192。 当前目标可能受托盘高度/箱型组合限制。
+  - 几何诊断提示：典型整层参考值 140 < 目标 192；该值不是不可达证明，继续执行指数救援。
+  - 失败盘装满压实：合并/吸收 1 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（aborted_no_improvement_possible）。
+托盘类型 MH423C（销售订单号：PAIN25450MN01S）处理完成：总托盘 5，指数达标 1，未达标 4，平均缺口 22.25，最大缺口 42.00，失败托盘互借修复成功 1。
+  - KPI：near/mid/deep=2/0/2，救回率=25.00%，pair效率=0.00%。
+  - 耗时拆解：packing=4.55s，main_topup=0.15s，retry=0.00s，failed_pool=2.51s，repack=20.67s，total=25.39s。
+正在处理托盘类型：MH423C，销售订单号：PAIN25450MZ06S
+  - 主算法：全局列式装箱 + 柱级组合优化（GCP）。
+  - GCP 盘数远超理论（CP-SAT 装不满）→ 回退 baseline beam + 配方优先。
+  - 托盘 MH423C-PAIN25450MZ06S-6 未找到可行装箱方案，启用剩余箱子守恒兜底。
+  - 配方优先[fast]：规划 4 实例，实装成功 1，失败回兜底 3；达标 2，直接采用配方方案（基线未跑，--safe 可审计对比）。
+  - 指数诊断：箱子 503 个，总指数 1123，目标 192，理论最多达标托盘 5 个，剩余指数 163。
+  - 几何诊断：典型整层堆叠单盘参考上限 192/192。
+  - 失败盘装满压实：合并/吸收 87 次（纯减盘数）。
+  - 失败托盘互借诊断：未合并（constraint_gate_failed）。
+托盘类型 MH423C（销售订单号：PAIN25450MZ06S）处理完成：总托盘 60，指数达标 2，未达标 58，平均缺口 179.26，最大缺口 189.00，失败托盘互借修复成功 0。
+  - KPI：near/mid/deep=0/0/58，救回率=0.00%，pair效率=0.00%。
+  - 耗时拆解：packing=8.61s，main_topup=0.20s，retry=1.00s，failed_pool=11.57s，repack=41.02s，total=114.16s。
+========================================
+统计汇总：总托盘 65，指数达标 3，未达标 62，未知 0，平均缺口 169.13，最大缺口 189.00，失败托盘互借修复成功 1
+KPI汇总：near/mid/deep=2/0/60，pair尝试=0，pair改进=0，pair效率=0.00%
+耗时汇总：packing=13.16s，main_topup=0.35s，retry=1.00s，repack=61.69s，end_to_end=139.55s
+========================================
+增量装箱完成：初始 5000 箱 + 新增 0 箱 → 总托盘 200，达标 140，未达标 60，用时 1303.89s。
+方案另存为: C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20261004_171358.json
+[执行规划] 产物目录：C:\Users\18252\Desktop\zhuang\packing-workspace\output\success（success）
+[执行规划] 开始：D:\anaconda\envs\packing-zhuang\python.exe C:\Users\18252\Desktop\zhuang\packing-system\run_execution_planning.py C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\exports\ui_packing_plan_20261004_171358.json --config C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_incremental_20261004_171358.yaml --output C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261004_171358_execution.json --wcs-output C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261004_171358_execution_wcs.json --wcs-map-output C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261004_171358_execution_wcs_map.json
+[WCS-DB] wcs_success_box：Excel/缺码已随机补 4546 个内部 product_code
+[WCS-DB] wcs_success_box：归档旧未下传记录 609 行。
+[WCS-DB] wcs_success_box：本批候选 4546 行，本批写入 4546 行。
+[WCS-DB] wcs_box_orientation：本批候选 4546 行，写入影响 4546（含已存在跳过）。
+[现场码垛] 新计算结果已入库，已清空旧码放队列 2044 条
+[现场会话] 新计算结果已入库，当前没有未完成托盘
+execution plan written: pallets=200 boxes=5000 reordered_pallets=151 path=C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261004_171358_execution.json
+WCS execution cases written: C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261004_171358_execution_wcs.json
+WCS execution plan map written: C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261004_171358_execution_wcs_map.json
+execution scan deviations pallet='MH423C-PAIN25450MN01S-25' count=1: expected='1017' selected='1020' box='1017' after='1020' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-26' count=1: expected='1040' selected='1027' box='1040' after='1027' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-27' count=1: expected='1095' selected='1098' box='1095' after='1098' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-28' count=1: expected='1101' selected='1104' box='1101' after='1104' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-29' count=1: expected='1113__initial_row744' selected='1116' box='1113__initial_row744' after='1116' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-30' count=1: expected='1125' selected='1128' box='1125' after='1128' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-31' count=1: expected='1495__initial_row624' selected='1498__initial_row627' box='1495__initial_row624' after='1498__initial_row627' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-32' count=1: expected='1507__initial_row636' selected='1510__initial_row639' box='1507__initial_row636' after='1510__initial_row639' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-33' count=1: expected='1546__initial_row762' selected='1549__initial_row765' box='1546__initial_row762' after='1549__initial_row765' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-34' count=1: expected='1553__initial_row769' selected='1556__initial_row772' box='1553__initial_row769' after='1556__initial_row772' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-35' count=1: expected='1951' selected='1954' box='1951' after='1954' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-36' count=1: expected='1961' selected='1964' box='1961' after='1964' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-37' count=1: expected='1974' selected='1977__initial_row782' box='1974' after='1977__initial_row782' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-38' count=1: expected='1986__initial_row791' selected='1989__initial_row794' box='1986__initial_row791' after='1989__initial_row794' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-39' count=1: expected='1998__initial_row803' selected='2001__initial_row806' box='1998__initial_row803' after='2001__initial_row806' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-40' count=1: expected='2009__initial_row814' selected='2012__initial_row817' box='2009__initial_row814' after='2012__initial_row817' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-41' count=1: expected='2021' selected='2024' box='2021' after='2024' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-42' count=1: expected='2033' selected='2036' box='2033' after='2036' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-43' count=1: expected='2045__initial_row850' selected='2048__initial_row853' box='2045__initial_row850' after='2048__initial_row853' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-79' count=1: expected='2007__initial_row2006' selected='2010__initial_row2009' box='2007__initial_row2006' after='2010__initial_row2009' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MZ06S-27' count=1: expected='4228' selected='4231' box='4228' after='4231' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MZ06S-53' count=7: expected='4194' selected='3306' box='4194' after='3306' reason=open_direction lookahead=true; expected='4195' selected='4198' box='4195' after='4198' reason=open_direction lookahead=true; expected='4196' selected='4199' box='4196' after='4199' reason=open_direction lookahead=true; expected='4197' selected='4204' box='4197' after='4204' reason=open_direction lookahead=true; expected='4211' selected='3820' box='4211' after='3820' reason=open_direction lookahead=true; expected='4212' selected='4215' box='4212' after='4215' reason=open_direction lookahead=true; expected='4213' selected='4220' box='4213' after='4220' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-83' count=2: expected='2152' selected='2551__initial_row2029' box='2152' after='2551__initial_row2029' reason=open_direction lookahead=true; expected='95' selected='2559' box='95' after='2559' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-84' count=1: expected='96' selected='1858' box='96' after='1858' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-85' count=2: expected='2580' selected='2586' box='2580' after='2586' reason=hard_dependency; expected='2580' selected='1825' box='2580' after='1825' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-86' count=2: expected='2095__initial_row2094' selected='2098__initial_row2097' box='2095__initial_row2094' after='2098__initial_row2097' reason=open_direction lookahead=true; expected='2103__initial_row2102' selected='2097__initial_row2096' box='2103__initial_row2102' after='2097__initial_row2096' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MN01S-87' count=6: expected='2423__initial_row1812' selected='2817__initial_row2913' box='2423__initial_row1812' after='2817__initial_row2913' reason=open_direction lookahead=true; expected='2424__initial_row1813' selected='2428__initial_row1817' box='2424__initial_row1813' after='2428__initial_row1817' reason=open_direction lookahead=true; expected='2425__initial_row1814' selected='2906__initial_row2905' box='2425__initial_row1814' after='2906__initial_row2905' reason=open_direction lookahead=true; expected='2045__initial_row2062' selected='2052__initial_row2069' box='2045__initial_row2062' after='2052__initial_row2069' reason=open_direction lookahead=true; expected='2880__initial_row2879' selected='2422__initial_row1811' box='2880__initial_row2879' after='2422__initial_row1811' reason=open_direction lookahead=true; expected='2053__initial_row2070' selected='2418__initial_row1790' box='2053__initial_row2070' after='2418__initial_row1790' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MZ06S-56' count=3: expected='4822' selected='3874' box='4822' after='3874' reason=open_direction lookahead=true; expected='4240' selected='4823' box='4240' after='4823' reason=open_direction lookahead=true; expected='4241' selected='4824' box='4241' after='4824' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MZ06S-57' count=1: expected='4826' selected='3898' box='4826' after='3898' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MZ06S-58' count=4: expected='3977' selected='3899' box='3977' after='3899' reason=open_direction lookahead=true; expected='3847' selected='3860' box='3847' after='3860' reason=open_direction lookahead=true; expected='3903' selected='3901' box='3903' after='3901' reason=open_direction lookahead=true; expected='3904' selected='3902' box='3904' after='3902' reason=open_direction lookahead=true
+execution scan deviations pallet='MH423C-PAIN25450MZ06S-59' count=1: expected='3862' selected='3910' box='3862' after='3910' reason=open_direction lookahead=true
+[执行规划] 已删除原方案（仅保留 execution）：ui_packing_plan_20261004_171358.json
+[执行规划] 完成；统一使用：C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261004_171358_execution.json
+[UI] 可视化将加载执行方案：C:\Users\18252\Desktop\zhuang\packing-workspace\output\success\ui_packing_plan_20261004_171358_execution.json
