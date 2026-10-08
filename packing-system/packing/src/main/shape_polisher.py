@@ -193,6 +193,5 @@ class ShapePolisher:
             {"packed_items": items},
             pallet_dims,
             constraint_config=config,
-            target_mpm=0.0,
         )
         return bool(result.get("is_valid"))
