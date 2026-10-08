@@ -1,0 +1,4 @@
+[LOG] 后端日志文件：C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\logs\backend_20261008_122310.log
+[LOG] 接口模式：读取所选历史接口 JSON，写入数据库并计算一次。
+[CMD] D:\anaconda\envs\packing-zhuang\python.exe C:\Users\18252\Desktop\zhuang\packing-system\packing\run_wcs_service.py --config C:\Users\18252\Desktop\zhuang\packing-workspace\runtime\packing-realtime\temp\ui_config_api_20261008_122310.yaml --run-mode local-once --input-json C:\Users\18252\Desktop\zhuang\packing-workspace\input\raw\20260720_101319.json
+[UI] 接口装箱服务已停止。
