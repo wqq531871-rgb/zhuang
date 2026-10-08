@@ -8,7 +8,7 @@ from PyQt5 import QtWidgets
 import realtime_dashboard_v3_clean as dashboard
 
 
-def test_header_offers_index_and_five_fill_rate_targets(tmp_path, monkeypatch):
+def test_header_offers_index_and_seven_fill_rate_targets(tmp_path, monkeypatch):
     monkeypatch.setattr(
         dashboard,
         "_start_local_wcs_receiver",
@@ -27,6 +27,8 @@ def test_header_offers_index_and_five_fill_rate_targets(tmp_path, monkeypatch):
         ]
         assert labels == [
             "指数 192",
+            "装载率 60%",
+            "装载率 65%",
             "装载率 70%",
             "装载率 75%",
             "装载率 80%",
@@ -35,6 +37,8 @@ def test_header_offers_index_and_five_fill_rate_targets(tmp_path, monkeypatch):
         ]
         assert values == [
             ("index", 192.0),
+            ("fill_rate", 0.60),
+            ("fill_rate", 0.65),
             ("fill_rate", 0.70),
             ("fill_rate", 0.75),
             ("fill_rate", 0.80),

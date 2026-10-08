@@ -6,7 +6,7 @@ from typing import Dict, Mapping, Optional
 from src.utils.case_group import normalize_case_group
 
 
-_FILL_RATE_STEPS = (0.70, 0.75, 0.80, 0.85, 0.90)
+_FILL_RATE_STEPS = (0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90)
 
 
 @dataclass(frozen=True)
@@ -25,7 +25,9 @@ class SuccessTarget:
             return cls(mode=mode, threshold=threshold)
         if mode == "fill_rate":
             if not any(abs(threshold - step) <= 1e-9 for step in _FILL_RATE_STEPS):
-                raise ValueError("装载率目标只允许 70%、75%、80%、85%、90%")
+                raise ValueError(
+                    "装载率目标只允许 60%、65%、70%、75%、80%、85%、90%"
+                )
             return cls(mode=mode, threshold=threshold)
         raise ValueError(f"未知成功目标模式：{mode}")
 

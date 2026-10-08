@@ -133,6 +133,8 @@ LOCAL_WCS_RECEIVER_CONFIG = LOCAL_WCS_RECEIVER_REL / "config" / "receiver_config
 
 SUCCESS_TARGET_OPTIONS = (
     ("指数 192", ("index", 192.0)),
+    ("装载率 60%", ("fill_rate", 0.60)),
+    ("装载率 65%", ("fill_rate", 0.65)),
     ("装载率 70%", ("fill_rate", 0.70)),
     ("装载率 75%", ("fill_rate", 0.75)),
     ("装载率 80%", ("fill_rate", 0.80)),

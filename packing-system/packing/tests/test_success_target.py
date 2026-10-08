@@ -214,7 +214,9 @@ def test_reapplying_fill_target_preserves_existing_true_index_status():
     assert pallet["final_status"] == "SUCCESS"
 
 
-@pytest.mark.parametrize("threshold", [0.70, 0.75, 0.80, 0.85, 0.90])
+@pytest.mark.parametrize(
+    "threshold", [0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90]
+)
 def test_config_accepts_only_approved_fill_rate_steps(threshold):
     target = SuccessTarget.from_mapping(
         {"mode": "fill_rate", "threshold": threshold}
