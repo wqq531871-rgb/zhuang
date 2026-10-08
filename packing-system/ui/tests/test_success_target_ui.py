@@ -49,6 +49,11 @@ def test_header_offers_index_and_seven_fill_rate_targets(tmp_path, monkeypatch):
             "mode": "index",
             "threshold": 192.0,
         }
+        assert [
+            window.cmb_shape_polish.itemText(index)
+            for index in range(window.cmb_shape_polish.count())
+        ] == ["快速", "标准", "强力"]
+        assert window.current_shape_polish_level() == "standard"
     finally:
         window.close()
         app.processEvents()
@@ -71,6 +76,7 @@ def test_excel_temp_config_records_selected_success_target(tmp_path):
         excel,
         "normal",
         success_target={"mode": "fill_rate", "threshold": 0.85},
+        shape_polish_level="strong",
     )
 
     config = yaml.safe_load(generated.read_text(encoding="utf-8"))
@@ -78,3 +84,5 @@ def test_excel_temp_config_records_selected_success_target(tmp_path):
         "mode": "fill_rate",
         "threshold": 0.85,
     }
+    assert config["constraints"]["shape_polish_level"] == "strong"
+    assert config["constraints"]["shape_polish_seconds_per_pallet"] == 8.0

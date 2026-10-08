@@ -90,8 +90,11 @@ class PackingWorkflow:
         self._shape_polisher = ShapePolisher(
             constraint_config=constraint_config,
             enabled=getattr(constraint_config, "shape_polish_enabled", True),
+            level=getattr(
+                constraint_config, "shape_polish_level", "standard",
+            ),
             seconds_per_pallet=getattr(
-                constraint_config, "shape_polish_seconds_per_pallet", 1.0,
+                constraint_config, "shape_polish_seconds_per_pallet", 3.0,
             ),
         )
         # 主装箱算法选择：'gcp' = 全局列式装箱 + 柱级组合优化（默认）；

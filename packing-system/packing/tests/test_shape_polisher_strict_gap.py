@@ -3,11 +3,37 @@ from copy import deepcopy
 
 from src.config.constraint_config import ConstraintConfig
 from src.main.shape_polisher import ShapePolisher
+from src.main import shape_polisher
 
 
 def test_shape_polisher_is_available():
     """达标盘应有可选的轻量外形整理阶段。"""
     assert importlib.util.find_spec("src.main.shape_polisher") is not None
+
+
+def test_shape_polish_profiles_scale_search_budget():
+    assert shape_polisher.shape_polish_profile("fast") == {
+        "level": "fast",
+        "seconds": 1.0,
+        "restarts": 5,
+        "beam_width": 2,
+        "candidate_limit": 10,
+    }
+    assert shape_polisher.shape_polish_profile("standard") == {
+        "level": "standard",
+        "seconds": 3.0,
+        "restarts": 10,
+        "beam_width": 3,
+        "candidate_limit": 16,
+    }
+    assert shape_polisher.shape_polish_profile("strong") == {
+        "level": "strong",
+        "seconds": 8.0,
+        "restarts": 20,
+        "beam_width": 4,
+        "candidate_limit": 24,
+    }
+    assert shape_polisher.shape_polish_profile("unknown")["level"] == "standard"
 
 
 def test_shape_polisher_rejects_flatter_layout_that_breaks_gap():

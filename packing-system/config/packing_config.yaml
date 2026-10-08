@@ -66,7 +66,9 @@ constraints:
   allow_box_rotation_90: true
   # 达标后限时尝试更平整、紧凑的摆法；失败时保留原结果，不改变成功判定。
   shape_polish_enabled: true
-  shape_polish_seconds_per_pallet: 1.0
+  # fast=快速约1秒；standard=标准约3秒；strong=强力约8秒。
+  shape_polish_level: standard
+  shape_polish_seconds_per_pallet: 3.0
 execution_sequence:
   # false 时跳过执行顺序规划（run_execution_planning / 一键装箱后置步骤都不生成）。
   # true 时：根目录 run_packing、以及 UI「一键装箱」（Excel / 接口 WCS）在写出 packing_plan 后自动生成

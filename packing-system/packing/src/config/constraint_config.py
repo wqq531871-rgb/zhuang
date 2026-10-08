@@ -133,7 +133,8 @@ class ConstraintConfig:
 
     # —— 达标盘外形软优化（不参与成功判定）——
     shape_polish_enabled: bool = True
-    shape_polish_seconds_per_pallet: float = 1.0
+    shape_polish_level: str = 'standard'
+    shape_polish_seconds_per_pallet: float = 3.0
 
     @classmethod
     def from_dict(cls, data: Optional[Dict]) -> 'ConstraintConfig':

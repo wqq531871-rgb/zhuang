@@ -18,6 +18,29 @@ from ..packing.beam_search_packer import BeamSearchPacker
 from ..utils.helpers import has_box_above, repack_ready_item
 
 
+_SHAPE_POLISH_PROFILES = {
+    "fast": (1.0, 5, 2, 10),
+    "standard": (3.0, 10, 3, 16),
+    "strong": (8.0, 20, 4, 24),
+}
+
+
+def shape_polish_profile(level: str) -> Dict:
+    normalized = str(level or "standard").strip().lower()
+    if normalized not in _SHAPE_POLISH_PROFILES:
+        normalized = "standard"
+    seconds, restarts, beam_width, candidate_limit = (
+        _SHAPE_POLISH_PROFILES[normalized]
+    )
+    return {
+        "level": normalized,
+        "seconds": seconds,
+        "restarts": restarts,
+        "beam_width": beam_width,
+        "candidate_limit": candidate_limit,
+    }
+
+
 def _rectangle_union_area(rectangles: Iterable[tuple[float, float, float, float]]) -> float:
     rects = [rect for rect in rectangles if rect[1] > rect[0] and rect[3] > rect[2]]
     xs = sorted({value for rect in rects for value in rect[:2]})
@@ -102,13 +125,19 @@ class ShapePolisher:
         self,
         constraint_config=None,
         enabled: bool = True,
-        seconds_per_pallet: float = 1.0,
+        seconds_per_pallet: Optional[float] = None,
+        level: str = "standard",
         repack_fn: Optional[Callable] = None,
         validate_fn: Optional[Callable] = None,
     ):
         self.constraint_config = constraint_config
         self.enabled = bool(enabled)
-        self.seconds_per_pallet = max(0.0, float(seconds_per_pallet))
+        self.profile = shape_polish_profile(level)
+        budget = (
+            self.profile["seconds"]
+            if seconds_per_pallet is None else seconds_per_pallet
+        )
+        self.seconds_per_pallet = max(0.0, float(budget))
         self._repack_fn = repack_fn or self._repack
         self._validate_fn = validate_fn or self._validate
 
@@ -171,9 +200,9 @@ class ShapePolisher:
         )
         packed, unfitted = packer.pack(
             ready,
-            num_restarts=5,
-            beam_width=2,
-            candidate_limit=10,
+            num_restarts=self.profile["restarts"],
+            beam_width=self.profile["beam_width"],
+            candidate_limit=self.profile["candidate_limit"],
             random_seed=20261008,
             stop_when_target_met=False,
             allow_skip_items=False,

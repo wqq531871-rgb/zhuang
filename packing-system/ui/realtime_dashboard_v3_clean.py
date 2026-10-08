@@ -142,6 +142,26 @@ SUCCESS_TARGET_OPTIONS = (
     ("装载率 90%", ("fill_rate", 0.90)),
 )
 
+SHAPE_POLISH_OPTIONS = (
+    ("快速", "fast", 1.0),
+    ("标准", "standard", 3.0),
+    ("强力", "strong", 8.0),
+)
+
+
+def _normalize_shape_polish_level(value) -> str:
+    candidate = str(value or "standard").strip().lower()
+    approved = {level for _label, level, _seconds in SHAPE_POLISH_OPTIONS}
+    return candidate if candidate in approved else "standard"
+
+
+def _shape_polish_seconds(level: str) -> float:
+    normalized = _normalize_shape_polish_level(level)
+    return next(
+        seconds for _label, key, seconds in SHAPE_POLISH_OPTIONS
+        if key == normalized
+    )
+
 
 def _normalize_success_target(value) -> dict:
     raw = value if isinstance(value, dict) else {}
@@ -357,12 +377,18 @@ def _write_ui_config(
     excel_copy_path: Path,
     run_mode: str,
     success_target: Optional[dict] = None,
+    shape_polish_level: str = "standard",
 ) -> Path:
     config = _load_yaml(base_config_path)
     rel_source = _relative_to_data(project_dir, excel_copy_path)
 
     config["run_mode"] = run_mode
     config["success_target"] = _normalize_success_target(success_target)
+    level = _normalize_shape_polish_level(shape_polish_level)
+    constraints = config.setdefault("constraints", {})
+    constraints["shape_polish_enabled"] = True
+    constraints["shape_polish_level"] = level
+    constraints["shape_polish_seconds_per_pallet"] = _shape_polish_seconds(level)
     config.setdefault("excel_data", {})
     config.setdefault("incremental", {})
 
@@ -384,6 +410,7 @@ def _write_ui_config_api_only(
     base_config_path: Path,
     download_interval: Optional[int] = None,
     success_target: Optional[dict] = None,
+    shape_polish_level: str = "standard",
 ) -> Path:
     """从全局 packing_config.yaml 生成接口模式临时配置。
 
@@ -393,6 +420,11 @@ def _write_ui_config_api_only(
     config = _load_yaml(base_config_path)
     config["run_mode"] = "normal"
     config["success_target"] = _normalize_success_target(success_target)
+    level = _normalize_shape_polish_level(shape_polish_level)
+    constraints = config.setdefault("constraints", {})
+    constraints["shape_polish_enabled"] = True
+    constraints["shape_polish_level"] = level
+    constraints["shape_polish_seconds_per_pallet"] = _shape_polish_seconds(level)
     prev_ds = dict(config.get("data_source") or {})
     prev_ds["mode"] = "api"
     config["data_source"] = prev_ds
@@ -891,12 +923,19 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             ds = base_config.get("data_source") or {}
             configured_interval = ds.get("download_interval", 200)
             configured_success_target = base_config.get("success_target")
+            configured_shape_polish = (base_config.get("constraints") or {}).get(
+                "shape_polish_level", "standard"
+            )
         except (OSError, ValueError, TypeError):
             configured_interval = 200
             configured_success_target = None
+            configured_shape_polish = "standard"
         self.download_interval = normalize_download_interval(configured_interval)
         self._initial_success_target = _normalize_success_target(
             configured_success_target
+        )
+        self._initial_shape_polish_level = _normalize_shape_polish_level(
+            configured_shape_polish
         )
         self._local_wcs_receiver_proc: Optional[subprocess.Popen] = None
         self._robot_ui_process: Optional[subprocess.Popen] = None
@@ -1025,6 +1064,25 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
                 selected_index = index
         self.cmb_success_target.setCurrentIndex(selected_index)
         run_box.addWidget(self.cmb_success_target)
+
+        self.lbl_shape_polish = QtWidgets.QLabel("规整")
+        self.lbl_shape_polish.setObjectName("HeaderCaption")
+        run_box.addWidget(self.lbl_shape_polish)
+
+        self.cmb_shape_polish = QtWidgets.QComboBox()
+        self.cmb_shape_polish.setObjectName("HeaderCombo")
+        self.cmb_shape_polish.setMinimumWidth(88)
+        self.cmb_shape_polish.setFixedHeight(36)
+        self.cmb_shape_polish.setToolTip(
+            "快速约1秒/盘；标准约3秒/盘；强力约8秒/盘"
+        )
+        selected_shape_index = 0
+        for index, (label, level, _seconds) in enumerate(SHAPE_POLISH_OPTIONS):
+            self.cmb_shape_polish.addItem(label, level)
+            if level == self._initial_shape_polish_level:
+                selected_shape_index = index
+        self.cmb_shape_polish.setCurrentIndex(selected_shape_index)
+        run_box.addWidget(self.cmb_shape_polish)
 
         self.lbl_download_interval = QtWidgets.QLabel("间隔")
         self.lbl_download_interval.setObjectName("HeaderCaption")
@@ -2131,6 +2189,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
             f"已选择 Excel：{excel or '尚未选择'}\n"
             f"本次输出：{out_path or '尚未生成'}\n\n"
             f"最终目标：{target_label}\n\n"
+            f"规整强度：{self.cmb_shape_polish.currentText()}\n\n"
             "日常使用只需要：选择Excel → 一键装箱。\n"
             "只有更换算法工程或 YAML 参数时，才需要修改这里。"
         )
@@ -2142,6 +2201,13 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
         if isinstance(value, (tuple, list)) and len(value) == 2:
             return {"mode": str(value[0]), "threshold": float(value[1])}
         return dict(self._initial_success_target)
+
+    def current_shape_polish_level(self) -> str:
+        combo = getattr(self, "cmb_shape_polish", None)
+        value = combo.currentData() if combo is not None else None
+        return _normalize_shape_polish_level(
+            value or self._initial_shape_polish_level
+        )
 
     # ------------------------------------------------------------------ Excel
     def choose_input_file(self) -> Optional[Path]:
@@ -2184,6 +2250,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
                 copied,
                 run_mode,
                 success_target=self.current_success_target(),
+                shape_polish_level=self.current_shape_polish_level(),
             )
 
             self.selected_excel_original = original
@@ -2218,6 +2285,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
                 self.project_dir / DEFAULT_CONFIG_REL,
                 interval,
                 success_target=self.current_success_target(),
+                shape_polish_level=self.current_shape_polish_level(),
             )
             self.generated_config_path = cfg
             self.config_path = cfg
@@ -2244,6 +2312,7 @@ class IndustrialPackingWorkbenchClean(IndustrialPackingWorkbench):
                     self.selected_excel_copy,
                     self.last_excel_mode or "normal",
                     success_target=self.current_success_target(),
+                    shape_polish_level=self.current_shape_polish_level(),
                 )
                 self.generated_config_path = cfg
                 self.config_path = cfg
