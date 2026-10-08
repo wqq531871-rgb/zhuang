@@ -4,8 +4,9 @@ Beam Search装箱器
 使用束搜索算法进行装箱的核心实现。
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 import random
+import time
 from copy import deepcopy
 
 from .candidate_generator import CandidatePointGenerator
@@ -152,7 +153,9 @@ class BeamSearchPacker:
         target_mpm: Optional[float] = None,
         target_policy=None,
         stop_when_target_met: bool = True,
-        allow_skip_items: bool = True
+        allow_skip_items: bool = True,
+        deadline: Optional[float] = None,
+        state_tiebreaker: Optional[Callable[[Dict], Tuple]] = None,
     ) -> Tuple[List[Dict], List[Dict]]:
         """
         使用多起点 + Beam Search 进行装箱
@@ -207,6 +210,8 @@ class BeamSearchPacker:
 
         # 执行多次重启搜索，每次使用不同的排序策略
         for restart_idx in range(num_restarts):
+            if deadline is not None and time.monotonic() >= deadline:
+                break
             strategy = order_strategies[restart_idx % len(order_strategies)]
             ordered_items = self._order_items(prefiltered_items, strategy, rng)
             state = self._pack_with_beam_search(
@@ -217,7 +222,9 @@ class BeamSearchPacker:
                 target_mpm=target_mpm,
                 target_policy=target_policy,
                 stop_when_target_met=stop_when_target_met,
-                allow_skip_items=allow_skip_items
+                allow_skip_items=allow_skip_items,
+                deadline=deadline,
+                state_tiebreaker=state_tiebreaker,
             )
 
             # 将预过滤中无法装入的物品合并到当前状态的未拟合列表中
@@ -225,10 +232,15 @@ class BeamSearchPacker:
                 state['unfitted_items'] = list(state['unfitted_items']) + list(pre_unfitted)
 
             # 更新最佳状态：如果当前状态评分更高，则替换最佳状态
-            if best_state is None or self._state_score(
-                state, target_mpm, target_policy
-            ) > self._state_score(best_state, target_mpm, target_policy):
+            if best_state is None or self._rank_state(
+                state, target_mpm, target_policy, state_tiebreaker
+            ) > self._rank_state(
+                best_state, target_mpm, target_policy, state_tiebreaker
+            ):
                 best_state = state
+
+        if best_state is None:
+            return [], list(items_to_pack)
 
         # 保存最佳结果的已放置箱子，并返回最终结果
         from ..utils.helpers import refresh_support_metrics
@@ -372,6 +384,8 @@ class BeamSearchPacker:
         stop_when_target_met: bool = True,
         allow_skip_items: bool = True,
         initial_placed_boxes: Optional[List[Dict]] = None,
+        deadline: Optional[float] = None,
+        state_tiebreaker: Optional[Callable[[Dict], Tuple]] = None,
     ) -> Dict:
         """
         使用束搜索算法进行装箱
@@ -403,8 +417,18 @@ class BeamSearchPacker:
         terminal_states = []
 
         for item_idx, item in enumerate(ordered_items):
+            if deadline is not None and time.monotonic() >= deadline:
+                for state in states:
+                    state["unfitted_items"].extend(ordered_items[item_idx:])
+                break
             next_states = []
             for state in states:
+                if deadline is not None and time.monotonic() >= deadline:
+                    next_states.append({
+                        "placed_boxes": list(state["placed_boxes"]),
+                        "unfitted_items": list(state["unfitted_items"]) + list(ordered_items[item_idx:]),
+                    })
+                    break
                 state_value = (
                     target_policy.items_value(state['placed_boxes'])
                     if target_policy is not None
@@ -472,7 +496,9 @@ class BeamSearchPacker:
 
             states = sorted(
                 next_states,
-                key=lambda s: self._state_score(s, target_mpm, target_policy),
+                key=lambda s: self._rank_state(
+                    s, target_mpm, target_policy, state_tiebreaker
+                ),
                 reverse=True,
             )[:beam_width]
             if not states:
@@ -481,8 +507,16 @@ class BeamSearchPacker:
         all_final_states = terminal_states + states
         return max(
             all_final_states,
-            key=lambda s: self._state_score(s, target_mpm, target_policy),
+            key=lambda s: self._rank_state(
+                s, target_mpm, target_policy, state_tiebreaker
+            ),
         ) if all_final_states else initial_state
+
+    def _rank_state(self, state, target_mpm, target_policy, state_tiebreaker):
+        score = self._state_score(state, target_mpm, target_policy)
+        if state_tiebreaker is None:
+            return score
+        return score + tuple(state_tiebreaker(state))
 
     def _generate_feasible_candidates(
         self,
