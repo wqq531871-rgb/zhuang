@@ -301,6 +301,31 @@ class PalletPacker:
                     unfitted = remaining
                     continue
 
+            # 裁剪/重排可能移走了原本用于贴靠的邻箱。出盘前重新收敛一次，
+            # 把因此变松散的箱子退回待装池，而不是让整单在门禁处中断。
+            packed, remaining = self._repair_packed_before_output(
+                packed, remaining, pallet_dims,
+            )
+            if not packed:
+                pallet_counter = self._append_conservation_fallback_pallets(
+                    type_plan,
+                    remaining,
+                    pallet_type,
+                    sales_order_no,
+                    pallet_dims,
+                    target_mpm,
+                    pallet_counter,
+                )
+                unfitted = []
+                break
+            total_mpm = sum(
+                float(box.get('min_pack_multiple', 0) or 0)
+                for box in packed
+            )
+            best["packed_items"] = packed
+            best["remaining_unfitted"] = remaining
+            best["total_mpm"] = total_mpm
+
             mpm_gap = None if target_mpm is None else (target_mpm - total_mpm)
             mpm_status = (
                 "UNKNOWN" if target_mpm is None
@@ -1785,6 +1810,24 @@ class PalletPacker:
             {"packed_items": packed}, pallet_dims,
             constraint_config=self._cfg,
         )["is_valid"]
+
+    def _repair_packed_before_output(
+        self,
+        packed: List[Dict],
+        remaining: List[Dict],
+        pallet_dims: Dict,
+    ) -> Tuple[List[Dict], List[Dict]]:
+        """移出不满足紧凑/支撑/重心约束的箱，并放回后续待装池。"""
+        from ..packing.sanitizer import sanitize_packed_items
+
+        kept, removed = sanitize_packed_items(
+            packed,
+            support_ratio_threshold=self._cfg.support_ratio_threshold,
+            max_gap=self._cfg.max_box_gap_mm,
+            pallet_dims=pallet_dims,
+            center_of_mass_tolerance=self._cfg.center_of_mass_tolerance,
+        )
+        return kept, list(removed) + list(remaining)
 
     def _retry_for_index(
         self,

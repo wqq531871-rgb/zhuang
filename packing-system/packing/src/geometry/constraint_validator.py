@@ -45,7 +45,6 @@ def validate_pallet_constraints(
     same_size_heavier_below_enabled: bool = True,
     constraint_config=None,
     target_mpm=None,
-    gap_exempt=None,
 ) -> Dict:
     """校验单个托盘方案的全部硬约束。
 
@@ -59,12 +58,8 @@ def validate_pallet_constraints(
         same_size_heavier_below_enabled: 是否校验「同尺寸重箱在下」。
         constraint_config: 可选 ConstraintConfig，提供时统一覆盖上述阈值/开关，
             保证门禁与放置层同源。不提供时沿用各参数默认值（行为不变）。
-        target_mpm: 可选目标指数。提供且整盘指数 ≥ target 时跳过 gap 间隙校验
-            （达标盘免 gap：gap 约束本意是防止偷懒留大空隙，达标即已尽力装满，
-            剩余空隙是高密度装载的几何必然）；未达标盘仍查 gap。None 时永远查
-            gap（历史行为不变）。
-        gap_exempt: 可选的显式 gap 豁免结果。装载率模式在恢复真实指数后使用
-            最终 goal_status 传入；None 时仍按 target_mpm 保持历史指数模式行为。
+        target_mpm: 可选目标指数，仅供平顶等目标相关约束使用。gap 是始终生效的
+            硬约束，不因指数或装载率达标而豁免。
     """
     if constraint_config is not None:
         support_ratio_threshold = constraint_config.support_ratio_threshold
@@ -104,18 +99,7 @@ def validate_pallet_constraints(
             "type": "pallet_overweight",
             "detail": weight_violation,
         })
-    # 达标盘免 gap 校验（用户决策）：gap 约束本意是防止装箱偷懒留大空隙导致装
-    # 不满；整盘指数达标即已尽力装满，剩余空隙是高密度装载的几何必然，不再以
-    # gap 判失败。未达标盘仍查 gap（防偷懒）。越界/重叠/支撑/重心/吸盘恒查，
-    # 物理稳定性不受影响。
-    _total_mpm = sum(float(it.get("min_pack_multiple", 0) or 0) for it in items)
-    if gap_exempt is None:
-        _gap_exempt = (
-            target_mpm is not None
-            and _total_mpm + 1e-9 >= float(target_mpm)
-        )
-    else:
-        _gap_exempt = bool(gap_exempt)
+    # gap 是摆放紧凑性的硬约束：达标只决定业务成功，不允许箱子悬空散放。
     pallet_length = float(pallet_dims.get("length", 0) or 0)
     pallet_width = float(pallet_dims.get("width", 0) or 0)
     pallet_height = float(pallet_dims.get("height", 0) or 0)
@@ -165,7 +149,7 @@ def validate_pallet_constraints(
             "width": float(item.get("raw_width", item.get("width", 0)) or 0),
             "height": float(item.get("raw_height", item.get("height", 0)) or 0),
         }
-        if not _gap_exempt and not passes_box_gap_constraint(
+        if not passes_box_gap_constraint(
             pos, dims, raw, others, max_gap=max_gap,
             pallet_dims=pallet_dims,
         ):

@@ -208,8 +208,8 @@ def test_safe_mode_still_runs_baseline():
     print('[PASS] safe_mode_still_runs_baseline: 双跑棘轮保留')
 
 
-def test_pack_instance_respects_target_gap_exemption():
-    """配方已达目标时应按业务规则免 gap，其他完整门禁仍执行。"""
+def test_pack_instance_rejects_gap_even_after_target_met():
+    """配方达到目标后仍必须满足箱子紧凑约束。"""
     pallet = {'length': 1200, 'width': 1000, 'height': 1450}
 
     def placed(box_id, x):
@@ -239,8 +239,7 @@ def test_pack_instance_respects_target_gap_exemption():
             return list(pool)
 
     packed = _pack_instance(Packer(), pool, 192.0, pallet, 1)
-    assert packed is not None
-    assert {item['id'] for item in packed} == {'A', 'B'}
+    assert packed is None
 
 
 if __name__ == '__main__':
@@ -249,5 +248,5 @@ if __name__ == '__main__':
     test_recipe_first_falls_back_when_instances_fail()
     test_fast_mode_skips_baseline_when_recipe_succeeds()
     test_safe_mode_still_runs_baseline()
-    test_pack_instance_respects_target_gap_exemption()
+    test_pack_instance_rejects_gap_even_after_target_met()
     print('[PASS] 所有测试通过！')

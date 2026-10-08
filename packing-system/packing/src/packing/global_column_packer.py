@@ -639,7 +639,7 @@ def _cpsat_pack_2d(cols: List[Dict], pallet_dims: Dict[str, float],
     坐标 ÷5 无损缩放（柱底面与托盘边长均为 5 的倍数）。目标：最大化装入指数
     （present 全装即达上界 OPT，找到满解即返回）。用 265 网格的部分解作
     warm-start（网格通常仅差一两根），稳定快速求解、消除多线程随机波动。无缝
-    由门禁"达标盘免 gap"保证；落地后整体居中改善重心。
+    最终仍须通过严格 gap 门禁；落地后整体居中改善重心。
     返回 (placed=[(col, x, y)], unplaced)，坐标真实 mm。旋转柱返回 xlen/ylen
     互换后的浅拷贝（_assemble 据此按旋转朝向摆箱）。无 OR-Tools 回退网格。
     """
@@ -712,7 +712,7 @@ def _cpsat_pack_2d(cols: List[Dict], pallet_dims: Dict[str, float],
     if not model_cols:
         return [], unplaced
     m.AddNoOverlap2D(xivs, yivs)
-    # 目标：最大化装入指数。达标盘免 gap，不需要密铺次目标；且 present 全装即达
+    # 目标：最大化装入指数；候选落地后仍由严格 gap 门禁筛选。
     # 指数上界（OPT），CP-SAT 找到满解即可立即返回——比带位置次目标快且稳得多
     # （后者要证明全局最优，对 95% 密度很慢、时快时慢）。落地后整体居中改善重心。
     m.Maximize(sum(pres[i] * weights[i] for i in range(len(model_cols))))
@@ -988,7 +988,7 @@ class GlobalColumnPacker:
         """组装一个盘并跑整盘门禁。门禁不过返回 None（调用方把柱退回残料 beam 兜底）。
 
         gap：柱间落地容差。CP-SAT 精确摆柱传 0（柱已紧贴无重叠）；265 网格摆柱
-        传 None（默认 size_tolerance，柱间留缝）。门禁带 target，达标盘免 gap 校验
+        传 None（默认 size_tolerance，柱间留缝）。门禁始终检查 gap，
         （剩余空隙是高密度装载的几何必然，非偷懒）。
         """
         items = _assemble(placed, packer, pallet_dims, gap=gap)

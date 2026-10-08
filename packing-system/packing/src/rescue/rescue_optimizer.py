@@ -876,7 +876,7 @@ class RescueOptimizer:
             type_plans, selected, rebuilt_sets, target_mpm
         )
         # 门禁只验新盘：保留盘未被触碰、已过流水线门禁，避免历史盘问题连坐。
-        # target 传入 → 达标盘免 gap（与流水线门禁同源），物理约束恒查。
+        # target 仅供目标相关约束使用；gap 与其他物理约束恒查。
         for solution in new_plans:
             gate = validate_pallet_constraints(
                 solution, self.pallet_dims, constraint_config=self._cfg,

@@ -829,8 +829,8 @@ def test_full_report_rejects_final_constraint_violation():
     raise AssertionError('最终全量门禁未拒绝重叠托盘')
 
 
-def test_full_report_respects_target_gap_exemption():
-    """最终门禁沿用业务规则：达标盘免 gap，其他硬约束仍检查。"""
+def test_full_report_rejects_gap_even_when_index_target_met():
+    """指数达标只决定成功状态，不能豁免箱子紧凑约束。"""
     pallet_dims = {'length': 1200, 'width': 1000, 'height': 1450}
 
     def _placed(box_id, x):
@@ -860,23 +860,22 @@ def test_full_report_respects_target_gap_exemption():
         'packed_items': [_placed('A', 0.0), _placed('B', 500.0)],
     }]
 
-    report = ResultFormatter.build_full_report(
-        target_met_plan,
-        summary_stats={},
-        total_runtime=0.0,
-        raw_boxes=raw_boxes,
-        make_json_plan_fn=lambda plan, raw: plan,
-        constraint_config=ConstraintConfig(
-            suction_reachability_enabled=False,
-            center_of_mass_tolerance=1.0,
-        ),
-    )
+    with pytest.raises(ValueError, match="gap"):
+        ResultFormatter.build_full_report(
+            target_met_plan,
+            summary_stats={},
+            total_runtime=0.0,
+            raw_boxes=raw_boxes,
+            make_json_plan_fn=lambda plan, raw: plan,
+            constraint_config=ConstraintConfig(
+                suction_reachability_enabled=False,
+                center_of_mass_tolerance=1.0,
+            ),
+        )
 
-    assert report['pallets'][0]['pallet_id'] == 'P1'
 
-
-def test_final_gate_uses_fill_goal_status_for_gap_exemption():
-    """装载率已达标时，最终门禁不能恢复成指数口径后重新拒绝 gap。"""
+def test_final_gate_rejects_gap_even_when_fill_goal_met():
+    """装载率达标只决定成功状态，不能豁免箱子紧凑约束。"""
     pallet_dims = {'length': 300.0, 'width': 100.0, 'height': 100.0}
 
     def _placed(box_id, x):
@@ -908,13 +907,14 @@ def test_final_gate_uses_fill_goal_status_for_gap_exemption():
         'packed_items': [_placed('A', 0.0), _placed('B', 120.0)],
     }
 
-    ResultFormatter.validate_final_constraints(
-        [fill_success],
-        constraint_config=ConstraintConfig(
-            suction_reachability_enabled=False,
-            center_of_mass_tolerance=1.0,
-        ),
-    )
+    with pytest.raises(ValueError, match="gap"):
+        ResultFormatter.validate_final_constraints(
+            [fill_success],
+            constraint_config=ConstraintConfig(
+                suction_reachability_enabled=False,
+                center_of_mass_tolerance=1.0,
+            ),
+        )
 
 
 def test_final_gate_still_rejects_gap_when_fill_goal_failed():
@@ -954,6 +954,40 @@ def test_final_gate_still_rejects_gap_when_fill_goal_failed():
                 center_of_mass_tolerance=1.0,
             ),
         )
+
+
+def test_pallet_packer_returns_loose_boxes_to_remaining_before_output():
+    """出盘前移出的松散箱必须回到待装池，不能丢箱或中断整单。"""
+    pallet_dims = {'length': 300.0, 'width': 100.0, 'height': 100.0}
+    packed = [
+        {
+            'id': box_id,
+            'length': 100.0,
+            'width': 100.0,
+            'height': 100.0,
+            'raw_length': 100.0,
+            'raw_width': 100.0,
+            'raw_height': 100.0,
+            'weight': 1.0,
+            'min_pack_multiple': 1.0,
+            'position': {'x': x, 'y': 0.0, 'z': 0.0},
+            'pallet_dims': pallet_dims,
+        }
+        for box_id, x in [('A', 0.0), ('B', 120.0)]
+    ]
+    packer = object.__new__(PalletPacker)
+    packer._cfg = ConstraintConfig(
+        suction_reachability_enabled=False,
+        center_of_mass_tolerance=1.0,
+    )
+
+    kept, remaining = packer._repair_packed_before_output(
+        packed, [], pallet_dims
+    )
+
+    assert len(kept) == 1
+    assert {item['id'] for item in kept + remaining} == {'A', 'B'}
+    assert 'position' not in remaining[0]
 
 
 def test_output_fill_rate():
@@ -1213,7 +1247,7 @@ if __name__ == '__main__':
         test_result_formatter()
         test_output_quality_gate()
         test_full_report_rejects_final_constraint_violation()
-        test_full_report_respects_target_gap_exemption()
+        test_full_report_rejects_gap_even_when_index_target_met()
         test_output_fill_rate()
         test_pallet_packer()
         test_pallet_packer_conservation_fallback()
