@@ -1,4 +1,0 @@
-{
-  "timestamp": "20261008_122329",
-  "error": "装箱阶段生成了违反约束的托盘，已拒绝输出：pallet_id=MH423C-LFEG16290IN01S-1, violations=[{'type': 'gap', 'box_id': 'WCS-0667-YBB125-0000'}]"
-}
